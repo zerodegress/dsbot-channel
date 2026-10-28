@@ -56,3 +56,5 @@ export type {
   ScopePair,
   Usage,
 } from './budget-ledger.js'
+export { DEFAULT_HOST, DEFAULT_PORT, SIGNATURE_HEADER, checkListenerConfig, startListener } from './p2p-listener.js'
+export type { Listener, ListenerConfig, ListenerOptions } from './p2p-listener.js'
