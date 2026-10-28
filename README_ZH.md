@@ -9,6 +9,7 @@ ds-bot 的 cordis 插件，实例之间通过 peer 链路互发消息。
 - Node.js `^20.19.0` 或 `>=22.12.0`
 - pnpm
 - 宿主的凭据服务，用于解析对端密钥
+- 宿主的会话控制服务，用于跑回合
 
 ## 安装
 
@@ -30,6 +31,7 @@ config:
   adapters:
     - kind: p2p
       channel: p2p:self
+      instance: self
       botName: self-bot
       listen: { host: 127.0.0.1, port: 7123 }
       peers:
@@ -37,7 +39,7 @@ config:
           secret: PEER_A_REFERENCE
 ```
 
-`secret` 填的是宿主任凭服务里的引用名，不是密钥本身。
+`instance` 和 `channel` 每个 adapter 都必填，`channel` 不能重复。`secret` 填的是宿主任凭服务里的引用名，不是密钥本身。
 
 patch 出厂是禁用的。把那一行的 `disabled` 改成 `false`，listener 才会启动。
 
