@@ -4,11 +4,20 @@ import { DedupeTable } from '../src/p2p-dedupe.js'
 import { handleMessage } from '../src/p2p-protocol.js'
 import type { HandleInput, P2PConfig } from '../src/p2p-protocol.js'
 
+const fakeCredentials = (values: Record<string, string>) => ({
+  resolve: async (reference: string) => {
+    const value = values[reference]
+    if (!value) throw new Error('missing')
+    return { value }
+  },
+})
+
 const secret = 'peer-secret-1'
 
 const config: P2PConfig = {
   botName: 'bot-a',
-  peers: [{ instance: 'inst-b', secret }],
+  peers: [{ instance: 'inst-b', secret: 'P2P_B_SECRET' }],
+  credentials: fakeCredentials({ P2P_B_SECRET: secret }),
   inflightTtlMs: 300_000,
   maxBodyBytes: 64 * 1024,
 }

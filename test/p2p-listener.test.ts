@@ -5,12 +5,15 @@ import { checkListenerConfig, startListener } from '../src/p2p-listener.js'
 import type { Listener, ListenerConfig } from '../src/p2p-listener.js'
 import { P2P_ROUTE } from '../src/p2p-protocol.js'
 import { signBody } from '../src/p2p-auth.js'
+import { staticCredentials } from '../src/p2p-secrets.js'
 
 const secret = 'peer-secret-1'
+const secretRef = 'PEER_SHARED_SECRET'
 
 const baseConfig = (): ListenerConfig => ({
   botName: 'bot-a',
-  peers: [{ instance: 'inst-b', secret }],
+  peers: [{ instance: 'inst-b', secret: secretRef }],
+  credentials: staticCredentials({ [secretRef]: secret }),
   inflightTtlMs: 300_000,
   maxBodyBytes: 64 * 1024,
   listen: { port: 0 },

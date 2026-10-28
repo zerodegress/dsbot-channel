@@ -1,5 +1,6 @@
 import { verifyRequest } from './p2p-auth.js'
-import type { PeerSecret } from './p2p-auth.js'
+import type { CredentialsLike, PeerRef } from './p2p-secrets.js'
+import { SecretRefError, resolvePeers } from './p2p-secrets.js'
 import type { DedupeTable } from './p2p-dedupe.js'
 
 export const P2P_ROUTE = '/p2p/v1/message'
@@ -8,7 +9,8 @@ export const MAX_BODY_BYTES = 64 * 1024
 
 export interface P2PConfig {
   botName: string
-  peers: readonly PeerSecret[]
+  peers: readonly PeerRef[]
+  credentials: CredentialsLike
   inflightTtlMs: number
   maxBodyBytes: number
   waitMs?: number
@@ -67,8 +69,15 @@ export async function handleMessage(input: HandleInput): Promise<HandleResult> {
   if (!parsed.ok) return { ok: false, status: parsed.status, body: { error: parsed.reason } }
   const request = parsed.value
 
+  let resolved
+  try {
+    resolved = await resolvePeers(config.peers, config.credentials)
+  } catch (error) {
+    if (error instanceof SecretRefError) return { ok: false, status: 401, body: { error: 'peer secret is not configured' } }
+    throw error
+  }
   const verified = verifyRequest({
-    peers: config.peers,
+    peers: resolved,
     authorization: auth.authorization ?? null,
     signature: auth.signature ?? null,
     claimedInstance: auth.claimedInstance,

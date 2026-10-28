@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { Context, type Plugin } from '@deepseek-ai/cordis'
+import { staticCredentials } from '../src/p2p-secrets.js'
 import * as entry from '../src/index.js'
 
 describe('scaffold', () => {
@@ -10,8 +11,24 @@ describe('scaffold', () => {
 
   test('plugin applies to a cordis context and disposes cleanly', async () => {
     const ctx = new Context()
+    await ctx.plugin({
+      name: 'scaffold-credentials',
+      apply(c) {
+        c.provide('credentials')
+        c.set('credentials', staticCredentials({ PEER_SHARED_SECRET: 'scaffold-secret' }))
+      },
+    })
     const plugin: Plugin = entry.default
-    const fork = ctx.plugin(plugin, {})
+    const fork = ctx.plugin(plugin, {
+      adapters: [
+        {
+          channel: 'p2p:self',
+          botName: 'bot-a',
+          peers: [{ instance: 'inst-b', secret: 'PEER_SHARED_SECRET' }],
+          listen: { host: '127.0.0.1', port: 0 },
+        },
+      ],
+    })
     await fork
     expect(ctx.registry.has(plugin)).toBe(true)
     await fork.dispose()
