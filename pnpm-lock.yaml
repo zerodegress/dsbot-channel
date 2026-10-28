@@ -173,25 +173,25 @@ importers:
         specifier: ~3.18.5
         version: 3.18.5
       '@eslint/js':
-        specifier: ^10.0.1
+        specifier: ~10.0.1
         version: 10.0.1(eslint@10.13.0(supports-color@8.1.1))
       '@types/node':
-        specifier: ^22.10.1
+        specifier: ~22.20.5
         version: 22.20.5
       eslint:
-        specifier: ^10.13.0
+        specifier: ~10.13.0
         version: 10.13.0(supports-color@8.1.1)
       rolldown:
-        specifier: ^1.2.15
+        specifier: ~1.2.15
         version: 1.2.15
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
       typescript-eslint:
-        specifier: ^8.72.1
+        specifier: ~8.72.1
         version: 8.72.1(eslint@10.13.0(supports-color@8.1.1))(supports-color@8.1.1)(typescript@5.9.3)
       vitest:
-        specifier: ^5.0.5
+        specifier: ~5.0.5
         version: 5.0.5(@types/node@22.20.5)(vite@8.3.5(@types/node@22.20.5))
 
 packages:
