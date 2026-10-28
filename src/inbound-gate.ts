@@ -6,9 +6,9 @@ export const DEFAULT_LOOP_IDLE_RESET_MS = 300_000
 
 export interface LoopConfig {
   /** Consecutive rounds with one peer; zero disables the ceiling. */
-  maxTurns?: number
+  relayLimit?: number
   /** Silence for this long clears the counter; zero disables the reset. */
-  idleResetMs?: number
+  relayResetMs?: number
 }
 
 export interface GateOptions {
@@ -45,8 +45,8 @@ export class InboundGate {
   private readonly now: () => number
 
   constructor(private readonly options: GateOptions = {}) {
-    this.maxTurns = options.loop?.maxTurns ?? DEFAULT_LOOP_MAX_TURNS
-    this.idleResetMs = options.loop?.idleResetMs ?? DEFAULT_LOOP_IDLE_RESET_MS
+    this.maxTurns = options.loop?.relayLimit ?? DEFAULT_LOOP_MAX_TURNS
+    this.idleResetMs = options.loop?.relayResetMs ?? DEFAULT_LOOP_IDLE_RESET_MS
     this.now = options.now ?? Date.now
   }
 
@@ -91,7 +91,7 @@ export class InboundGate {
     const ledger = this.options.ledger
     const session = input.session ?? `p2p:${peer}`
     let limitState: LimitLevel | undefined
-    let triggeredBy: string[] | undefined
+    let triggeredBy: string[] = []
     if (ledger) {
       const state = ledger.check(botId, session)
       limitState = state.aggregate
@@ -100,16 +100,16 @@ export class InboundGate {
     }
 
     if (this.maxTurns > 0 && this.roundsWith(botId, peer) >= this.maxTurns) {
-      return { allow: false, reason: 'loop-limit', detail: `${this.roundsWith(botId, peer)} rounds with ${peer}`, limitState }
+      return { allow: false, reason: 'loop-limit', detail: `${this.roundsWith(botId, peer)} rounds with ${peer}`, limitState, triggeredBy }
     }
 
     if (this.options.pipeline) {
       const result = await this.options.pipeline.run(event)
       if (result.decision !== 'allow') {
         const reason = result.restricted ? 'pipeline-restrict' : 'pipeline-deny'
-        return { allow: false, reason, pipeline: result, limitState, detail: Object.values(result.reasons)[0] }
+        return { allow: false, reason, pipeline: result, limitState, triggeredBy, detail: Object.values(result.reasons)[0] }
       }
-      return { allow: true, reason: 'allowed', pipeline: result, limitState }
+      return { allow: true, reason: 'allowed', pipeline: result, limitState, triggeredBy }
     }
 
     return { allow: true, reason: 'allowed', limitState, triggeredBy }

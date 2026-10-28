@@ -37,7 +37,7 @@ describe('loop guard', () => {
   })
 
   test('the ceiling is configurable', async () => {
-    const gate = new InboundGate({ loop: { maxTurns: 1 } })
+    const gate = new InboundGate({ loop: { relayLimit: 1 } })
     gate.recordReply('bot', 'peer-a')
     expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot' })).reason).toBe('loop-limit')
   })
@@ -59,16 +59,24 @@ describe('loop guard', () => {
     expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot' })).reason).toBe('loop-limit')
   })
 
+  test('the scope that tripped the budget is reported on every refusal', async () => {
+    const gate = new InboundGate({})
+    for (let round = 0; round < 3; round += 1) gate.recordReply('bot', 'peer-a')
+    const decision = await gate.admit({ event, peer: 'peer-a', botId: 'bot' })
+    expect(decision.reason).toBe('loop-limit')
+    expect(decision.triggeredBy).toBeDefined()
+  })
+
   test('the idle window is configurable and zero disables it', async () => {
     let now = 0
-    const gate = new InboundGate({ loop: { idleResetMs: 0 }, now: () => now })
+    const gate = new InboundGate({ loop: { relayResetMs: 0 }, now: () => now })
     for (let round = 0; round < 3; round += 1) gate.recordReply('bot', 'peer-a')
     now += 10 * 60_000
     expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot' })).reason).toBe('loop-limit')
   })
 
   test('zero disables the ceiling', async () => {
-    const gate = new InboundGate({ loop: { maxTurns: 0 } })
+    const gate = new InboundGate({ loop: { relayLimit: 0 } })
     for (let round = 0; round < 50; round += 1) gate.recordReply('bot', 'peer-a')
     expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot' })).allow).toBe(true)
   })
