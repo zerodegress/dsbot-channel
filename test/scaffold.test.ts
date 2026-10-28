@@ -23,6 +23,7 @@ describe('scaffold', () => {
       adapters: [
         {
           channel: 'p2p:self',
+          instance: 'inst-a',
           botName: 'bot-a',
           peers: [{ instance: 'inst-b', secret: 'PEER_SHARED_SECRET' }],
           listen: { host: '127.0.0.1', port: 0 },

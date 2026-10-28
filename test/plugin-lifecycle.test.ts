@@ -27,6 +27,7 @@ async function contextWithCredentials(): Promise<Context> {
 
 const adapter = (overrides: Record<string, unknown> = {}) => ({
   channel: 'p2p:self',
+  instance: 'inst-a',
   botName: 'bot-a',
   peers: [{ instance: 'inst-b', secret: secretRef }],
   listen: { host: '127.0.0.1', port: 0 },

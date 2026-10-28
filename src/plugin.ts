@@ -13,6 +13,7 @@ export const MAX_TURN_MS = 120_000
 export interface AdapterConfig extends ListenerConfig {
   kind?: 'p2p'
   channel: string
+  instance: string
   dedupe?: { ttlMs?: number; limit?: number }
 }
 
@@ -27,11 +28,13 @@ export const Config: any = Schema.object({
       Schema.object({
         kind: Schema.const('p2p').default('p2p'),
         channel: Schema.string().required(),
+        instance: Schema.string().required(),
         botName: Schema.string().required(),
         peers: Schema.array(
           Schema.object({
             instance: Schema.string().required(),
             secret: Schema.string().required(),
+            url: Schema.string(),
           }),
         ).default([]),
         inflightTtlMs: Schema.number().default(300_000),
