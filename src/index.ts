@@ -58,3 +58,30 @@ export type {
 } from './budget-ledger.js'
 export { DEFAULT_HOST, DEFAULT_PORT, SIGNATURE_HEADER, checkListenerConfig, startListener } from './p2p-listener.js'
 export type { Listener, ListenerConfig, ListenerOptions } from './p2p-listener.js'
+export {
+  CONNECTION_STATES,
+  LISTEN_STATES,
+  STALE_AFTER_MS,
+  buildConnectionHealth,
+  buildListenerHealth,
+  buildStatus,
+  isFresh,
+  mayInformQuota,
+  statusNotification,
+} from './adapter-status.js'
+export type {
+  AdapterStatus,
+  CapabilitySet,
+  ChannelRef,
+  ConnectionHealth,
+  ConnectionInput,
+  ConnectionState,
+  Health,
+  ListenerHealth,
+  ListenerInput,
+  ListenState,
+  PlatformAttributes,
+  QuotaView,
+  StatusInput,
+  StatusNotification,
+} from './adapter-status.js'
