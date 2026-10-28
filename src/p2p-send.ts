@@ -5,7 +5,7 @@ import { P2P_ROUTE } from './p2p-protocol.js'
 
 export const DEFAULT_SEND_TIMEOUT_MS = 10_000
 
-export type SendFailureCode = 'no_url' | 'unreachable' | 'timeout' | 'unauthorized' | 'forbidden' | 'busy' | 'rejected'
+export type SendFailureCode = 'no_url' | 'credential' | 'unreachable' | 'timeout' | 'unauthorized' | 'forbidden' | 'busy' | 'rejected'
 
 export interface PeerTarget extends PeerRef {
   url?: string
@@ -54,7 +54,7 @@ export async function sendToPeer(input: SendInput): Promise<SendResult> {
     const resolved = await resolvePeers([input.peer], input.credentials)
     secret = resolved[0]!.secret
   } catch (error) {
-    if (error instanceof SecretRefError) return failure('unreachable', false, error.message)
+    if (error instanceof SecretRefError) return failure('credential', false, error.message)
     throw error
   }
 

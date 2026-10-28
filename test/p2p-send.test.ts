@@ -66,6 +66,22 @@ describe('sending a message', () => {
 })
 
 describe('failures are told apart', () => {
+  test('a reference that does not resolve is a local credential problem', async () => {
+    const { url } = await peer()
+    const empty = staticCredentials({})
+    const result = await sendToPeer({ ...base(url), credentials: empty })
+    expect(result).toMatchObject({ ok: false, code: 'credential', retryable: false })
+    expect((result as { reason: string }).reason).toMatch(/did not resolve/)
+  })
+
+  test('a blank reference value is also a credential problem, not a network one', async () => {
+    const { url } = await peer()
+    const blank = staticCredentials({ [REF]: '   ' })
+    const result = await sendToPeer({ ...base(url), credentials: blank })
+    expect(result).toMatchObject({ ok: false, code: 'credential', retryable: false })
+    expect((result as { reason: string }).reason).toMatch(/blank value/)
+  })
+
   test('a peer without a url cannot be reached and says so', async () => {
     const result = await sendToPeer({ ...base('http://127.0.0.1:1'), peer: { instance: 'remote-inst', secret: REF } })
     expect(result).toMatchObject({ ok: false, code: 'no_url', retryable: false })
