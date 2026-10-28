@@ -91,3 +91,5 @@ export type {
 } from './adapter-status.js'
 export { SecretRefError, assertPeersResolvable, resolvePeers, staticCredentials } from './p2p-secrets.js'
 export type { CredentialsLike, PeerRef, ResolvedSecret } from './p2p-secrets.js'
+export { BuildError, buildPipeline } from './build-pipeline.js'
+export type { BudgetVerdict, JudgeVerdict, MatchRule, PipelineDeps } from './build-pipeline.js'

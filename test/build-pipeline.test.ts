@@ -1,0 +1,138 @@
+import { describe, expect, test } from 'vitest'
+import { buildPipeline, BuildError } from '../src/build-pipeline.js'
+import type { PipelineDeps } from '../src/build-pipeline.js'
+
+const event = { eventKey: 'peer-a:m1', scope: 'p2p' as const, mentioned: false }
+
+const deps = (): PipelineDeps => ({
+  denyRules: [{ id: 'noise', reason: 'system noise', matches: () => false }],
+  allowRules: [{ id: 'addressed', reason: 'mentions me', matches: () => true }],
+  score: () => 2,
+  judge: async () => ({ score: 7, reason: 'looks relevant' }),
+  prepare: () => {},
+})
+
+describe('building from specs', () => {
+  test('a deny node refuses when a rule matches', async () => {
+    const pipeline = buildPipeline([{ id: 'noise', type: 'deny' }], {
+      ...deps(),
+      denyRules: [{ id: 'noise', reason: 'system noise', matches: () => true }],
+    })
+    const result = await pipeline.run(event)
+    expect(result.decision).toBe('deny')
+    expect(result.reasons.noise).toBe('system noise')
+  })
+
+  test('a deny node passes when no rule matches', async () => {
+    const pipeline = buildPipeline([{ id: 'noise', type: 'deny' }, { id: 'a', type: 'allow' }], deps())
+    expect((await pipeline.run(event)).decision).toBe('allow')
+  })
+
+  test('an allow node allows when a rule matches', async () => {
+    const pipeline = buildPipeline([{ id: 'a', type: 'allow' }], deps())
+    const result = await pipeline.run(event)
+    expect(result.decision).toBe('allow')
+    expect(result.reasons.a).toBe('mentions me')
+  })
+
+  test('a score node adds what the scorer returns', async () => {
+    const pipeline = buildPipeline([{ id: 's', type: 'score' }, { id: 'a', type: 'allow' }], deps())
+    expect((await pipeline.run(event)).score).toBe(2)
+  })
+
+  test('a judge node uses the injected model call', async () => {
+    const pipeline = buildPipeline([{ id: 'j', type: 'judge' }], deps())
+    const result = await pipeline.run(event)
+    expect(result.score).toBe(7)
+    expect(result.reasons.j).toBe('looks relevant')
+  })
+
+  test('a prepare node calls the injected step', async () => {
+    let called = 0
+    const pipeline = buildPipeline([{ id: 'p', type: 'prepare' }], { ...deps(), prepare: () => { called += 1 } })
+    await pipeline.run(event)
+    expect(called).toBe(1)
+  })
+
+  test('the spec order is the run order', async () => {
+    const order: string[] = []
+    const pipeline = buildPipeline([{ id: 's1', type: 'score' }, { id: 's2', type: 'score' }], {
+      ...deps(),
+      score: (context) => {
+        order.push(context.event.eventKey)
+        return 1
+      },
+    })
+    await pipeline.run(event)
+    expect(order.length).toBe(2)
+  })
+})
+
+describe('a node without its dependency cannot be built', () => {
+  test('a deny node needs deny rules', () => {
+    expect(() => buildPipeline([{ id: 'd', type: 'deny' }], { ...deps(), denyRules: undefined })).toThrow(BuildError)
+  })
+
+  test('an allow node needs allow rules', () => {
+    expect(() => buildPipeline([{ id: 'a', type: 'allow' }], { ...deps(), allowRules: undefined })).toThrow(/allow/)
+  })
+
+  test('a score node needs a scorer', () => {
+    expect(() => buildPipeline([{ id: 's', type: 'score' }], { ...deps(), score: undefined })).toThrow(/score/)
+  })
+
+  test('a judge node needs a model call', () => {
+    expect(() => buildPipeline([{ id: 'j', type: 'judge' }], { ...deps(), judge: undefined })).toThrow(/judge/)
+  })
+
+  test('a prepare node needs a step', () => {
+    expect(() => buildPipeline([{ id: 'p', type: 'prepare' }], { ...deps(), prepare: undefined })).toThrow(/prepare/)
+  })
+
+  test('a budget node needs a limit check', () => {
+    expect(() => buildPipeline([{ id: 'b', type: 'budget' }], { ...deps(), budget: undefined })).toThrow(/budget/)
+  })
+
+  test('the build error names the node and what it lacks', () => {
+    try {
+      buildPipeline([{ id: 'my-judge', type: 'judge' }], { ...deps(), judge: undefined })
+      expect.unreachable()
+    } catch (error) {
+      expect((error as BuildError).nodeId).toBe('my-judge')
+      expect((error as BuildError).needs).toBe('judge')
+    }
+  })
+
+  test('an empty spec list builds a pipeline that allows', () => {
+    expect(() => buildPipeline([], deps())).not.toThrow()
+  })
+})
+
+describe('the budget node reports what the ledger says', () => {
+  test('a soft limit turns into restrict', async () => {
+    const pipeline = buildPipeline([{ id: 'b', type: 'budget' }], {
+      ...deps(),
+      budget: () => ({ state: 'soft', triggeredBy: ['global'] }),
+    })
+    const result = await pipeline.run(event)
+    expect(result.decision).toBe('deny')
+    expect(result.restricted).toBe(true)
+  })
+
+  test('a hard limit denies', async () => {
+    const pipeline = buildPipeline([{ id: 'b', type: 'budget' }], {
+      ...deps(),
+      budget: () => ({ state: 'hard', triggeredBy: ['bot:a'] }),
+    })
+    const result = await pipeline.run(event)
+    expect(result.decision).toBe('deny')
+  })
+
+  test('a normal state passes', async () => {
+    const pipeline = buildPipeline([{ id: 'b', type: 'budget' }, { id: 'a', type: 'allow' }], {
+      ...deps(),
+      budget: () => ({ state: 'normal', triggeredBy: [] }),
+    })
+    expect((await pipeline.run(event)).decision).toBe('allow')
+  })
+})
