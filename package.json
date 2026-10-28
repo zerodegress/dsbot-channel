@@ -1,0 +1,50 @@
+{
+  "name": "dsbot-channel",
+  "version": "0.0.0",
+  "description": "Multi-channel ingress gateway for ds-bot, packaged as a cordis plugin.",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "cordis": {
+    "peerDependencies": [
+      "cordis"
+    ]
+  },
+  "scripts": {
+    "build": "rolldown -c",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepack": "pnpm build"
+  },
+  "dependencies": {
+    "cordis": "^3.18.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.10.1",
+    "eslint": "^10.13.0",
+    "rolldown": "^1.2.15",
+    "rolldown-plugin-dts": "^0.21.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^5.0.5"
+  }
+}
