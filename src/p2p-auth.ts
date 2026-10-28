@@ -34,7 +34,7 @@ export function digestBody(body: string): string {
 
 export function signBody(secret: string, input: { eventId: string; sentAt: number; body: string }): string {
   const payload = `${input.eventId}.${input.sentAt}.${digestBody(input.body)}`
-  return createHash('sha256').update(`${secret}.${payload}`, 'utf8').digest('hex')
+  return createHash('sha256').update(`${secret}.${payload}`, 'utf8').digest('base64')
 }
 
 /** Resolves the peer instance from the credential, never from the request body. */
@@ -44,7 +44,7 @@ export function verifyRequest(input: AuthInput): AuthResult {
   if (input.signature) {
     const payload = `${input.eventId ?? ''}.${input.sentAt ?? 0}.${digestBody(input.body ?? '')}`
     for (const peer of input.peers) {
-      const expected = createHash('sha256').update(`${peer.secret}.${payload}`, 'utf8').digest('hex')
+      const expected = createHash('sha256').update(`${peer.secret}.${payload}`, 'utf8').digest('base64')
       if (sameSecret(expected, input.signature)) {
         if (input.claimedInstance && input.claimedInstance !== peer.instance) {
           return { ok: false, status: 403, reason: 'instance does not match the signing key' }

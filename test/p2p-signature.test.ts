@@ -43,3 +43,21 @@ describe('signature authentication through handleMessage', () => {
     expect(result.status).toBe(401)
   })
 })
+
+describe('signature encoding', () => {
+  test('emits and accepts a base64 signature', async () => {
+    const signature = signBody(secret, { eventId: payload.eventId, sentAt: payload.sentAt, body: payload.body })
+    expect(signature).toMatch(/^[A-Za-z0-9+/]+={0,2}$/)
+    expect(signature).not.toMatch(/^[0-9a-f]{64}$/)
+    const input: HandleInput = { config, table: table(), auth: { signature, claimedInstance: 'inst-b' }, payload }
+    const result = await handleMessage(input)
+    expect(result.ok).toBe(true)
+  })
+
+  test('rejects a hex encoded signature', async () => {
+    const hex = Buffer.from(signBody(secret, { eventId: payload.eventId, sentAt: payload.sentAt, body: payload.body }), 'base64').toString('hex')
+    const input: HandleInput = { config, table: table(), auth: { signature: hex, claimedInstance: 'inst-b' }, payload }
+    const result = await handleMessage(input)
+    expect(result).toMatchObject({ ok: false, status: 401 })
+  })
+})
