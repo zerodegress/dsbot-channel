@@ -211,3 +211,64 @@ describe('listener hand off', () => {
     expect(attempts).toBe(2)
   })
 })
+
+describe('listener async hand off', () => {
+  test('answers before a slow hand off finishes', async () => {
+    let finished = false
+    const listener = await startListener({
+      config: baseConfig(),
+      table: table(),
+      onMessage: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 30))
+        finished = true
+      },
+    })
+    open.push(listener)
+    const reply = await post(listener.address().port, message(), { authorization: `Bearer ${secret}` })
+    expect(reply.status).toBe(200)
+    expect(finished).toBe(false)
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    expect(finished).toBe(true)
+  })
+
+  test('reports a rejected hand off instead of letting it reach the process', async () => {
+    const reported: unknown[] = []
+    const listener = await startListener({
+      config: baseConfig(),
+      table: table(),
+      onMessage: async () => {
+        throw new Error('turn failed')
+      },
+      onError: (error) => {
+        reported.push(error)
+      },
+    })
+    open.push(listener)
+    const reply = await post(listener.address().port, message(), { authorization: `Bearer ${secret}` })
+    expect(reply.status).toBe(200)
+    expect(reply.body).toMatchObject({ duplicate: false })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(reported).toHaveLength(1)
+    expect((reported[0] as Error).message).toBe('turn failed')
+  })
+
+  test('keeps the event claimed when the hand off fails asynchronously', async () => {
+    const seen: string[] = []
+    const listener = await startListener({
+      config: baseConfig(),
+      table: table(),
+      onMessage: async (request) => {
+        seen.push(request.eventId)
+        throw new Error('turn failed')
+      },
+      onError: () => undefined,
+    })
+    open.push(listener)
+    const port = listener.address().port
+    await post(port, message(), { authorization: `Bearer ${secret}` })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const second = await post(port, message(), { authorization: `Bearer ${secret}` })
+    expect(second.body).toMatchObject({ duplicate: true })
+    expect(seen).toEqual(['evt-1'])
+  })
+})
