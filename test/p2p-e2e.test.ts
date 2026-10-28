@@ -188,3 +188,61 @@ describe('two adapters in one process', () => {
     await fork.dispose()
   })
 })
+
+describe('reporting failures', () => {
+  test('a logger that throws does not become an unhandled rejection', async () => {
+    const [portA, portB] = [await freePort(), await freePort()]
+    const ctx = new Context()
+    const sessions = new StubSessions(ctx, false)
+    let attempts = 0
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', sessions)
+        scope.provide('logger')
+        scope.set('logger', {
+          warn() {
+            attempts += 1
+            throw new Error('logger failed')
+          },
+        })
+      },
+    })
+    const fork = await ctx.plugin(entry, {
+      adapters: [
+        {
+          channel: 'p2p:a',
+          instance: 'inst-a',
+          botName: 'bot-a',
+          peers: [{ instance: 'inst-b', secret: REF }],
+          listen: { host: '127.0.0.1', port: portA },
+        },
+        {
+          channel: 'p2p:b',
+          instance: 'inst-b',
+          botName: 'bot-b',
+          peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${portA}` }],
+          listen: { host: '127.0.0.1', port: portB },
+        },
+      ],
+    })
+    forks.push(fork)
+
+    await sendToPeer({
+      peer: { instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${portB}` },
+      credentials,
+      to: 'bot-b',
+      body: 'hello',
+      eventId: 'evt-1',
+      sender: 'bot-a',
+      instance: 'inst-a',
+    })
+
+    await waitFor(() => attempts > 0)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(sessions.prompted).toHaveLength(2)
+  })
+})

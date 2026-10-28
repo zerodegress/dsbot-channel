@@ -116,7 +116,9 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
     ctx.on('session/event', (session: { id: string }, event: SessionEventLike) => listener(session.id, event))
   const logger = ctx.get('logger') as { warn(message: string): void } | undefined
   const warn = (message: string): void => {
-    logger?.warn(message)
+    void Promise.resolve()
+      .then(() => logger?.warn(message))
+      .catch(() => undefined)
   }
   const started = await Promise.all(
     pairs.map(({ adapter, table }) => {
