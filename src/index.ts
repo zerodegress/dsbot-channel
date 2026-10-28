@@ -46,6 +46,8 @@ export type {
   SkipTarget,
 } from './pipeline.js'
 export { DEFAULT_PIPELINE, checkPipeline, defaultPipelineNodes } from './pipeline-config.js'
+export { compilePolicy } from './policy-config.js'
+export type { CompiledPolicy, PolicyConfig } from './policy-config.js'
 export type { CheckReport, PipelineNodeSpec, PipelineSettings } from './pipeline-config.js'
 export { BudgetLedger, DEFAULT_BUDGET, sessionKeyFor } from './budget-ledger.js'
 export type {
