@@ -3,8 +3,9 @@ import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { assertBindHost } from './config.js'
 import type { DedupeTable } from './p2p-dedupe.js'
-import { MAX_BODY_BYTES, P2P_ROUTE, handleMessage } from './p2p-protocol.js'
+import { MAX_BODY_BYTES, P2P_ROUTE, handleMessage, parseRequest } from './p2p-protocol.js'
 import type { HandleResult, P2PConfig, P2PPayload } from './p2p-protocol.js'
+import type { InboundRequest } from './p2p-inbound.js'
 
 export const DEFAULT_HOST = '127.0.0.1'
 
@@ -63,7 +64,11 @@ function send(response: ServerResponse, status: number, body: unknown): void {
 export interface ListenerOptions {
   config: ListenerConfig
   table: DedupeTable
-  process?: (eventId: string) => Promise<boolean>
+  /** Runs after the dedupe claim and must return before the turn finishes.
+   * A 200 means accepted, not completed. */
+  onMessage?: (request: InboundRequest) => void | Promise<void>
+  /** Receives a rejected asynchronous hand off so it never becomes a crash. */
+  onError?: (error: unknown, request: InboundRequest) => void
 }
 
 export interface Listener {
@@ -98,6 +103,7 @@ export async function startListener(options: ListenerOptions): Promise<Listener>
       return
     }
     const claimed = typeof payload.instance === 'string' ? payload.instance : ''
+    const onMessage = options.onMessage
     let result: HandleResult
     try {
       result = await handleMessage({
@@ -109,7 +115,27 @@ export async function startListener(options: ListenerOptions): Promise<Listener>
           claimedInstance: claimed,
         },
         payload,
-        ...(options.process ? { process: options.process } : {}),
+        ...(onMessage === undefined
+          ? {}
+          : {
+              process: (eventId: string): Promise<boolean> => {
+                const parsed = parseRequest(payload, limit)
+                if (parsed.ok && parsed.value.eventId === eventId) {
+                  const request = parsed.value
+                  const dispatched = onMessage(request)
+                  if (dispatched instanceof Promise) {
+                    void dispatched.catch((error: unknown) => {
+                      const report = options.onError
+                      if (report === undefined) return
+                      void Promise.resolve()
+                        .then(() => report(error, request))
+                        .catch(() => undefined)
+                    })
+                  }
+                }
+                return Promise.resolve(true)
+              },
+            }),
       })
     } catch (error) {
       send(response, 500, { error: error instanceof Error ? error.message : 'internal error' })
