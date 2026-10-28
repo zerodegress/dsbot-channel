@@ -15,7 +15,7 @@ export function toP2PEvent(inbound: P2PInbound): Event {
   const text = inbound.body.length ? `${prefix} ${inbound.body}` : prefix
   return buildEvent({
     source: { kind: 'p2p', instance: inbound.instance, peer: inbound.instance, scope: 'p2p' },
-    author: { senderId: inbound.sender, personId: null },
+    author: { senderId: inbound.sender, kind: 'bot', personId: null },
     body: { text, media: [], replyTo: null },
     transport: {
       messageId: inbound.messageId,

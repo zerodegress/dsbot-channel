@@ -1,6 +1,6 @@
 import { contentHash, eventKey } from './event-key.js'
 import type { ChargeKind, Event, EventInput, Source, Target } from './event-types.js'
-import { CHARGE_KINDS, SCOPES, SOURCE_KINDS } from './event-types.js'
+import { AUTHOR_KINDS, CHARGE_KINDS, SCOPES, SOURCE_KINDS } from './event-types.js'
 
 function assertEnum<T extends string>(name: string, allowed: readonly T[], value: string): T {
   if (!(allowed as readonly string[]).includes(value)) {
@@ -16,7 +16,7 @@ export function buildEvent(input: EventInput): Event {
   const source: Source = { kind, instance: input.source.instance, peer: input.source.peer, scope }
   return {
     source,
-    author: { senderId: input.author.senderId, personId: input.author.personId },
+    author: { senderId: input.author.senderId, kind: assertEnum('author.kind', AUTHOR_KINDS, input.author.kind), personId: input.author.personId },
     body: { text: input.body.text, media: [...input.body.media], replyTo: input.body.replyTo },
     meta: {
       transport: { ...input.transport },

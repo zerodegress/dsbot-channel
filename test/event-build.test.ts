@@ -3,7 +3,7 @@ import { buildEvent, chargeKey, dedupeKeyFor, replyIdempotencyKey, unstableDedup
 
 const base = {
   source: { kind: 'onebot' as const, instance: 'onebot:10001', peer: null, scope: 'group' as const },
-  author: { senderId: 'u1', personId: '9f1c2b3f-0f6e-4c4e-9b3b-3f8f2a1d4c6e' },
+  author: { senderId: 'u1', kind: 'person', personId: '9f1c2b3f-0f6e-4c4e-9b3b-3f8f2a1d4c6e' },
   body: { text: 'hello', media: [], replyTo: null },
   transport: {
     messageId: 'm1',
@@ -36,9 +36,17 @@ describe('buildEvent', () => {
     const event = buildEvent({
       ...base,
       source: { kind: 'p2p' as const, instance: 'p2p:self', peer: 'other', scope: 'p2p' as const },
-      author: { senderId: 'bot', personId: null },
+      author: { senderId: 'bot', kind: 'bot', personId: null },
     })
     expect(event.author.personId).toBeNull()
+  })
+
+  test('a person author keeps its kind', () => {
+    expect(buildEvent(base).author.kind).toBe('person')
+  })
+
+  test('rejects an author kind outside the closed enum', () => {
+    expect(() => buildEvent({ ...base, author: { ...base.author, kind: 'system' as never } })).toThrow()
   })
 
   test('rejects a source kind outside the closed enum', () => {
