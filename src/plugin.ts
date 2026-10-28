@@ -114,44 +114,54 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   }
   const observe = (listener: (sessionId: string, event: SessionEventLike) => void): (() => void) =>
     ctx.on('session/event', (session: { id: string }, event: SessionEventLike) => listener(session.id, event))
+  const logger = ctx.get('logger') as { warn(message: string): void } | undefined
+  const warn = (message: string): void => {
+    logger?.warn(message)
+  }
   const started = await Promise.all(
     pairs.map(({ adapter, table }) => {
       const sessions = new PeerSessions({ controller, observe })
       const handOff = (request: InboundRequest): void => {
-        void sessions
-          .runTurn({ peer: request.instance, requestId: request.eventId, text: request.body })
-          .then(async (turn) => {
-            if (turn.text.length === 0) return
-            const configured = adapter.peers.find((candidate) => candidate.instance === request.instance)
-            if (configured === undefined) return
-            const url = (configured as PeerRef & { url?: string }).url
-            const peer: PeerTarget = {
-              instance: configured.instance,
-              secret: configured.secret,
-              ...(url === undefined ? {} : { url }),
-            }
-            await sendToPeer({
-              peer,
-              credentials,
-              to: request.sender,
-              body: turn.text,
-              eventId: `reply:${request.eventId}`,
-              sender: adapter.botName,
-              instance: adapter.instance,
-            })
+        const reply = async (): Promise<void> => {
+          const turn = await sessions.runTurn({
+            peer: request.instance,
+            requestId: request.eventId,
+            text: request.body,
           })
-          .catch((error: unknown) => {
-            ctx.logger.warn(`dsbot-channel: peer turn for ${request.instance} failed: ${String(error)}`)
+          if (turn.text.length === 0) return
+          const configured = adapter.peers.find((candidate) => candidate.instance === request.instance)
+          if (configured === undefined) return
+          const url = (configured as PeerRef & { url?: string }).url
+          const peer: PeerTarget = {
+            instance: configured.instance,
+            secret: configured.secret,
+            ...(url === undefined ? {} : { url }),
+          }
+          const sent = await sendToPeer({
+            peer,
+            credentials,
+            to: request.sender,
+            body: turn.text,
+            eventId: `reply:${request.eventId}`,
+            sender: adapter.botName,
+            instance: adapter.instance,
           })
+          if (!sent.ok) {
+            warn(
+              `dsbot-channel: reply to ${request.instance} was not delivered: ${sent.code} ${sent.reason}`,
+            )
+          }
+        }
+        void reply().catch((error: unknown) => {
+          warn(`dsbot-channel: peer turn for ${request.instance} failed: ${String(error)}`)
+        })
       }
       return startListener({
         config: { ...adapter, credentials },
         table,
         onMessage: handOff,
         onError: (error, request) => {
-          ctx.logger.warn(
-            `dsbot-channel: handing off ${request.eventId} from ${request.instance} failed: ${String(error)}`,
-          )
+          warn(`dsbot-channel: handing off ${request.eventId} from ${request.instance} failed: ${String(error)}`)
         },
       })
     }),

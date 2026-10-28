@@ -26,13 +26,23 @@ interface Prompted {
   text: string
 }
 
+const warnings: string[] = []
+
+const loggerStub = {
+  warn(message: string) {
+    warnings.push(message)
+  },
+}
+
 class StubSessions {
   readonly prompted: Prompted[] = []
   readonly #ctx: Context
+  readonly #stopOnReplyPrefix: boolean
   #count = 0
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, stopOnReplyPrefix = true) {
     this.#ctx = ctx
+    this.#stopOnReplyPrefix = stopOnReplyPrefix
   }
 
   create(): Promise<{ sessionId: string }> {
@@ -43,7 +53,7 @@ class StubSessions {
   prompt(request: Prompted & { content: readonly { type: 'text'; text: string }[] }): Promise<{ accepted: boolean }> {
     const text = request.content.map((part) => part.text).join('')
     this.prompted.push({ sessionId: request.sessionId, requestId: request.requestId, text })
-    const reply = text.startsWith('reply:') ? '' : `reply:${text}`
+    const reply = this.#stopOnReplyPrefix && text.startsWith('reply:') ? '' : `reply:${text}`
     const emit = (event: unknown): void => {
       this.#ctx.emit('session/event', { id: request.sessionId } as { id: string }, event as never)
     }
@@ -80,6 +90,8 @@ describe('two adapters in one process', () => {
         scope.set('credentials', credentials)
         scope.provide('sessionController')
         scope.set('sessionController', sessions)
+        scope.provide('logger')
+        scope.set('logger', loggerStub)
       },
     })
     const adapter = (channel: string, instance: string, botName: string, peerInstance: string, port: number, peerPort: number) => ({
@@ -122,10 +134,10 @@ describe('two adapters in one process', () => {
     await fork.dispose()
   })
 
-  test('a peer without a url cannot be answered', async () => {
+  test('a peer without a url comes back as no_url instead of silence', async () => {
     const [portA, portB] = [await freePort(), await freePort()]
     const ctx = new Context()
-    const sessions = new StubSessions(ctx)
+    const sessions = new StubSessions(ctx, false)
     await ctx.plugin({
       name: 'probe-services',
       apply(scope: Context) {
@@ -133,6 +145,8 @@ describe('two adapters in one process', () => {
         scope.set('credentials', credentials)
         scope.provide('sessionController')
         scope.set('sessionController', sessions)
+        scope.provide('logger')
+        scope.set('logger', loggerStub)
       },
     })
     const fork = await ctx.plugin(entry, {
@@ -164,9 +178,12 @@ describe('two adapters in one process', () => {
       instance: 'inst-a',
     })
 
-    await waitFor(() => sessions.prompted.length === 2)
-    await new Promise((resolve) => setTimeout(resolve, 30))
+    await waitFor(() => warnings.length > 0)
+    expect(warnings.some((line) => line.includes('no_url'))).toBe(true)
+    expect(warnings.some((line) => line.includes('inst-b'))).toBe(true)
     expect(sessions.prompted.map((entry) => entry.text)).toEqual(['hello', 'reply:hello'])
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(sessions.prompted).toHaveLength(2)
 
     await fork.dispose()
   })
