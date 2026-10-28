@@ -19,9 +19,21 @@ const credentialsProvider = {
   },
 }
 
+const sessionStub = {
+  create: () => Promise.resolve({ sessionId: 'session-1' }),
+  prompt: () => Promise.resolve({ accepted: true }),
+}
+
 async function contextWithCredentials(): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(credentialsProvider)
+  await ctx.plugin({
+    name: 'stub-sessions',
+    apply(c: Context) {
+      c.provide('sessionController')
+      c.set('sessionController', sessionStub)
+    },
+  })
   return ctx
 }
 
@@ -121,5 +133,20 @@ describe('plugin lifecycle', () => {
     const ctx = await contextWithCredentials()
     const cfg = { adapters: [adapter(), adapter({ botName: 'bot-b' })] }
     await expect(ctx.plugin(entry.default, cfg)).rejects.toThrow(/duplicate adapter channel/)
+  })
+})
+
+describe('running peer messages', () => {
+  test('refuses to mount adapters without a session service', async () => {
+    const ctx = new Context()
+    await ctx.plugin(credentialsProvider)
+    await expect(ctx.plugin(entry.default, config())).rejects.toThrow(/sessionController/)
+  })
+
+  test('mounts adapters once the session service is present', async () => {
+    const ctx = await contextWithCredentials()
+    const fork = await ctx.plugin(entry.default, config())
+    expect(ctx.get('dsbot-channel.peers')).toHaveLength(1)
+    await fork.dispose()
   })
 })
