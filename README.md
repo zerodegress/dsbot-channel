@@ -22,11 +22,25 @@ pnpm build
 
 ## Usage
 
-Mount the plugin in a profile through its bundle patch, then supply `botName`, `peers` and `listen` in the profile's own `cordis.patch.yml`. Peer secrets are references resolved by the host, never literals in the config.
+Mount the plugin in a profile through its bundle patch. It starts idle: with no adapters configured it binds nothing and needs no credentials service.
+
+Adapters are listed in the same `cordis.patch.yml`. Each entry carries its own identity and address:
+
+```yaml
+config:
+  adapters:
+    - kind: p2p
+      channel: p2p:self
+      botName: self-bot
+      listen: { host: 127.0.0.1, port: 7123 }
+      peers:
+        - instance: peer-a
+          secret: PEER_A_REFERENCE
+```
+
+`secret` holds a reference name resolved by the host, never the secret itself. Configuring a `p2p` adapter requires the host credentials provider (`@deepseek-ai/dsh-credentials-local`); without it the mount fails with `ConfigError: the credentials service is required to resolve peer secrets`.
 
 The patch ships with `disabled: true`, so the plugin does not start until that row is set to `false`. Leaving it on is silent: the process stays healthy and no port is opened.
-
-The host credentials provider (`@deepseek-ai/dsh-credentials-local`) must be mounted in the profile first. Without it the mount fails with `ConfigError: the credentials service is required to resolve peer secrets`.
 
 ## Development
 

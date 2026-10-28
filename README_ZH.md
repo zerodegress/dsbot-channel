@@ -22,11 +22,25 @@ pnpm build
 
 ## 用法
 
-通过插件的 bundle patch 在 profile 里挂载，然后在 profile 自己的 `cordis.patch.yml` 里提供 `botName`、`peers` 和 `listen`。对端密钥写引用名，由宿主解析，配置里不放密钥原文。
+通过插件的 bundle patch 在 profile 里挂载。基座启动后处于空闲状态：没配 adapter 就什么都不绑，也不需要凭据服务。
+
+adapter 写在同一个 `cordis.patch.yml` 里，每一项自带身份与地址：
+
+```yaml
+config:
+  adapters:
+    - kind: p2p
+      channel: p2p:self
+      botName: self-bot
+      listen: { host: 127.0.0.1, port: 7123 }
+      peers:
+        - instance: peer-a
+          secret: PEER_A_REFERENCE
+```
+
+`secret` 填的是宿主任凭服务里的引用名，不是密钥本身。配置了 `p2p` adapter 就必须先挂宿主的凭据 provider（`@deepseek-ai/dsh-credentials-local`）；缺了会以 `ConfigError: the credentials service is required to resolve peer secrets` 失败。
 
 patch 出厂是 `disabled: true`，把那一行改成 `false` 之前插件不会启动。保持原样是静默的：进程正常，但端口不开。
-
-宿主的凭据 provider（`@deepseek-ai/dsh-credentials-local`）必须先挂进 profile。缺了它，挂载会以 `ConfigError: the credentials service is required to resolve peer secrets` 失败。
 
 ## 开发
 
