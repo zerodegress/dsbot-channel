@@ -20,9 +20,14 @@ describe('scaffold', () => {
     })
     const plugin: Plugin = entry.default
     const fork = ctx.plugin(plugin, {
-      botName: 'bot-a',
-      peers: [{ instance: 'inst-b', secret: 'PEER_SHARED_SECRET' }],
-      listen: { host: '127.0.0.1', port: 0 },
+      adapters: [
+        {
+          channel: 'p2p:self',
+          botName: 'bot-a',
+          peers: [{ instance: 'inst-b', secret: 'PEER_SHARED_SECRET' }],
+          listen: { host: '127.0.0.1', port: 0 },
+        },
+      ],
     })
     await fork
     expect(ctx.registry.has(plugin)).toBe(true)

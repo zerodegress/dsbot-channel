@@ -25,12 +25,15 @@ async function contextWithCredentials(): Promise<Context> {
   return ctx
 }
 
-const config = (overrides: Record<string, unknown> = {}) => ({
+const adapter = (overrides: Record<string, unknown> = {}) => ({
+  channel: 'p2p:self',
   botName: 'bot-a',
   peers: [{ instance: 'inst-b', secret: secretRef }],
   listen: { host: '127.0.0.1', port: 0 },
   ...overrides,
 })
+
+const config = (overrides: Record<string, unknown> = {}) => ({ adapters: [adapter(overrides)] })
 
 const message = {
   eventId: 'evt-1',
@@ -67,7 +70,8 @@ describe('plugin lifecycle', () => {
   test('serves requests while mounted and releases the port on dispose', async () => {
     const ctx = await contextWithCredentials()
     const fork = await ctx.plugin(entry.default, config())
-    const listener = ctx.get('dsbot-channel.peer') as Listener
+    const listeners = ctx.get('dsbot-channel.peers') as Listener[]
+  const listener = listeners[0]!
     const port = listener.address().port
     expect(await post(port, message)).toBe(200)
     await fork.dispose()
@@ -83,7 +87,7 @@ describe('plugin lifecycle', () => {
 
   test('refuses to mount without a peer secret', async () => {
     const ctx = await contextWithCredentials()
-    await expect(ctx.plugin(entry.default, config({ peers: [] }))).rejects.toThrow(/peer secret/)
+    await expect(ctx.plugin(entry.default, config({ peers: [] }))).rejects.toThrow(/at least one peer/)
   })
 
   test('refuses an inflight ttl that does not exceed the turn ceiling', async () => {
@@ -95,7 +99,26 @@ describe('plugin lifecycle', () => {
   test('does not silently rewrite the configured inflight ttl', async () => {
     const ctx = await contextWithCredentials()
     const fork = await ctx.plugin(entry.default, config({ inflightTtlMs: 120_001 }))
-    expect(ctx.get('dsbot-channel.peer')).toBeTruthy()
+    expect(ctx.get('dsbot-channel.peers')).toHaveLength(1)
     await fork.dispose()
+  })
+
+  test('starts idle when no adapter is declared', async () => {
+    const ctx = new Context()
+    const fork = await ctx.plugin(entry.default, { adapters: [] })
+    expect(ctx.get('dsbot-channel.peers')).toBeUndefined()
+    await fork.dispose()
+  })
+
+  test('starts idle without the credentials service', async () => {
+    const ctx = new Context()
+    const fork = await ctx.plugin(entry.default, {})
+    await fork.dispose()
+  })
+
+  test('refuses a duplicate adapter channel', async () => {
+    const ctx = await contextWithCredentials()
+    const cfg = { adapters: [adapter(), adapter({ botName: 'bot-b' })] }
+    await expect(ctx.plugin(entry.default, cfg)).rejects.toThrow(/duplicate adapter channel/)
   })
 })

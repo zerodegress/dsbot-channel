@@ -1,10 +1,7 @@
-# Ships disabled; the profile's own cordis.patch.yml supplies the config.
+# Ships disabled with no adapters: the base starts idle and the profile declares its own.
 - insert:
     - id: dsbot-channel
       name: dsbot-channel
       disabled: true
       config:
-        botName: bot
-        listen:
-          host: 127.0.0.1
-          port: 7123
+        adapters: []
