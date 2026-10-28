@@ -1,0 +1,77 @@
+export const SOURCE_KINDS = ['qqbot', 'onebot', 'p2p'] as const
+export type SourceKind = (typeof SOURCE_KINDS)[number]
+
+export const SCOPES = ['c2c', 'group', 'p2p'] as const
+export type Scope = (typeof SCOPES)[number]
+
+export const CHARGE_KINDS = ['judge', 'bot', 'push'] as const
+export type ChargeKind = (typeof CHARGE_KINDS)[number]
+
+export interface Source {
+  kind: SourceKind
+  instance: string
+  peer: string | null
+  scope: Scope
+}
+
+export interface Author {
+  senderId: string
+  personId: string | null
+}
+
+export interface MediaRef {
+  type: 'image' | 'file' | 'voice'
+  url: string
+}
+
+export interface Body {
+  text: string
+  media: MediaRef[]
+  replyTo: string | null
+}
+
+export interface TransportMeta {
+  messageId: string
+  timestamp: number
+  mentioned: boolean
+  isReply: boolean
+  signature: string | null
+}
+
+export interface DerivedMeta {
+  eventKey: string
+  contentHash: string
+}
+
+export interface DeclaredMeta {
+  nickname: string
+  avatar: string
+  claimedIdentity: string | null
+}
+
+export interface EventMeta {
+  transport: TransportMeta
+  derived: DerivedMeta
+  declared: DeclaredMeta
+}
+
+export interface Event {
+  source: Source
+  author: Author
+  body: Body
+  meta: EventMeta
+}
+
+export interface EventInput {
+  source: Source
+  author: Author
+  body: Body
+  transport: TransportMeta
+  declared: DeclaredMeta
+}
+
+export interface Target {
+  channel: string
+  scope: Scope
+  target: string
+}

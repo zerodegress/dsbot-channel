@@ -1,5 +1,4 @@
 import { defineConfig } from 'rolldown'
-import { dts } from 'rolldown-plugin-dts'
 
 export default defineConfig({
   input: 'src/index.ts',
@@ -9,5 +8,4 @@ export default defineConfig({
     sourcemap: true,
   },
   external: ['cordis', /^node:/],
-  plugins: [dts()],
 })

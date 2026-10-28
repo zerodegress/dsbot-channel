@@ -20,13 +20,9 @@
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
   },
-  "cordis": {
-    "peerDependencies": [
-      "cordis"
-    ]
-  },
   "scripts": {
-    "build": "rolldown -c",
+    "build": "pnpm clean && rolldown -c && tsc -p tsconfig.json",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "typecheck": "tsc -p tsconfig.test.json",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -34,15 +30,15 @@
     "test:watch": "vitest",
     "prepack": "pnpm build"
   },
-  "dependencies": {
+  "peerDependencies": {
     "cordis": "^3.18.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^22.10.1",
+    "cordis": "^3.18.1",
     "eslint": "^10.13.0",
     "rolldown": "^1.2.15",
-    "rolldown-plugin-dts": "^0.21.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.72.1",
     "vitest": "^5.0.5"
