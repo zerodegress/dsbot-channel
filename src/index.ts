@@ -91,3 +91,5 @@ export type {
 } from './adapter-status.js'
 export { SecretRefError, assertPeersResolvable, resolvePeers, staticCredentials } from './p2p-secrets.js'
 export type { CredentialsLike, PeerRef, ResolvedSecret } from './p2p-secrets.js'
+export { DEFAULT_SEND_TIMEOUT_MS, sendToPeer } from './p2p-send.js'
+export type { PeerTarget, SendFailure, SendFailureCode, SendInput, SendResult, SendSuccess } from './p2p-send.js'
