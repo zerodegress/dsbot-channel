@@ -12,6 +12,10 @@ export interface PipelineEvent {
   eventKey: string
   scope: Scope
   mentioned: boolean
+  /** What the rules match on; empty when the adapter carries no text. */
+  text: string
+  /** The identity that admitted the message, when the adapter has one. */
+  peer?: string
 }
 
 export interface DenyOutput {

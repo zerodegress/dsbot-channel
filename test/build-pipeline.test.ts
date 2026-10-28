@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { buildPipeline, BuildError } from '../src/build-pipeline.js'
 import type { PipelineDeps } from '../src/build-pipeline.js'
 
-const event = { eventKey: 'peer-a:m1', scope: 'p2p' as const, mentioned: false }
+const event = { eventKey: 'peer-a:m1', scope: 'p2p' as const, mentioned: false, text: 'hello' }
 
 const deps = (): PipelineDeps => ({
   denyRules: [{ id: 'noise', reason: 'system noise', matches: () => false }],
