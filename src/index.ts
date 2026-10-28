@@ -1,11 +1,15 @@
-export type Config = Record<string, never>
+import { apply } from './plugin.js'
 
 /** Multi-channel ingress gateway for ds-bot. */
 export const name = 'dsbot-channel'
 
-export function apply() {}
+export const inject = {}
 
-export const plugin = { name, apply }
+export { Config } from './plugin.js'
+export { apply }
+export type { ChannelConfig } from './plugin.js'
+
+export const plugin = { name, inject, apply }
 
 export default plugin
 

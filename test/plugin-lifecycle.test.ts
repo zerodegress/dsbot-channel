@@ -1,0 +1,101 @@
+import { describe, expect, test } from 'vitest'
+import { request } from 'node:http'
+import { Context } from '@deepseek-ai/cordis'
+import * as entry from '../src/index.js'
+import { ConfigError } from '../src/config.js'
+import { P2P_ROUTE } from '../src/p2p-protocol.js'
+import type { Listener } from '../src/p2p-listener.js'
+
+const secret = 'peer-secret-1'
+const secretRef = 'PEER_SHARED_SECRET'
+
+const credentialsProvider = {
+  name: 'test-credentials',
+  apply(ctx: Context) {
+    ctx.provide('credentials')
+    ctx.set('credentials', {
+      resolve: async (reference: string) => (reference === secretRef ? { value: secret, source: 'test' } : undefined),
+    })
+  },
+}
+
+async function contextWithCredentials(): Promise<Context> {
+  const ctx = new Context()
+  await ctx.plugin(credentialsProvider)
+  return ctx
+}
+
+const config = (overrides: Record<string, unknown> = {}) => ({
+  botName: 'bot-a',
+  peers: [{ instance: 'inst-b', secret: secretRef }],
+  listen: { host: '127.0.0.1', port: 0 },
+  ...overrides,
+})
+
+const message = {
+  eventId: 'evt-1',
+  to: 'bot-a',
+  sender: 'bot-b',
+  instance: 'inst-b',
+  body: 'hello',
+  sentAt: 1_700_000_000_000,
+}
+
+function post(port: number, body: unknown): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const text = JSON.stringify(body)
+    const req = request(
+      {
+        host: '127.0.0.1',
+        port,
+        path: P2P_ROUTE,
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'content-length': Buffer.byteLength(text),
+          authorization: `Bearer ${secret}`,
+        },
+      },
+      (response) => resolve(response.statusCode ?? 0),
+    )
+    req.on('error', reject)
+    req.end(text)
+  })
+}
+
+describe('plugin lifecycle', () => {
+  test('serves requests while mounted and releases the port on dispose', async () => {
+    const ctx = await contextWithCredentials()
+    const fork = await ctx.plugin(entry.default, config())
+    const listener = ctx.get('dsbot-channel.peer') as Listener
+    const port = listener.address().port
+    expect(await post(port, message)).toBe(200)
+    await fork.dispose()
+    await expect(post(port, message)).rejects.toThrow()
+  })
+
+  test('refuses to mount with a wildcard bind address', async () => {
+    const ctx = await contextWithCredentials()
+    await expect(ctx.plugin(entry.default, config({ listen: { host: '0.0.0.0', port: 0 } }))).rejects.toThrow(
+      ConfigError,
+    )
+  })
+
+  test('refuses to mount without a peer secret', async () => {
+    const ctx = await contextWithCredentials()
+    await expect(ctx.plugin(entry.default, config({ peers: [] }))).rejects.toThrow(/peer secret/)
+  })
+
+  test('refuses an inflight ttl that does not exceed the turn ceiling', async () => {
+    const ctx = await contextWithCredentials()
+    await expect(ctx.plugin(entry.default, config({ inflightTtlMs: 5000 }))).rejects.toThrow(ConfigError)
+    await expect(ctx.plugin(entry.default, config({ inflightTtlMs: 120_000 }))).rejects.toThrow(/must exceed/)
+  })
+
+  test('does not silently rewrite the configured inflight ttl', async () => {
+    const ctx = await contextWithCredentials()
+    const fork = await ctx.plugin(entry.default, config({ inflightTtlMs: 120_001 }))
+    expect(ctx.get('dsbot-channel.peer')).toBeTruthy()
+    await fork.dispose()
+  })
+})
