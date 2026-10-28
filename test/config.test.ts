@@ -39,3 +39,31 @@ describe('strict', () => {
     expect(Object.keys(schema.dict ?? {})).toEqual(['channels'])
   })
 })
+
+describe('nested unknown fields', () => {
+  const nested = () =>
+    Schema.object({
+      adapters: Schema.array(
+        Schema.object({
+          channel: Schema.string().required(),
+          peers: Schema.array(Schema.object({ instance: Schema.string().required() })).default([]),
+        }),
+      ).default([]),
+    })
+
+  test('rejects an unknown field inside an array item and names its position', () => {
+    expect(() => validateConfig(nested(), { adapters: [{ channel: 'a', peer: [] }] })).toThrow(/unknown config fields: peer/)
+    expect(() => validateConfig(nested(), { adapters: [{ channel: 'a', peer: [] }] })).toThrow(/at adapters\.0/)
+  })
+
+  test('rejects an unknown field nested one level deeper', () => {
+    const config = { adapters: [{ channel: 'a', peers: [{ instance: 'b', secretRef: 'x' }] }] }
+    expect(() => validateConfig(nested(), config)).toThrow(/unknown config fields: secretRef/)
+    expect(() => validateConfig(nested(), config)).toThrow(/at adapters\.0\.peers\.0/)
+  })
+
+  test('accepts a config whose nested fields are all declared', () => {
+    const config = { adapters: [{ channel: 'a', peers: [{ instance: 'b' }] }] }
+    expect(validateConfig(nested(), config)).toEqual(config)
+  })
+})
