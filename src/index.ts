@@ -58,3 +58,5 @@ export type {
 } from './budget-ledger.js'
 export { DEFAULT_HOST, DEFAULT_PORT, SIGNATURE_HEADER, checkListenerConfig, startListener } from './p2p-listener.js'
 export type { Listener, ListenerConfig, ListenerOptions } from './p2p-listener.js'
+export { SecretRefError, assertPeersResolvable, resolvePeers, staticCredentials } from './p2p-secrets.js'
+export type { CredentialsLike, PeerRef, ResolvedSecret } from './p2p-secrets.js'

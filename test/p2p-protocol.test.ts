@@ -3,9 +3,18 @@ import { DedupeTable } from '../src/p2p-dedupe.js'
 import { P2P_ROUTE, handleMessage, parseRequest } from '../src/p2p-protocol.js'
 import { signBody } from '../src/p2p-auth.js'
 
+const fakeCredentials = (values: Record<string, string>) => ({
+  resolve: async (reference: string) => {
+    const value = values[reference]
+    if (!value) throw new Error('missing')
+    return { value }
+  },
+})
+
 const config = {
   botName: 'self-bot',
-  peers: [{ instance: 'peer-a', secret: 'secret-a' }],
+  peers: [{ instance: 'peer-a', secret: 'P2P_SECRET_A' }],
+  credentials: fakeCredentials({ P2P_SECRET_A: 'secret-a' }),
   inflightTtlMs: 300_000,
   maxBodyBytes: 64 * 1024,
 }
