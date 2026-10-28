@@ -134,6 +134,29 @@ describe('load time checks', () => {
     expect(report.warnings.join(' ')).toMatch(/prepare/)
   })
 
+  test('a pipeline without an allow node warns that nothing will get through', () => {
+    const report = checkPipeline([{ id: 'd', type: 'deny' }])
+    expect(report.fatal).toEqual([])
+    expect(report.warnings).toEqual(['no "allow" node: every message is denied while this pipeline is attached'])
+  })
+
+  test('an empty pipeline warns as well, because it denies just the same', () => {
+    const report = checkPipeline([])
+    expect(report.fatal).toEqual([])
+    expect(report.warnings).toEqual(['no "allow" node: every message is denied while this pipeline is attached'])
+  })
+
+  test('a pipeline with an allow node does not carry that warning', () => {
+    const report = checkPipeline([{ id: 'd', type: 'deny' }, { id: 'a', type: 'allow' }])
+    expect(report.warnings).not.toContain('no "allow" node: every message is denied while this pipeline is attached')
+  })
+
+  test('the shipped default template carries no such warning', () => {
+    const report = checkPipeline(defaultPipelineNodes())
+    expect(report.fatal).toEqual([])
+    expect(report.warnings).not.toContain('no "allow" node: every message is denied while this pipeline is attached')
+  })
+
   test('an illegal skip value refuses to load', () => {
     const report = checkPipeline([{ id: 'b', type: 'budget', restrictSkip: ['billing' as never] }])
     expect(report.fatal.join(' ')).toMatch(/skip/)
