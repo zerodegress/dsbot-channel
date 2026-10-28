@@ -140,10 +140,10 @@ describe('load time checks', () => {
     expect(report.warnings).toEqual(['no "allow" node: every message is denied while this pipeline is attached'])
   })
 
-  test('an empty pipeline warns as well, because it denies just the same', () => {
+  test('an empty node list means no pipeline at all, so it warns about nothing', () => {
     const report = checkPipeline([])
     expect(report.fatal).toEqual([])
-    expect(report.warnings).toEqual(['no "allow" node: every message is denied while this pipeline is attached'])
+    expect(report.warnings).toEqual([])
   })
 
   test('a pipeline with an allow node does not carry that warning', () => {
