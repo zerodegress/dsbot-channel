@@ -1,0 +1,45 @@
+import { describe, expect, test } from 'vitest'
+import { signBody } from '../src/p2p-auth.js'
+import { DedupeTable } from '../src/p2p-dedupe.js'
+import { handleMessage } from '../src/p2p-protocol.js'
+import type { HandleInput, P2PConfig } from '../src/p2p-protocol.js'
+
+const secret = 'peer-secret-1'
+
+const config: P2PConfig = {
+  botName: 'bot-a',
+  peers: [{ instance: 'inst-b', secret }],
+  inflightTtlMs: 300_000,
+  maxBodyBytes: 64 * 1024,
+}
+
+const payload = {
+  eventId: 'evt-1',
+  to: 'bot-a',
+  sender: 'bot-b',
+  instance: 'inst-b',
+  body: 'hello',
+  sentAt: 1_700_000_000_000,
+}
+
+function table(): DedupeTable {
+  return new DedupeTable({ ttlMs: 1000, limit: 10, inflightTtlMs: 300_000, maxTurnMs: 120_000 })
+}
+
+describe('signature authentication through handleMessage', () => {
+  test('accepts a request signed over eventId, sentAt and the body', async () => {
+    const signature = signBody(secret, { eventId: payload.eventId, sentAt: payload.sentAt, body: payload.body })
+    const input: HandleInput = { config, table: table(), auth: { signature, claimedInstance: 'inst-b' }, payload }
+    const result = await handleMessage(input)
+    expect(result.ok).toBe(true)
+    expect(result.status).toBe(200)
+  })
+
+  test('still rejects a signature made over a different body', async () => {
+    const signature = signBody(secret, { eventId: payload.eventId, sentAt: payload.sentAt, body: 'tampered' })
+    const input: HandleInput = { config, table: table(), auth: { signature, claimedInstance: 'inst-b' }, payload }
+    const result = await handleMessage(input)
+    expect(result.ok).toBe(false)
+    expect(result.status).toBe(401)
+  })
+})

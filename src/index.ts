@@ -23,3 +23,36 @@ export { toP2PEvent } from './p2p-mapping.js'
 export type { P2PInbound } from './p2p-mapping.js'
 export { MAX_BODY_BYTES, P2P_ROUTE, handleMessage, parseRequest } from './p2p-protocol.js'
 export type { HandleInput, HandleResult, P2PConfig, P2PPayload, Parsed } from './p2p-protocol.js'
+export { Pipeline, NODE_TYPES, SKIP_TARGETS } from './pipeline.js'
+export type {
+  Decision,
+  DenyOutput,
+  AllowOutput,
+  RestrictOutput,
+  ScoreOutput,
+  PassOutput,
+  NodeOutput,
+  NodeType,
+  NodeContext,
+  PipelineEvent,
+  PipelineNode,
+  PipelineOptions,
+  PipelineResult,
+  RuntimeView,
+  SkipTarget,
+} from './pipeline.js'
+export { DEFAULT_PIPELINE, checkPipeline, defaultPipelineNodes } from './pipeline-config.js'
+export type { CheckReport, PipelineNodeSpec, PipelineSettings } from './pipeline-config.js'
+export { BudgetLedger, DEFAULT_BUDGET, sessionKeyFor } from './budget-ledger.js'
+export type {
+  BudgetLimits,
+  BudgetPoints,
+  BudgetSettings,
+  Hold,
+  Hysteresis,
+  LedgerSnapshot,
+  LimitLevel,
+  LimitState,
+  ScopePair,
+  Usage,
+} from './budget-ledger.js'
