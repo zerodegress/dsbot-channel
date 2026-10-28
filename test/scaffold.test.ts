@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { Context, type Plugin } from 'cordis'
+import { Context, type Plugin } from '@deepseek-ai/cordis'
 import * as entry from '../src/index.js'
 
 describe('scaffold', () => {
