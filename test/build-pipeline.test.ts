@@ -118,8 +118,9 @@ describe('a node without its dependency cannot be built', () => {
     }
   })
 
-  test('an empty spec list builds a pipeline that allows', () => {
-    expect(() => buildPipeline([], deps())).not.toThrow()
+  test('an empty spec list builds a chain that denies every message', async () => {
+    const pipeline = buildPipeline([], deps())
+    expect((await pipeline.run(event)).decision).toBe('deny')
   })
 })
 
