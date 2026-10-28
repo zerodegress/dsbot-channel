@@ -6,6 +6,7 @@ import type { Listener, ListenerConfig } from '../src/p2p-listener.js'
 import { P2P_ROUTE } from '../src/p2p-protocol.js'
 import { signBody } from '../src/p2p-auth.js'
 import { staticCredentials } from '../src/p2p-secrets.js'
+import type { InboundRequest } from '../src/p2p-inbound.js'
 
 const secret = 'peer-secret-1'
 const secretRef = 'PEER_SHARED_SECRET'
@@ -154,5 +155,59 @@ describe('listener', () => {
       req.end('{}')
     })
     expect(reply).toBe(404)
+  })
+})
+
+describe('listener hand off', () => {
+  test('hands a fresh message to the inbound hook with every field intact', async () => {
+    const seen: InboundRequest[] = []
+    const listener = await startListener({
+      config: baseConfig(),
+      table: table(),
+      onMessage: (request) => {
+        seen.push(request)
+      },
+    })
+    open.push(listener)
+    const reply = await post(listener.address().port, message(), { authorization: `Bearer ${secret}` })
+    expect(reply.status).toBe(200)
+    expect(seen).toEqual([message()])
+  })
+
+  test('never hands over a duplicate or an unauthenticated delivery', async () => {
+    const seen: InboundRequest[] = []
+    const listener = await startListener({
+      config: baseConfig(),
+      table: table(),
+      onMessage: (request) => {
+        seen.push(request)
+      },
+    })
+    open.push(listener)
+    const port = listener.address().port
+    await post(port, message(), { authorization: `Bearer ${secret}` })
+    await post(port, message(), { authorization: `Bearer ${secret}` })
+    await post(port, message({ eventId: 'evt-2' }))
+    expect(seen.map((request) => request.eventId)).toEqual(['evt-1'])
+  })
+
+  test('keeps a failed hand off retryable instead of losing the message', async () => {
+    let attempts = 0
+    const listener = await startListener({
+      config: baseConfig(),
+      table: table(),
+      onMessage: () => {
+        attempts += 1
+        if (attempts === 1) throw new Error('hand off failed')
+      },
+    })
+    open.push(listener)
+    const port = listener.address().port
+    const first = await post(port, message(), { authorization: `Bearer ${secret}` })
+    expect(first.status).toBe(500)
+    const second = await post(port, message(), { authorization: `Bearer ${secret}` })
+    expect(second.status).toBe(200)
+    expect(second.body).toMatchObject({ duplicate: false })
+    expect(attempts).toBe(2)
   })
 })

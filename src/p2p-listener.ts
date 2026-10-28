@@ -3,8 +3,9 @@ import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { assertBindHost } from './config.js'
 import type { DedupeTable } from './p2p-dedupe.js'
-import { MAX_BODY_BYTES, P2P_ROUTE, handleMessage } from './p2p-protocol.js'
+import { MAX_BODY_BYTES, P2P_ROUTE, handleMessage, parseRequest } from './p2p-protocol.js'
 import type { HandleResult, P2PConfig, P2PPayload } from './p2p-protocol.js'
+import type { InboundRequest } from './p2p-inbound.js'
 
 export const DEFAULT_HOST = '127.0.0.1'
 
@@ -63,7 +64,7 @@ function send(response: ServerResponse, status: number, body: unknown): void {
 export interface ListenerOptions {
   config: ListenerConfig
   table: DedupeTable
-  process?: (eventId: string) => Promise<boolean>
+  onMessage?: (request: InboundRequest) => void
 }
 
 export interface Listener {
@@ -98,6 +99,7 @@ export async function startListener(options: ListenerOptions): Promise<Listener>
       return
     }
     const claimed = typeof payload.instance === 'string' ? payload.instance : ''
+    const onMessage = options.onMessage
     let result: HandleResult
     try {
       result = await handleMessage({
@@ -109,7 +111,15 @@ export async function startListener(options: ListenerOptions): Promise<Listener>
           claimedInstance: claimed,
         },
         payload,
-        ...(options.process ? { process: options.process } : {}),
+        ...(onMessage === undefined
+          ? {}
+          : {
+              process: (eventId: string): Promise<boolean> => {
+                const parsed = parseRequest(payload, limit)
+                if (parsed.ok && parsed.value.eventId === eventId) onMessage(parsed.value)
+                return Promise.resolve(true)
+              },
+            }),
       })
     } catch (error) {
       send(response, 500, { error: error instanceof Error ? error.message : 'internal error' })
