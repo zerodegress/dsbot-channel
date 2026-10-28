@@ -1,13 +1,14 @@
 import type { BudgetLedger, LimitLevel } from './budget-ledger.js'
+import { ConfigError } from './config.js'
 import type { Pipeline, PipelineEvent, PipelineResult } from './pipeline.js'
 
 export const DEFAULT_LOOP_MAX_TURNS = 3
 export const DEFAULT_LOOP_IDLE_RESET_MS = 300_000
 
 export interface LoopConfig {
-  /** Consecutive rounds with one peer; zero disables the ceiling. */
+  /** Consecutive rounds with one peer before the ceiling stops the next one. */
   relayLimit?: number
-  /** Silence for this long clears the counter; zero disables the reset. */
+  /** Silence for this long clears the counter. */
   relayResetMs?: number
 }
 
@@ -37,6 +38,14 @@ export interface GateDecision {
   pipeline?: PipelineResult | undefined
 }
 
+function checkLimit(field: string, value: number | undefined, fallback: number): number {
+  if (value === undefined) return fallback
+  if (!Number.isInteger(value) || value < 1) {
+    throw new ConfigError(`${field} must be a whole number of at least 1`, ['loop', field], [field])
+  }
+  return value
+}
+
 /** Decides whether an inbound peer message may start a turn. */
 export class InboundGate {
   private readonly rounds = new Map<string, { count: number; at: number }>()
@@ -45,8 +54,8 @@ export class InboundGate {
   private readonly now: () => number
 
   constructor(private readonly options: GateOptions = {}) {
-    this.maxTurns = options.loop?.relayLimit ?? DEFAULT_LOOP_MAX_TURNS
-    this.idleResetMs = options.loop?.relayResetMs ?? DEFAULT_LOOP_IDLE_RESET_MS
+    this.maxTurns = checkLimit('relayLimit', options.loop?.relayLimit, DEFAULT_LOOP_MAX_TURNS)
+    this.idleResetMs = checkLimit('relayResetMs', options.loop?.relayResetMs, DEFAULT_LOOP_IDLE_RESET_MS)
     this.now = options.now ?? Date.now
   }
 
@@ -64,7 +73,7 @@ export class InboundGate {
   private live(key: string): { count: number; at: number } | undefined {
     const entry = this.rounds.get(key)
     if (!entry) return undefined
-    if (this.idleResetMs > 0 && this.now() - entry.at > this.idleResetMs) {
+    if (this.now() - entry.at > this.idleResetMs) {
       this.rounds.delete(key)
       return undefined
     }
@@ -99,7 +108,7 @@ export class InboundGate {
       if (state.aggregate === 'hard') return { allow: false, reason: 'budget-hard', limitState, triggeredBy }
     }
 
-    if (this.maxTurns > 0 && this.roundsWith(botId, peer) >= this.maxTurns) {
+    if (this.roundsWith(botId, peer) >= this.maxTurns) {
       return { allow: false, reason: 'loop-limit', detail: `${this.roundsWith(botId, peer)} rounds with ${peer}`, limitState, triggeredBy }
     }
 

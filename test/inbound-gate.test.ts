@@ -3,6 +3,7 @@ import { DEFAULT_LOOP_IDLE_RESET_MS, DEFAULT_LOOP_MAX_TURNS, InboundGate } from 
 import { Pipeline } from '../src/pipeline.js'
 import type { PipelineNode } from '../src/pipeline.js'
 import { BudgetLedger, DEFAULT_BUDGET } from '../src/budget-ledger.js'
+import { ConfigError } from '../src/config.js'
 
 const event = { eventKey: 'peer-a:m1', scope: 'p2p' as const, mentioned: false }
 
@@ -67,18 +68,33 @@ describe('loop guard', () => {
     expect(decision.triggeredBy).toBeDefined()
   })
 
-  test('the idle window is configurable and zero disables it', async () => {
+  test('the idle window is configurable', async () => {
     let now = 0
-    const gate = new InboundGate({ loop: { relayResetMs: 0 }, now: () => now })
+    const gate = new InboundGate({ loop: { relayResetMs: 60_000 }, now: () => now })
     for (let round = 0; round < 3; round += 1) gate.recordReply('bot', 'peer-a')
     now += 10 * 60_000
-    expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot' })).reason).toBe('loop-limit')
+    expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot' })).allow).toBe(true)
   })
 
-  test('zero disables the ceiling', async () => {
-    const gate = new InboundGate({ loop: { relayLimit: 0 } })
-    for (let round = 0; round < 50; round += 1) gate.recordReply('bot', 'peer-a')
-    expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot' })).allow).toBe(true)
+  test.each([0, -1, 2.5, Number.NaN, Number.POSITIVE_INFINITY])(
+    'a ceiling of %s is refused instead of read as no ceiling',
+    (value) => {
+      expect(() => new InboundGate({ loop: { relayLimit: value } })).toThrow(ConfigError)
+    },
+  )
+
+  test.each([0, -1, 1500.5, Number.NaN])('a reset window of %s is refused', (value) => {
+    expect(() => new InboundGate({ loop: { relayResetMs: value } })).toThrow(ConfigError)
+  })
+
+  test('the refusal names the field an operator has to fix', () => {
+    try {
+      new InboundGate({ loop: { relayLimit: 0 } })
+      expect.unreachable()
+    } catch (error) {
+      expect((error as ConfigError).message).toContain('loop.relayLimit')
+      expect((error as ConfigError).fields).toEqual(['relayLimit'])
+    }
   })
 })
 
