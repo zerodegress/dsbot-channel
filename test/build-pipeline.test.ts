@@ -93,13 +93,28 @@ describe('a node without its dependency cannot be built', () => {
     expect(() => buildPipeline([{ id: 'b', type: 'budget' }], { ...deps(), budget: undefined })).toThrow(/budget/)
   })
 
-  test('the build error names the node and what it lacks', () => {
+  test('the build error names the node, its type and what it lacks', () => {
     try {
-      buildPipeline([{ id: 'my-judge', type: 'judge' }], { ...deps(), judge: undefined })
+      buildPipeline([{ id: 'my-deny', type: 'deny' }], { ...deps(), denyRules: undefined })
       expect.unreachable()
     } catch (error) {
-      expect((error as BuildError).nodeId).toBe('my-judge')
-      expect((error as BuildError).needs).toBe('judge')
+      expect((error as BuildError).nodeId).toBe('my-deny')
+      expect((error as BuildError).nodeType).toBe('deny')
+      expect((error as BuildError).needs).toBe('denyRules')
+      expect((error as BuildError).message).toBe(
+        'node "my-deny" of type "deny" needs "denyRules" in the injected dependencies',
+      )
+    }
+  })
+
+  test('an unsupported node type is reported without naming a dependency', () => {
+    try {
+      buildPipeline([{ id: 'x', type: 'nope' as never }], deps())
+      expect.unreachable()
+    } catch (error) {
+      expect((error as BuildError).nodeType).toBe('nope')
+      expect((error as BuildError).needs).toBeUndefined()
+      expect((error as BuildError).message).toBe('node "x" has unsupported type "nope"')
     }
   })
 

@@ -30,18 +30,24 @@ export interface PipelineDeps {
 
 export class BuildError extends Error {
   readonly nodeId: string
-  readonly needs: string
+  readonly nodeType: string
+  readonly needs: string | undefined
 
-  constructor(nodeId: string, needs: string) {
-    super(`node "${nodeId}" of type "${needs}" needs "${needs}" in the injected dependencies`)
+  constructor(nodeId: string, nodeType: string, needs?: string) {
+    super(
+      needs === undefined
+        ? `node "${nodeId}" has unsupported type "${nodeType}"`
+        : `node "${nodeId}" of type "${nodeType}" needs "${needs}" in the injected dependencies`,
+    )
     this.name = 'BuildError'
     this.nodeId = nodeId
+    this.nodeType = nodeType
     this.needs = needs
   }
 }
 
-function require<T>(nodeId: string, needs: string, value: T | undefined): T {
-  if (value === undefined) throw new BuildError(nodeId, needs)
+function require<T>(nodeId: string, nodeType: string, needs: string, value: T | undefined): T {
+  if (value === undefined) throw new BuildError(nodeId, nodeType, needs)
   return value
 }
 
@@ -50,7 +56,7 @@ export function buildPipeline(specs: readonly PipelineNodeSpec[], deps: Pipeline
   const nodes: PipelineNode[] = specs.map((spec) => {
     switch (spec.type) {
       case 'deny': {
-        const rules = require(spec.id, 'denyRules', deps.denyRules)
+        const rules = require(spec.id, 'deny', 'denyRules', deps.denyRules)
         return {
           id: spec.id,
           type: 'deny',
@@ -61,7 +67,7 @@ export function buildPipeline(specs: readonly PipelineNodeSpec[], deps: Pipeline
         }
       }
       case 'allow': {
-        const rules = require(spec.id, 'allowRules', deps.allowRules)
+        const rules = require(spec.id, 'allow', 'allowRules', deps.allowRules)
         return {
           id: spec.id,
           type: 'allow',
@@ -72,11 +78,11 @@ export function buildPipeline(specs: readonly PipelineNodeSpec[], deps: Pipeline
         }
       }
       case 'score': {
-        const scorer = require(spec.id, 'score', deps.score)
+        const scorer = require(spec.id, 'score', 'score', deps.score)
         return { id: spec.id, type: 'score', run: (context) => ({ kind: 'score', value: scorer(context) }) }
       }
       case 'judge': {
-        const judge = require(spec.id, 'judge', deps.judge)
+        const judge = require(spec.id, 'judge', 'judge', deps.judge)
         return {
           id: spec.id,
           type: 'judge',
@@ -89,7 +95,7 @@ export function buildPipeline(specs: readonly PipelineNodeSpec[], deps: Pipeline
         }
       }
       case 'prepare': {
-        const prepare = require(spec.id, 'prepare', deps.prepare)
+        const prepare = require(spec.id, 'prepare', 'prepare', deps.prepare)
         return {
           id: spec.id,
           type: 'prepare',
@@ -100,7 +106,7 @@ export function buildPipeline(specs: readonly PipelineNodeSpec[], deps: Pipeline
         }
       }
       case 'budget': {
-        const budget = require(spec.id, 'budget', deps.budget)
+        const budget = require(spec.id, 'budget', 'budget', deps.budget)
         return {
           id: spec.id,
           type: 'budget',
@@ -113,7 +119,7 @@ export function buildPipeline(specs: readonly PipelineNodeSpec[], deps: Pipeline
         }
       }
       default:
-        throw new BuildError(spec.id, 'type')
+        throw new BuildError(spec.id, String(spec.type))
     }
   })
   return new Pipeline(nodes)
