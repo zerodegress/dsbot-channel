@@ -91,3 +91,5 @@ export type {
 } from './adapter-status.js'
 export { SecretRefError, assertPeersResolvable, resolvePeers, staticCredentials } from './p2p-secrets.js'
 export type { CredentialsLike, PeerRef, ResolvedSecret } from './p2p-secrets.js'
+export { DEFAULT_LOOP_IDLE_RESET_MS, DEFAULT_LOOP_MAX_TURNS, InboundGate } from './inbound-gate.js'
+export type { AdmitInput, GateDecision, GateOptions, GateReason, LoopConfig } from './inbound-gate.js'
