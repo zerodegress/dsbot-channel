@@ -272,3 +272,25 @@ describe('listener async hand off', () => {
     expect(seen).toEqual(['evt-1'])
   })
 })
+
+describe('listener error handler', () => {
+  test('does not crash when the error handler itself throws', async () => {
+    let reported = 0
+    const listener = await startListener({
+      config: baseConfig(),
+      table: table(),
+      onMessage: async () => {
+        throw new Error('turn failed')
+      },
+      onError: () => {
+        reported += 1
+        throw new Error('logger failed')
+      },
+    })
+    open.push(listener)
+    const reply = await post(listener.address().port, message(), { authorization: `Bearer ${secret}` })
+    expect(reply.status).toBe(200)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(reported).toBe(1)
+  })
+})

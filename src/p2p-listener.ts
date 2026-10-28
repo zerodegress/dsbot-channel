@@ -64,7 +64,8 @@ function send(response: ServerResponse, status: number, body: unknown): void {
 export interface ListenerOptions {
   config: ListenerConfig
   table: DedupeTable
-  /** Runs after the dedupe claim; a 200 means accepted, not completed. */
+  /** Runs after the dedupe claim and must return before the turn finishes.
+   * A 200 means accepted, not completed. */
   onMessage?: (request: InboundRequest) => void | Promise<void>
   /** Receives a rejected asynchronous hand off so it never becomes a crash. */
   onError?: (error: unknown, request: InboundRequest) => void
@@ -123,7 +124,13 @@ export async function startListener(options: ListenerOptions): Promise<Listener>
                   const request = parsed.value
                   const dispatched = onMessage(request)
                   if (dispatched instanceof Promise) {
-                    void dispatched.catch((error: unknown) => options.onError?.(error, request))
+                    void dispatched.catch((error: unknown) => {
+                      const report = options.onError
+                      if (report === undefined) return
+                      void Promise.resolve()
+                        .then(() => report(error, request))
+                        .catch(() => undefined)
+                    })
                   }
                 }
                 return Promise.resolve(true)
