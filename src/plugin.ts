@@ -10,6 +10,8 @@ import { PeerSessions } from './p2p-inbound.js'
 import type { InboundRequest, SessionControllerLike, SessionEventLike } from './p2p-inbound.js'
 import { sendToPeer } from './p2p-send.js'
 import type { PeerTarget } from './p2p-send.js'
+import { DEFAULT_LOOP_IDLE_RESET_MS, DEFAULT_LOOP_MAX_TURNS, InboundGate } from './inbound-gate.js'
+import { toP2PEvent } from './p2p-mapping.js'
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
@@ -24,6 +26,8 @@ export interface AdapterConfig extends ListenerConfig {
   kind?: 'p2p'
   channel: string
   instance: string
+  relayLimit: number
+  relayResetMs: number
   dedupe?: { ttlMs?: number; limit?: number }
 }
 
@@ -47,6 +51,8 @@ export const Config: any = Schema.object({
             url: Schema.string(),
           }),
         ).default([]),
+        relayLimit: Schema.number().default(DEFAULT_LOOP_MAX_TURNS),
+        relayResetMs: Schema.number().default(DEFAULT_LOOP_IDLE_RESET_MS),
         inflightTtlMs: Schema.number().default(300_000),
         maxBodyBytes: Schema.number().default(64 * 1024),
         waitMs: Schema.number(),
@@ -67,6 +73,18 @@ export const Config: any = Schema.object({
 function prepareAdapter(adapter: AdapterConfig, index: number): DedupeTable {
   const path = (field: string): string[] => ['adapters', String(index), field]
   assertBindHost(adapter.listen.host ?? DEFAULT_HOST, path('listen'))
+  if (!Number.isInteger(adapter.relayLimit) || adapter.relayLimit < 1) {
+    throw new ConfigError(
+      `relayLimit must be a whole number of rounds, at least 1: ${adapter.relayLimit}`,
+      path('relayLimit'),
+    )
+  }
+  if (!Number.isInteger(adapter.relayResetMs) || adapter.relayResetMs < 1) {
+    throw new ConfigError(
+      `relayResetMs must be a whole number of milliseconds, at least 1: ${adapter.relayResetMs}`,
+      path('relayResetMs'),
+    )
+  }
   if (adapter.inflightTtlMs <= MAX_TURN_MS) {
     throw new ConfigError(
       `inflightTtlMs must exceed maxTurnMs: ${adapter.inflightTtlMs} <= ${MAX_TURN_MS}`,
@@ -123,12 +141,34 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const started = await Promise.all(
     pairs.map(({ adapter, table }) => {
       const sessions = new PeerSessions({ controller, observe })
+      const gate = new InboundGate({
+        loop: { relayLimit: adapter.relayLimit, relayResetMs: adapter.relayResetMs },
+      })
       const handOff = (request: InboundRequest): void => {
+        const event = toP2PEvent({ ...request, messageId: `p2p-${request.eventId}` })
         const reply = async (): Promise<void> => {
+          const sessionId = await sessions.sessionFor(request.instance)
+          const decision = await gate.admit({
+            event: {
+              eventKey: event.meta.derived.eventKey,
+              scope: event.source.scope,
+              mentioned: event.meta.transport.mentioned,
+            },
+            peer: request.instance,
+            botId: adapter.botName,
+            session: sessionId,
+          })
+          if (!decision.allow) {
+            const detail = decision.detail === undefined ? '' : ` (${decision.detail})`
+            warn(
+              `dsbot-channel: kept ${request.eventId} from ${request.instance} out of a turn: ${decision.reason}${detail}`,
+            )
+            return
+          }
           const turn = await sessions.runTurn({
             peer: request.instance,
             requestId: request.eventId,
-            text: request.body,
+            text: event.body.text,
           })
           if (turn.text.length === 0) return
           const configured = adapter.peers.find((candidate) => candidate.instance === request.instance)
@@ -148,11 +188,11 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
             sender: adapter.botName,
             instance: adapter.instance,
           })
-          if (!sent.ok) {
-            warn(
-              `dsbot-channel: reply to ${request.instance} was not delivered: ${sent.code} ${sent.reason}`,
-            )
+          if (sent.ok) {
+            gate.recordReply(adapter.botName, request.instance)
+            return
           }
+          warn(`dsbot-channel: reply to ${request.instance} was not delivered: ${sent.code} ${sent.reason}`)
         }
         void reply().catch((error: unknown) => {
           warn(`dsbot-channel: peer turn for ${request.instance} failed: ${String(error)}`)
