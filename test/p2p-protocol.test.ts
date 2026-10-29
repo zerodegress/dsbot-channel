@@ -95,14 +95,30 @@ describe('the channel reports what happened to it', () => {
     expect(channel.snapshot().inFlight).toBe(0)
   })
 
-  test('without a collector nothing breaks', async () => {
-    const result = await handleMessage({
-      config,
-      table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
-      auth: { authorization: 'Bearer secret-a', claimedInstance: 'peer-a' },
-      payload: request(),
-    })
-    expect(result.ok).toBe(true)
+  test('without a collector the answer is identical to the one with it', async () => {
+    const attempt = (stats?: ChannelStats): Promise<Awaited<ReturnType<typeof handleMessage>>> =>
+      handleMessage({
+        config,
+        table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
+        auth: { authorization: 'Bearer secret-a', claimedInstance: 'peer-a' },
+        payload: request(),
+        ...(stats === undefined ? {} : { stats }),
+      })
+
+    expect(await attempt()).toEqual(await attempt(new ChannelStats(() => NOW)))
+  })
+
+  test('a refused delivery answers the same with or without a collector', async () => {
+    const attempt = (stats?: ChannelStats): Promise<Awaited<ReturnType<typeof handleMessage>>> =>
+      handleMessage({
+        config,
+        table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
+        auth: { authorization: 'Bearer wrong', claimedInstance: 'peer-a' },
+        payload: request(),
+        ...(stats === undefined ? {} : { stats }),
+      })
+
+    expect(await attempt()).toEqual(await attempt(new ChannelStats(() => NOW)))
   })
 })
 
