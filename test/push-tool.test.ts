@@ -44,7 +44,7 @@ describe('addressing a push', () => {
 
     const result = await router.push({ text: 'hi' }, 'session-1')
 
-    expect(result).toEqual({ ok: true, messageId: 'm-1', channel: 'p2p:orca', scope: 'direct', target: 'seal' })
+    expect(result).toEqual({ ok: true, messageId: 'm-1', channel: 'p2p:orca', scope: 'p2p', target: 'seal' })
     expect(deliveries).toEqual([
       { channel: 'p2p:orca', peer: 'seal', to: 'seal', text: 'hi', eventId: 'push:id-1' },
     ])
@@ -124,10 +124,18 @@ describe('addressing a push', () => {
     expect(result).toMatchObject({ ok: false, code: 'unknown_target', retryable: false })
   })
 
-  test('a scope the link does not carry is refused', async () => {
+  test('the scope a peer link carries is accepted', async () => {
+    const { router } = harness({ source: { channel: 'p2p:orca', peer: 'seal' } })
+
+    const result = await router.push({ text: 'hi', scope: 'p2p' }, 'session-1')
+
+    expect(result).toMatchObject({ ok: true, scope: 'p2p' })
+  })
+
+  test.each(['c2c', 'group', 'nonsense'])('a scope the link does not carry is refused: %s', async (scope) => {
     const { router, deliveries } = harness({ source: { channel: 'p2p:orca', peer: 'seal' } })
 
-    const result = await router.push({ text: 'hi', scope: 'group' }, 'session-1')
+    const result = await router.push({ text: 'hi', scope }, 'session-1')
 
     expect(result).toMatchObject({ ok: false, code: 'unsupported_scope', retryable: false })
     expect(deliveries).toHaveLength(0)

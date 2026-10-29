@@ -1,7 +1,8 @@
 import type { SendFailureCode, SendResult } from './p2p-send.js'
 
 export const PUSH_WINDOW_MS = 10 * 60 * 1000
-export const PUSH_SCOPE = 'direct'
+export const PUSH_SCOPES = ['c2c', 'group', 'p2p'] as const
+export const PUSH_SCOPE = 'p2p'
 
 export type PushCode = SendFailureCode | 'unknown_channel' | 'unknown_target' | 'no_source' | 'no_target' | 'unsupported_scope'
 
@@ -100,7 +101,8 @@ export class PushRouter {
 
   #address(request: PushRequest, sessionId: string | undefined): { channel: PushChannel; peer: PushPeer } | PushFailed {
     if (request.scope !== undefined && request.scope !== PUSH_SCOPE) {
-      return fail('unsupported_scope', false, `a peer link carries one scope only: "${PUSH_SCOPE}"`)
+      const known = PUSH_SCOPES.join(', ')
+      return fail('unsupported_scope', false, `a peer link carries "${PUSH_SCOPE}" only, not "${request.scope}"; scopes: ${known}`)
     }
     const source = this.#source(sessionId)
     let channel: PushChannel | undefined
@@ -187,7 +189,11 @@ export function createSendText(router: PushRouter): SendTextTool {
       properties: {
         text: { type: 'string', description: 'The message body to deliver' },
         channel: { type: 'string', description: 'Adapter instance to send through, e.g. p2p:orca. Omit to answer the current peer' },
-        scope: { type: 'string', description: `Where the message lands; a peer link has one scope: ${PUSH_SCOPE}` },
+        scope: {
+          type: 'string',
+          enum: [...PUSH_SCOPES],
+          description: `Where the message lands; a peer link carries "${PUSH_SCOPE}" only`,
+        },
         target: { type: 'string', description: 'Peer instance on that channel, e.g. seal' },
         idempotencyKey: {
           type: 'string',
