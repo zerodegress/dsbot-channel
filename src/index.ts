@@ -19,7 +19,7 @@ export { LAYERS, LayerViolationError, declareLayer, derivedLayer, readDeclared, 
 export type { DeclaredLayer, Layer } from './event-layers.js'
 export { buildEvent, chargeKey, dedupeKeyFor, replyIdempotencyKey, unstableDedupeKey } from './event-build.js'
 export { ConfigError, WILDCARD_HOSTS, assertBindHost, strict, validateConfig } from './config.js'
-export { signBody, verifyRequest, digestBody } from './p2p-auth.js'
+export { signEnvelope, canonicalEnvelope, verifyRequest, digestBody } from './p2p-auth.js'
 export type { AuthInput, AuthResult, PeerSecret } from './p2p-auth.js'
 export { DedupeTable } from './p2p-dedupe.js'
 export type { DedupeEntry, DedupeOptions } from './p2p-dedupe.js'

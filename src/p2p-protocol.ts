@@ -124,9 +124,7 @@ export async function handleMessage(input: HandleInput): Promise<HandleResult> {
     authorization: auth.authorization ?? null,
     signature: auth.signature ?? null,
     claimedInstance: auth.claimedInstance,
-    eventId: request.eventId,
-    sentAt: request.sentAt,
-    body: request.body,
+    envelope: request,
   })
   if (!verified.ok) return { ok: false, status: verified.status ?? 401, body: { error: verified.reason ?? 'unauthorized' } }
   input.stats?.authenticated()

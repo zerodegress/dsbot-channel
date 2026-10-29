@@ -19,9 +19,17 @@ export class ClosedChains {
   }
 
   close(eventId: string): string {
+    this.#sweep()
     const key = baseEventId(eventId)
     this.#closed.set(key, this.#now())
     return key
+  }
+
+  #sweep(): void {
+    const now = this.#now()
+    for (const [key, at] of this.#closed) {
+      if (now - at >= this.#ttlMs) this.#closed.delete(key)
+    }
   }
 
   isClosed(eventId: string): boolean {
