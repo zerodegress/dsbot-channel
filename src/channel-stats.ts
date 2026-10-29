@@ -13,6 +13,8 @@ export interface ChannelSnapshot {
   inFlight: number
   /** Deliveries that ended without one having begun, which is always a bug. */
   underruns: number
+  /** Requests for a path this channel does not serve, which a port scan also produces. */
+  unknownPaths: number
   sampledAt: number
 }
 
@@ -25,6 +27,7 @@ export class ChannelStats {
   #lastFailure: ChannelFailure | null = null
   #inFlight = 0
   #underruns = 0
+  #unknownPaths = 0
 
   constructor(now: () => number = Date.now) {
     this.#now = now
@@ -54,6 +57,10 @@ export class ChannelStats {
     this.#remember(reason)
   }
 
+  unknownPath(): void {
+    this.#unknownPaths += 1
+  }
+
   beginDelivery(): void {
     this.#inFlight += 1
   }
@@ -74,6 +81,7 @@ export class ChannelStats {
       lastFailure: this.#lastFailure === null ? null : { at: this.#lastFailure.at, reason: this.#lastFailure.reason },
       inFlight: this.#inFlight,
       underruns: this.#underruns,
+      unknownPaths: this.#unknownPaths,
       sampledAt: this.#now(),
     }
   }

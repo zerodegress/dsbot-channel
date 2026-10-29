@@ -191,7 +191,7 @@ describe('listener', () => {
     expect(channel.snapshot().lastFailure?.reason).toBe('body exceeds the size limit')
   })
 
-  test('records an unknown route as a failure, because a wrong port looks like this', async () => {
+  test('counts an unknown route without calling it a failure', async () => {
     const channel = new ChannelStats()
     const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
     open.push(listener)
@@ -204,7 +204,7 @@ describe('listener', () => {
       req.end('{}')
     })
     expect(reply).toBe(404)
-    expect(channel.snapshot().lastFailure?.reason).toBe('not found')
+    expect(channel.snapshot()).toMatchObject({ unknownPaths: 1, lastFailure: null })
   })
 
   test('an accepted delivery leaves no failure behind', async () => {
@@ -217,6 +217,80 @@ describe('listener', () => {
 
     expect(reply.status).toBe(200)
     expect(channel.snapshot()).toMatchObject({ lastFailure: null, inFlight: 0, underruns: 0 })
+  })
+
+  test('the status route does not exist unless it was asked for', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
+    open.push(listener)
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = request(
+        { host: '127.0.0.1', port: listener.address().port, path: '/p2p/v1/status', method: 'GET' },
+        (response) => resolve(response.statusCode ?? 0),
+      )
+      req.on('error', reject)
+      req.end()
+    })
+    expect(status).toBe(404)
+    expect(channel.snapshot()).toMatchObject({ unknownPaths: 1, lastFailure: null })
+  })
+
+  test('an enabled status route answers with what it was given', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({
+      config: baseConfig(),
+      table: table(),
+      stats: channel,
+      status: { report: () => ({ allowed: true }) },
+    })
+    open.push(listener)
+    const reply = await new Promise<{ status: number; body: unknown }>((resolve, reject) => {
+      const req = request(
+        { host: '127.0.0.1', port: listener.address().port, path: '/p2p/v1/status', method: 'GET' },
+        (response) => {
+          const chunks: Buffer[] = []
+          response.on('data', (chunk: Buffer) => chunks.push(chunk))
+          response.on('end', () =>
+            resolve({
+              status: response.statusCode ?? 0,
+              body: JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown,
+            }),
+          )
+        },
+      )
+      req.on('error', reject)
+      req.end()
+    })
+    expect(reply).toEqual({ status: 200, body: { allowed: true } })
+  })
+
+  test('a status read from anywhere but loopback is refused', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({
+      config: baseConfig(),
+      table: table(),
+      stats: channel,
+      status: { report: () => ({ allowed: true }) },
+    })
+    open.push(listener)
+    const sent: { status: number; body: unknown }[] = []
+    const fakeRequest = {
+      method: 'GET',
+      url: '/p2p/v1/status',
+      headers: {},
+      socket: { remoteAddress: '10.1.2.3' },
+    } as unknown as Parameters<typeof listener.handle>[0]
+    const fakeResponse = {
+      writeHead: (status: number) => {
+        sent.push({ status, body: undefined })
+      },
+      end: (body: string) => {
+        sent[sent.length - 1] = { status: sent[sent.length - 1]!.status, body: JSON.parse(body) as unknown }
+      },
+    } as unknown as Parameters<typeof listener.handle>[1]
+    await listener.handle(fakeRequest, fakeResponse)
+    expect(sent[0]?.status).toBe(404)
+    expect(channel.snapshot().unknownPaths).toBe(1)
   })
 
   test('reports the port the OS actually bound', async () => {

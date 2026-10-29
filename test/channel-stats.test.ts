@@ -20,6 +20,7 @@ describe('a channel reports its own state', () => {
       lastFailure: null,
       inFlight: 0,
       underruns: 0,
+      unknownPaths: 0,
       sampledAt: 1_000,
     })
   })
@@ -105,6 +106,15 @@ describe('deliveries in flight are counted, and an unbalanced end is loud', () =
     const { stats: channel } = stats()
     channel.endDelivery()
     expect(channel.snapshot()).toMatchObject({ inFlight: 0, underruns: 1 })
+  })
+})
+
+describe('a request for a path we do not serve is counted, not called a failure', () => {
+  test('an unknown path leaves the failure field alone', () => {
+    const { stats: channel } = stats()
+    channel.unknownPath()
+    channel.unknownPath()
+    expect(channel.snapshot()).toMatchObject({ unknownPaths: 2, lastFailure: null })
   })
 })
 

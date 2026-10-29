@@ -47,6 +47,7 @@ export interface AdapterConfig extends ListenerConfig {
   instance: string
   policy: PolicySettings
   dedupe?: { ttlMs?: number; limit?: number }
+  status?: boolean
 }
 
 export interface ChannelConfig {
@@ -95,6 +96,7 @@ export const Config: any = Schema.object({
           host: Schema.string().default(DEFAULT_HOST),
           port: Schema.number().default(DEFAULT_PORT),
         }).default({}),
+        status: Schema.boolean().default(false),
         dedupe: Schema.object({
           ttlMs: Schema.number().default(7 * 24 * 60 * 60 * 1000),
           limit: Schema.number().default(100_000),
@@ -283,6 +285,18 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         table,
         onMessage: handOff,
         stats,
+        ...(adapter.status === true
+          ? {
+              status: {
+                report: () => ({
+                  channel: adapter.channel,
+                  bot: adapter.botName,
+                  instance: adapter.instance,
+                  snapshot: stats.snapshot(),
+                }),
+              },
+            }
+          : {}),
         onError: (error, request) => {
           warn(`dsbot-channel: handing off ${request.eventId} from ${request.instance} failed: ${String(error)}`)
         },

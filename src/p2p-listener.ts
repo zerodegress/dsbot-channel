@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net'
 import { assertBindHost } from './config.js'
 import type { DedupeTable } from './p2p-dedupe.js'
 import type { ChannelStats } from './channel-stats.js'
+import { STATUS_ROUTE, isLoopbackPeer } from './p2p-status.js'
 import { MAX_BODY_BYTES, P2P_ROUTE, handleMessage, parseRequest } from './p2p-protocol.js'
 import type { HandleResult, P2PConfig, P2PPayload } from './p2p-protocol.js'
 import type { InboundRequest } from './p2p-inbound.js'
@@ -72,6 +73,8 @@ export interface ListenerOptions {
   onError?: (error: unknown, request: InboundRequest) => void
   /** Collects what this channel can report about itself. */
   stats?: ChannelStats | undefined
+  /** Answers a loopback only status read; absent means the route does not exist. */
+  status?: { route?: string | undefined; report: () => unknown } | undefined
 }
 
 export interface Listener {
@@ -89,8 +92,18 @@ export async function startListener(options: ListenerOptions): Promise<Listener>
   const limit = options.config.maxBodyBytes ?? MAX_BODY_BYTES
 
   const handle = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+    const status = options.status
+    if (status !== undefined && request.method === 'GET' && request.url === (status.route ?? STATUS_ROUTE)) {
+      if (!isLoopbackPeer(request.socket.remoteAddress)) {
+        options.stats?.unknownPath()
+        send(response, 404, { error: 'not found' })
+        return
+      }
+      send(response, 200, status.report())
+      return
+    }
     if (request.method !== 'POST' || request.url !== P2P_ROUTE) {
-      options.stats?.rejected('not found')
+      options.stats?.unknownPath()
       send(response, 404, { error: 'not found' })
       return
     }
