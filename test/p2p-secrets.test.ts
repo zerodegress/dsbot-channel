@@ -90,8 +90,8 @@ describe('resolving peer references', () => {
 
 describe('the wire protocol resolves at request time', () => {
   const table = () => new DedupeTable({ ttlMs: 604_800_000, limit: 100_000 })
-  const payload = { eventId: 'e1', to: 'self-bot', sender: 'bot-a', instance: 'peer-a', body: 'hi', sentAt: 1 }
-  const base = { botName: 'self-bot', peers: refs, inflightTtlMs: 300_000, maxBodyBytes: 64 * 1024 }
+  const payload = { eventId: 'e1', to: 'self-bot', sender: 'bot-a', instance: 'peer-a', body: 'hi', sentAt: 1_700_000_000_000 }
+  const base = { botName: 'self-bot', peers: refs, inflightTtlMs: 300_000, maxBodyBytes: 64 * 1024, now: () => 1_700_000_000_000 }
 
   test('authenticates with the resolved value', async () => {
     const credentials = fakeCredentials({ P2P_A_SECRET: 'value-a', P2P_B_SECRET: 'value-b' })

@@ -9,6 +9,7 @@ import { assertPeersResolvable } from './p2p-secrets.js'
 import { PeerSessions } from './p2p-inbound.js'
 import type { InboundRequest, SessionControllerLike, SessionEventLike } from './p2p-inbound.js'
 import { sendToPeer } from './p2p-send.js'
+import { DEFAULT_SENT_AT_WINDOW_MS } from './p2p-protocol.js'
 import type { PeerTarget } from './p2p-send.js'
 import { DEFAULT_LOOP_IDLE_RESET_MS, DEFAULT_LOOP_MAX_TURNS, InboundGate } from './inbound-gate.js'
 import type { PolicyConfig } from './policy-config.js'
@@ -88,6 +89,7 @@ export const Config: any = Schema.object({
           }).default(undefined as never),
         }).default({}),
         inflightTtlMs: Schema.number().default(300_000),
+        sentAtWindowMs: Schema.number().default(DEFAULT_SENT_AT_WINDOW_MS),
         maxBodyBytes: Schema.number().default(64 * 1024),
         waitMs: Schema.number(),
         listen: Schema.object({
@@ -143,6 +145,13 @@ function prepareAdapter(adapter: AdapterConfig, index: number): DedupeTable {
         [...path('policy'), unsupported],
       )
     }
+  }
+  const window = adapter.sentAtWindowMs ?? DEFAULT_SENT_AT_WINDOW_MS
+  if (!Number.isInteger(window) || window < 1) {
+    throw new ConfigError(
+      `sentAtWindowMs must be a whole number of milliseconds, at least 1: ${window}`,
+      path('sentAtWindowMs'),
+    )
   }
   if (adapter.inflightTtlMs <= MAX_TURN_MS) {
     throw new ConfigError(
