@@ -113,7 +113,7 @@ function prepareAdapter(adapter: AdapterConfig, index: number): DedupeTable {
   }
   if (adapter.policy.budget !== undefined) {
     throw new ConfigError(
-      'policy.budget is not supported yet: nothing charges the ledger until the billing work lands',
+      'policy.budget is not supported in this version: no budget is charged yet',
       [...path('policy'), 'budget'],
     )
   }
