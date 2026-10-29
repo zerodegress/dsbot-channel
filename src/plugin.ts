@@ -47,6 +47,8 @@ export interface AdapterConfig extends ListenerConfig {
   kind?: 'p2p'
   channel: string
   instance: string
+  /** Runs every peer turn in this existing session instead of one created per peer. */
+  session?: string
   policy: PolicySettings
   dedupe?: { ttlMs?: number; limit?: number }
   status?: boolean
@@ -65,6 +67,7 @@ export const Config: any = Schema.object({
         channel: Schema.string().required(),
         instance: Schema.string().required(),
         botName: Schema.string().required(),
+        session: Schema.string(),
         peers: Schema.array(
           Schema.object({
             instance: Schema.string().required(),
@@ -209,7 +212,11 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const registry = new StatusRegistry()
   const started = await Promise.all(
     pairs.map(({ adapter, table }) => {
-      const sessions = new PeerSessions({ controller, observe })
+      const sessions = new PeerSessions({
+        controller,
+        observe,
+        ...(adapter.session === undefined ? {} : { session: adapter.session }),
+      })
       const stats = new ChannelStats()
       registry.register(adapter.channel, () => ({
         channel: adapter.channel,
