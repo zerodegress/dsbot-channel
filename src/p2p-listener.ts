@@ -90,18 +90,21 @@ export async function startListener(options: ListenerOptions): Promise<Listener>
 
   const handle = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     if (request.method !== 'POST' || request.url !== P2P_ROUTE) {
+      options.stats?.rejected('not found')
       send(response, 404, { error: 'not found' })
       return
     }
     const raw = await readBody(request, limit)
     let payload: P2PPayload
     if (!raw.ok) {
+      options.stats?.rejected('body exceeds the size limit')
       send(response, 413, { error: 'body exceeds the size limit' })
       return
     }
     try {
       payload = JSON.parse(raw.text) as P2PPayload
     } catch {
+      options.stats?.rejected('body must be valid json')
       send(response, 400, { error: 'body must be valid json' })
       return
     }
@@ -142,9 +145,11 @@ export async function startListener(options: ListenerOptions): Promise<Listener>
             }),
       })
     } catch (error) {
+      options.stats?.rejected(error instanceof Error ? error.message : 'internal error')
       send(response, 500, { error: error instanceof Error ? error.message : 'internal error' })
       return
     }
+    if (result.status !== 200) options.stats?.rejected(result.body.error)
     send(response, result.status, result.body)
   }
 

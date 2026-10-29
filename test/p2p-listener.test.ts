@@ -144,6 +144,81 @@ describe('listener', () => {
     expect(reply.status).toBe(401)
   })
 
+  test('records a refusal whose authentication still succeeded', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
+    open.push(listener)
+    const payload = message({ to: 'somebody-else' })
+    const signature = signBody(secret, { eventId: payload.eventId, sentAt: payload.sentAt, body: payload.body })
+    const reply = await post(listener.address().port, payload, { 'x-p2p-signature': signature })
+
+    expect(reply.status).toBe(403)
+    const snapshot = channel.snapshot()
+    expect(snapshot.lastFailure?.reason).toBe('message is addressed to another bot')
+    expect(snapshot.lastAuthenticatedAt).not.toBeNull()
+  })
+
+  test('records a body that is not json as a failure', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
+    open.push(listener)
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = request(
+        {
+          host: '127.0.0.1',
+          port: listener.address().port,
+          path: P2P_ROUTE,
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'content-length': 6 },
+        },
+        (response) => resolve(response.statusCode ?? 0),
+      )
+      req.on('error', reject)
+      req.end('{oops!')
+    })
+    expect(status).toBe(400)
+    expect(channel.snapshot().lastFailure?.reason).toBe('body must be valid json')
+  })
+
+  test('records an oversized body as a failure', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
+    open.push(listener)
+    const reply = await post(listener.address().port, message({ body: 'x'.repeat(70 * 1024) }), {
+      authorization: `Bearer ${secret}`,
+    })
+    expect(reply.status).toBe(413)
+    expect(channel.snapshot().lastFailure?.reason).toBe('body exceeds the size limit')
+  })
+
+  test('records an unknown route as a failure, because a wrong port looks like this', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
+    open.push(listener)
+    const reply = await new Promise<number>((resolve, reject) => {
+      const req = request(
+        { host: '127.0.0.1', port: listener.address().port, path: '/nope', method: 'POST' },
+        (response) => resolve(response.statusCode ?? 0),
+      )
+      req.on('error', reject)
+      req.end('{}')
+    })
+    expect(reply).toBe(404)
+    expect(channel.snapshot().lastFailure?.reason).toBe('not found')
+  })
+
+  test('an accepted delivery leaves no failure behind', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
+    open.push(listener)
+    const payload = message()
+    const signature = signBody(secret, { eventId: payload.eventId, sentAt: payload.sentAt, body: payload.body })
+    const reply = await post(listener.address().port, payload, { 'x-p2p-signature': signature })
+
+    expect(reply.status).toBe(200)
+    expect(channel.snapshot()).toMatchObject({ lastFailure: null, inFlight: 0, underruns: 0 })
+  })
+
   test('reports the port the OS actually bound', async () => {
     const channel = new ChannelStats()
     const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })

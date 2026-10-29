@@ -19,6 +19,7 @@ describe('a channel reports its own state', () => {
       lastAuthenticatedAt: null,
       lastFailure: null,
       inFlight: 0,
+      underruns: 0,
       sampledAt: 1_000,
     })
   })
@@ -83,7 +84,7 @@ describe('authentication is timestamped, refusals are remembered', () => {
   })
 })
 
-describe('deliveries in flight are counted, never below zero', () => {
+describe('deliveries in flight are counted, and an unbalanced end is loud', () => {
   test('two deliveries in flight are reported as two', () => {
     const { stats: channel } = stats()
     channel.beginDelivery()
@@ -93,11 +94,17 @@ describe('deliveries in flight are counted, never below zero', () => {
     expect(channel.snapshot().inFlight).toBe(1)
   })
 
-  test('ending more deliveries than started stays at zero', () => {
+  test('a balanced pair leaves nothing behind', () => {
+    const { stats: channel } = stats()
+    channel.beginDelivery()
+    channel.endDelivery()
+    expect(channel.snapshot()).toMatchObject({ inFlight: 0, underruns: 0 })
+  })
+
+  test('ending a delivery that never began is counted instead of hidden', () => {
     const { stats: channel } = stats()
     channel.endDelivery()
-    channel.endDelivery()
-    expect(channel.snapshot().inFlight).toBe(0)
+    expect(channel.snapshot()).toMatchObject({ inFlight: 0, underruns: 1 })
   })
 })
 

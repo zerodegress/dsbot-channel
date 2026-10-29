@@ -11,6 +11,8 @@ export interface ChannelSnapshot {
   lastAuthenticatedAt: number | null
   lastFailure: ChannelFailure | null
   inFlight: number
+  /** Deliveries that ended without one having begun, which is always a bug. */
+  underruns: number
   sampledAt: number
 }
 
@@ -22,6 +24,7 @@ export class ChannelStats {
   #lastAuthenticatedAt: number | null = null
   #lastFailure: ChannelFailure | null = null
   #inFlight = 0
+  #underruns = 0
 
   constructor(now: () => number = Date.now) {
     this.#now = now
@@ -56,7 +59,11 @@ export class ChannelStats {
   }
 
   endDelivery(): void {
-    this.#inFlight = Math.max(0, this.#inFlight - 1)
+    if (this.#inFlight === 0) {
+      this.#underruns += 1
+      return
+    }
+    this.#inFlight -= 1
   }
 
   snapshot(): ChannelSnapshot {
@@ -66,6 +73,7 @@ export class ChannelStats {
       lastAuthenticatedAt: this.#lastAuthenticatedAt,
       lastFailure: this.#lastFailure === null ? null : { at: this.#lastFailure.at, reason: this.#lastFailure.reason },
       inFlight: this.#inFlight,
+      underruns: this.#underruns,
       sampledAt: this.#now(),
     }
   }

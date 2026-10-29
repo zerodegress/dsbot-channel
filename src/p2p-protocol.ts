@@ -87,10 +87,7 @@ export async function handleMessage(input: HandleInput): Promise<HandleResult> {
     sentAt: request.sentAt,
     body: request.body,
   })
-  if (!verified.ok) {
-    input.stats?.rejected(verified.reason ?? 'unauthorized')
-    return { ok: false, status: verified.status ?? 401, body: { error: verified.reason ?? 'unauthorized' } }
-  }
+  if (!verified.ok) return { ok: false, status: verified.status ?? 401, body: { error: verified.reason ?? 'unauthorized' } }
   input.stats?.authenticated()
   if (request.instance !== verified.instance) return { ok: false, status: 403, body: { error: 'instance does not match the bound secret' } }
   if (request.to !== config.botName) return { ok: false, status: 403, body: { error: 'message is addressed to another bot' } }
