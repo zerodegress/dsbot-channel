@@ -135,6 +135,26 @@ describe('plugin lifecycle', () => {
 })
 
 describe('running peer messages', () => {
+  test('activates once both services appear', async () => {
+    const ctx = new Context()
+    await ctx.plugin(entry.default, config())
+    expect(ctx.get('dsbot-channel.peers')).toBeUndefined()
+
+    await ctx.plugin(credentialsProvider)
+    await ctx.plugin({
+      name: 'stub-sessions',
+      apply(c: Context) {
+        c.provide('sessionController')
+        c.set('sessionController', sessionStub)
+      },
+    })
+
+    for (let attempt = 0; attempt < 100 && ctx.get('dsbot-channel.peers') === undefined; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+    expect(ctx.get('dsbot-channel.peers')).toHaveLength(1)
+  })
+
   test('stays inactive while the session service is missing', async () => {
     const ctx = new Context()
     await ctx.plugin(credentialsProvider)
