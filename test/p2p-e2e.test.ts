@@ -458,6 +458,6 @@ describe('policy budget', () => {
         },
       ],
     }
-    await expect(ctx.plugin(entry, config)).rejects.toThrow(/unknown config fields: budget/)
+    await expect(ctx.plugin(entry, config)).rejects.toThrow(/policy\.budget is not supported yet/)
   })
 })

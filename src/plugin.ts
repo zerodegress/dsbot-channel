@@ -32,6 +32,7 @@ export interface PolicySettings extends PolicyConfig {
   score?: unknown
   judge?: unknown
   prepare?: unknown
+  budget?: unknown
 }
 
 export interface AdapterConfig extends ListenerConfig {
@@ -75,6 +76,7 @@ export const Config: any = Schema.object({
           score: Schema.any(),
           judge: Schema.any(),
           prepare: Schema.any(),
+          budget: Schema.any(),
         }).default({}),
         inflightTtlMs: Schema.number().default(300_000),
         maxBodyBytes: Schema.number().default(64 * 1024),
@@ -107,6 +109,12 @@ function prepareAdapter(adapter: AdapterConfig, index: number): DedupeTable {
     throw new ConfigError(
       `relayResetMs must be a whole number of milliseconds, at least 1: ${relayResetMs}`,
       path('policy'),
+    )
+  }
+  if (adapter.policy.budget !== undefined) {
+    throw new ConfigError(
+      'policy.budget is not supported yet: nothing charges the ledger until the billing work lands',
+      [...path('policy'), 'budget'],
     )
   }
   for (const unsupported of ['score', 'judge', 'prepare'] as const) {
