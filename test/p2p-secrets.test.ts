@@ -3,6 +3,8 @@ import { SecretRefError, assertPeersResolvable, resolvePeers } from '../src/p2p-
 import type { CredentialsLike } from '../src/p2p-secrets.js'
 import { DedupeTable } from '../src/p2p-dedupe.js'
 import { handleMessage } from '../src/p2p-protocol.js'
+import { signEnvelope } from '../src/p2p-auth.js'
+import type { Envelope } from '../src/p2p-auth.js'
 
 const refs = [
   { instance: 'peer-a', secret: 'P2P_A_SECRET' },
@@ -88,6 +90,11 @@ describe('resolving peer references', () => {
   })
 })
 
+const signed = (secretValue: string, body: Record<string, unknown>) => ({
+  signature: signEnvelope(secretValue, body as unknown as Envelope),
+  claimedInstance: 'peer-a',
+})
+
 describe('the wire protocol resolves at request time', () => {
   const table = () => new DedupeTable({ ttlMs: 604_800_000, limit: 100_000 })
   const payload = { eventId: 'e1', to: 'self-bot', sender: 'bot-a', instance: 'peer-a', body: 'hi', sentAt: 1_700_000_000_000 }
@@ -95,21 +102,21 @@ describe('the wire protocol resolves at request time', () => {
 
   test('authenticates with the resolved value', async () => {
     const credentials = fakeCredentials({ P2P_A_SECRET: 'value-a', P2P_B_SECRET: 'value-b' })
-    const result = await handleMessage({ config: { ...base, credentials }, table: table(), auth: { authorization: 'Bearer value-a', claimedInstance: 'peer-a' }, payload })
+    const result = await handleMessage({ config: { ...base, credentials }, table: table(), auth: signed('value-a', payload), payload })
     expect(result).toMatchObject({ ok: true, status: 200, body: { messageId: 'p2p-e1' } })
   })
 
   test('a rotated credential takes effect without restarting', async () => {
     const store: Record<string, string> = { P2P_A_SECRET: 'value-a', P2P_B_SECRET: 'value-b' }
     const config = { ...base, credentials: fakeCredentials(store) }
-    expect((await handleMessage({ config, table: table(), auth: { authorization: 'Bearer value-a', claimedInstance: 'peer-a' }, payload })).ok).toBe(true)
+    expect((await handleMessage({ config, table: table(), auth: signed('value-a', payload), payload })).ok).toBe(true)
     store.P2P_A_SECRET = 'rotated-a'
-    expect(await handleMessage({ config, table: table(), auth: { authorization: 'Bearer value-a', claimedInstance: 'peer-a' }, payload: { ...payload, eventId: 'e2' } })).toMatchObject({ ok: false, status: 401 })
-    expect((await handleMessage({ config, table: table(), auth: { authorization: 'Bearer rotated-a', claimedInstance: 'peer-a' }, payload: { ...payload, eventId: 'e3' } })).ok).toBe(true)
+    expect(await handleMessage({ config, table: table(), auth: signed('value-a', { ...payload, eventId: 'e2' }), payload: { ...payload, eventId: 'e2' } })).toMatchObject({ ok: false, status: 401 })
+    expect((await handleMessage({ config, table: table(), auth: signed('rotated-a', { ...payload, eventId: 'e3' }), payload: { ...payload, eventId: 'e3' } })).ok).toBe(true)
   })
 
   test('a peer whose reference stopped resolving is rejected', async () => {
-    const result = await handleMessage({ config: { ...base, credentials: fakeCredentials({}) }, table: table(), auth: { authorization: 'Bearer value-a', claimedInstance: 'peer-a' }, payload })
+    const result = await handleMessage({ config: { ...base, credentials: fakeCredentials({}) }, table: table(), auth: signed('value-a', payload), payload })
     expect(result).toEqual({ ok: false, status: 401, body: { error: 'peer secret is not configured' } })
   })
 })

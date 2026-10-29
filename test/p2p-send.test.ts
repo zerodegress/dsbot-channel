@@ -7,6 +7,8 @@ import { startListener } from '../src/p2p-listener.js'
 import type { Listener } from '../src/p2p-listener.js'
 import { staticCredentials } from '../src/p2p-secrets.js'
 import { sendToPeer } from '../src/p2p-send.js'
+import { signEnvelope } from '../src/p2p-auth.js'
+import type { Envelope } from '../src/p2p-auth.js'
 
 const REF = '{{SECRET_dgntdkke}}'
 const SECRET = 'shared-value'
@@ -51,7 +53,37 @@ const base = (url: string) => ({
   instance: 'sender-inst',
 })
 
+async function capture(): Promise<{ url: string; seen: () => { body: string; headers: Record<string, unknown> } }> {
+  let seen: { body: string; headers: Record<string, unknown> } = { body: '', headers: {} }
+  const server = createServer((request, response) => {
+    let raw = ''
+    request.on('data', (chunk: Buffer) => {
+      raw += chunk.toString()
+    })
+    request.on('end', () => {
+      seen = { body: raw, headers: request.headers as Record<string, unknown> }
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.end(JSON.stringify({ duplicate: false, messageId: 'p2p-evt-1' }))
+    })
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  servers.push(server)
+  const address = server.address() as AddressInfo
+  return { url: `http://127.0.0.1:${address.port}`, seen: () => seen }
+}
+
 describe('sending a message', () => {
+  test('the bytes that are signed are exactly the bytes that are sent', async () => {
+    const target = await capture()
+
+    await sendToPeer({ ...base(target.url), status: 'declined', reason: 'not wanted', final: true })
+
+    const seen = target.seen()
+    const sent = JSON.parse(seen.body) as Envelope
+    expect(signEnvelope(SECRET, sent)).toBe(seen.headers['x-p2p-signature'])
+    expect(sent).toMatchObject({ status: 'declined', reason: 'not wanted', final: true })
+  })
+
   test('a signed message reaches the peer and returns its messageId', async () => {
     const { url } = await peer()
     const result = await sendToPeer(base(url))

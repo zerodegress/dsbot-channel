@@ -17,40 +17,24 @@ function envelope(overrides: Partial<Envelope> = {}): Envelope {
   }
 }
 
-describe('secret based auth', () => {
+describe('the only way in', () => {
   const peers = [{ instance: 'peer-a', secret: 'secret-a' }, { instance: 'peer-b', secret: 'secret-b' }]
 
-  test('resolves the instance from the secret, not from the body', () => {
-    const result = verifyRequest({ peers, authorization: 'Bearer secret-a', claimedInstance: '' })
-    expect(result.ok).toBe(true)
-    expect(result.instance).toBe('peer-a')
-  })
-
-  test('rejects when the claimed instance disagrees with the secret', () => {
-    const result = verifyRequest({ peers, authorization: 'Bearer secret-a', claimedInstance: 'peer-b' })
-    expect(result.ok).toBe(false)
-    expect(result.status).toBe(403)
-  })
-
-  test('rejects an unknown secret', () => {
-    const result = verifyRequest({ peers, authorization: 'Bearer nope', claimedInstance: 'peer-a' })
+  test('a bearer token is no longer accepted, so every call must be signed', () => {
+    const result = verifyRequest({ peers, claimedInstance: 'peer-a' })
     expect(result.ok).toBe(false)
     expect(result.status).toBe(401)
+    expect(result.reason).toBe('missing signature')
   })
 
-  test('rejects a missing authorization header', () => {
-    const result = verifyRequest({ peers, authorization: null, claimedInstance: 'peer-a' })
+  test('a signature with no envelope to check it against is refused', () => {
+    const result = verifyRequest({ peers, signature: 'anything', claimedInstance: 'peer-a' })
     expect(result.ok).toBe(false)
     expect(result.status).toBe(401)
   })
 
   test('refuses to start with no peers configured', () => {
-    expect(() => verifyRequest({ peers: [], authorization: 'Bearer x', claimedInstance: 'a' })).toThrow(/secret/i)
-  })
-
-  test('a secret of another peer does not authenticate as this one', () => {
-    const result = verifyRequest({ peers, authorization: 'Bearer secret-b', claimedInstance: 'peer-a' })
-    expect(result.ok).toBe(false)
+    expect(() => verifyRequest({ peers: [], claimedInstance: 'a' })).toThrow(/secret/i)
   })
 })
 
