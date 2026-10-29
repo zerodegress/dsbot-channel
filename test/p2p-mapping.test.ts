@@ -17,6 +17,10 @@ describe('p2p event mapping', () => {
     expect(toP2PEvent(inbound).author.senderId).toBe('bot-a')
   })
 
+  test('the author is marked as a bot, never as a person', () => {
+    expect(toP2PEvent(inbound).author.kind).toBe('bot')
+  })
+
   test('the eventKey uses the derived messageId', () => {
     expect(toP2PEvent(inbound).meta.derived.eventKey).toBe('peer-a:p2p-e1')
   })

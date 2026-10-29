@@ -14,8 +14,12 @@ export interface Source {
   scope: Scope
 }
 
+export const AUTHOR_KINDS = ['person', 'bot'] as const
+export type AuthorKind = (typeof AUTHOR_KINDS)[number]
+
 export interface Author {
   senderId: string
+  kind: AuthorKind
   personId: string | null
 }
 
