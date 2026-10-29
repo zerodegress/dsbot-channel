@@ -129,7 +129,6 @@ export async function startListener(options: ListenerOptions): Promise<Listener>
         config: options.config,
         table: options.table,
         auth: {
-          authorization: request.headers.authorization ?? null,
           signature: readSignature(request),
           claimedInstance: claimed,
         },

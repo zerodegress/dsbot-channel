@@ -27,7 +27,6 @@ export interface Envelope {
 
 export interface AuthInput {
   peers: readonly PeerSecret[]
-  authorization?: string | null | undefined
   signature?: string | null | undefined
   claimedInstance: string
   envelope?: Envelope | undefined
@@ -66,29 +65,15 @@ export function signEnvelope(secret: string, envelope: Envelope): string {
 export function verifyRequest(input: AuthInput): AuthResult {
   if (!input.peers.length) throw new Error('p2p: at least one peer secret is required to start')
 
-  if (input.signature) {
-    if (input.envelope === undefined) return { ok: false, status: 401, reason: 'bad signature' }
-    for (const peer of input.peers) {
-      const expected = signEnvelope(peer.secret, input.envelope)
-      if (sameSecret(expected, input.signature)) {
-        if (input.claimedInstance && input.claimedInstance !== peer.instance) {
-          return { ok: false, status: 403, reason: 'instance does not match the signing key' }
-        }
-        return { ok: true, instance: peer.instance }
-      }
-    }
-    return { ok: false, status: 401, reason: 'bad signature' }
-  }
-
-  const header = input.authorization ?? ''
-  if (!header.startsWith('Bearer ')) return { ok: false, status: 401, reason: 'missing bearer token' }
-  const presented = header.slice('Bearer '.length)
+  if (!input.signature || input.envelope === undefined) return { ok: false, status: 401, reason: 'missing signature' }
   for (const peer of input.peers) {
-    if (!sameSecret(presented, peer.secret)) continue
-    if (input.claimedInstance && input.claimedInstance !== peer.instance) {
-      return { ok: false, status: 403, reason: 'instance does not match the bound secret' }
+    const expected = signEnvelope(peer.secret, input.envelope)
+    if (sameSecret(expected, input.signature)) {
+      if (input.claimedInstance && input.claimedInstance !== peer.instance) {
+        return { ok: false, status: 403, reason: 'instance does not match the signing key' }
+      }
+      return { ok: true, instance: peer.instance }
     }
-    return { ok: true, instance: peer.instance }
   }
-  return { ok: false, status: 401, reason: 'unknown secret' }
+  return { ok: false, status: 401, reason: 'bad signature' }
 }

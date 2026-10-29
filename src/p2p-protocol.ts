@@ -32,7 +32,6 @@ export interface P2PPayload {
 }
 
 export interface AuthHeader {
-  authorization?: string | null
   signature?: string | null
   claimedInstance: string
 }
@@ -121,7 +120,6 @@ export async function handleMessage(input: HandleInput): Promise<HandleResult> {
   }
   const verified = verifyRequest({
     peers: resolved,
-    authorization: auth.authorization ?? null,
     signature: auth.signature ?? null,
     claimedInstance: auth.claimedInstance,
     envelope: request,

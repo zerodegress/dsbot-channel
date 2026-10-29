@@ -1,4 +1,4 @@
-import { signEnvelope } from './p2p-auth.js'
+import { canonicalEnvelope, signEnvelope } from './p2p-auth.js'
 import { SecretRefError, resolvePeers } from './p2p-secrets.js'
 import type { CredentialsLike, PeerRef } from './p2p-secrets.js'
 import { P2P_ROUTE } from './p2p-protocol.js'
@@ -75,17 +75,7 @@ export async function sendToPeer(input: SendInput): Promise<SendResult> {
     ...(input.final === undefined ? {} : { final: input.final }),
   }
   const signature = signEnvelope(secret, envelope)
-  const payload = JSON.stringify({
-    eventId: input.eventId,
-    to: input.to,
-    sender: input.sender,
-    instance: input.instance,
-    body: input.body,
-    sentAt,
-    ...(input.status === undefined ? {} : { status: input.status }),
-    ...(input.reason === undefined ? {} : { reason: input.reason }),
-    ...(input.final === undefined ? {} : { final: input.final }),
-  })
+  const payload = canonicalEnvelope(envelope)
   const send = input.fetchImpl ?? fetch
 
   let response: Response
