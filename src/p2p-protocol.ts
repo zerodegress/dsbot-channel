@@ -37,9 +37,21 @@ export interface AuthHeader {
   claimedInstance: string
 }
 
-export type Parsed =
-  | { ok: true; value: { eventId: string; to: string; sender: string; instance: string; body: string; sentAt: number } }
-  | { ok: false; status: 400 | 413; reason: string }
+export const DECLINED = 'declined'
+
+export interface ParsedMessage {
+  eventId: string
+  to: string
+  sender: string
+  instance: string
+  body: string
+  sentAt: number
+  status?: typeof DECLINED
+  reason?: string
+  final?: boolean
+}
+
+export type Parsed = { ok: true; value: ParsedMessage } | { ok: false; status: 400 | 413; reason: string }
 
 export function parseRequest(payload: P2PPayload, maxBodyBytes = MAX_BODY_BYTES): Parsed {
   const { eventId, to, sender, instance, body, sentAt } = payload
@@ -49,7 +61,28 @@ export function parseRequest(payload: P2PPayload, maxBodyBytes = MAX_BODY_BYTES)
   if (typeof sentAt !== 'number' || !Number.isFinite(sentAt)) return { ok: false, status: 400, reason: 'sentAt must be a number' }
   const text = body as string
   if (Buffer.byteLength(text, 'utf8') > maxBodyBytes) return { ok: false, status: 413, reason: 'body exceeds the size limit' }
-  return { ok: true, value: { eventId: eventId as string, to: to as string, sender: sender as string, instance: instance as string, body: text, sentAt } }
+  const status = payload.status
+  if (status !== undefined && status !== DECLINED) {
+    return { ok: false, status: 400, reason: `status must be "${DECLINED}" when it is present` }
+  }
+  const reason = payload.reason
+  if (reason !== undefined && typeof reason !== 'string') return { ok: false, status: 400, reason: 'reason must be a string' }
+  const final = payload.final
+  if (final !== undefined && typeof final !== 'boolean') return { ok: false, status: 400, reason: 'final must be a boolean' }
+  return {
+    ok: true,
+    value: {
+      eventId: eventId as string,
+      to: to as string,
+      sender: sender as string,
+      instance: instance as string,
+      body: text,
+      sentAt,
+      ...(status === undefined ? {} : { status }),
+      ...(reason === undefined ? {} : { reason }),
+      ...(final === undefined ? {} : { final }),
+    },
+  }
 }
 
 export interface HandleInput {

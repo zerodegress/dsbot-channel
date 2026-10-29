@@ -5,12 +5,16 @@ import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
 import { staticCredentials } from '../src/p2p-secrets.js'
 import { sendToPeer } from '../src/p2p-send.js'
+import { PEER_GUIDANCE } from '../src/inbound-guidance.js'
 
 const REF = '{{SECRET_4dhhwz2n}}'
 const INCOMING = '[p2p from inst-a · bot-a · p2p-evt-1] hello'
-const ANSWER = `reply:${INCOMING}`
-const ECHOED = `[p2p from inst-b · bot-b · p2p-reply:evt-1] ${ANSWER}`
 const credentials = staticCredentials({ [REF]: 'shared-value' })
+
+/** Drops the line a session is taught once, so a test can read the message itself. */
+function bodyOf(text: string): string {
+  return text.startsWith(PEER_GUIDANCE) ? text.slice(PEER_GUIDANCE.length + 2) : text
+}
 
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -146,12 +150,13 @@ describe('two adapters in one process', () => {
 
     await waitFor(() => sessions.prompted.length >= 2)
 
-    expect(sessions.prompted[0]?.text.startsWith('[p2p from inst-a · bot-a · p2p-evt-1] ')).toBe(true)
-    expect(sessions.prompted[0]?.text.endsWith(' hello')).toBe(true)
-    expect(sessions.prompted[0]?.text).toBe(INCOMING)
+    expect(sessions.prompted[0]?.text.startsWith(PEER_GUIDANCE)).toBe(true)
+    expect(bodyOf(sessions.prompted[0]?.text ?? '').startsWith('[p2p from inst-a · bot-a · p2p-evt-1] ')).toBe(true)
+    expect(bodyOf(sessions.prompted[0]?.text ?? '').endsWith(' hello')).toBe(true)
+    expect(bodyOf(sessions.prompted[0]?.text ?? '')).toBe(INCOMING)
     expect(sessions.prompted[0]?.requestId).toBe('evt-1')
-    expect(sessions.prompted[1]?.text.startsWith('[p2p from inst-b · bot-b · p2p-reply:evt-1] ')).toBe(true)
-    expect(sessions.prompted[1]?.text).toBe(ECHOED)
+    expect(bodyOf(sessions.prompted[1]?.text ?? '').startsWith('[p2p from inst-b · bot-b · p2p-reply:evt-1] ')).toBe(true)
+    expect(bodyOf(sessions.prompted[1]?.text ?? '')).toContain(INCOMING)
 
     await waitFor(() => sessions.prompted.length === 2)
     await new Promise((resolve) => setTimeout(resolve, 30))
@@ -206,7 +211,8 @@ describe('two adapters in one process', () => {
     await waitFor(() => warnings.length > 0)
     expect(warnings.some((line) => line.includes('no_url'))).toBe(true)
     expect(warnings.some((line) => line.includes('inst-b'))).toBe(true)
-    expect(sessions.prompted.map((entry) => entry.text)).toEqual([INCOMING, ECHOED])
+    expect(bodyOf(sessions.prompted[0]?.text ?? '')).toBe(INCOMING)
+    expect(bodyOf(sessions.prompted[1]?.text ?? '')).toContain(INCOMING)
     await new Promise((resolve) => setTimeout(resolve, 30))
     expect(sessions.prompted).toHaveLength(2)
 
@@ -449,10 +455,10 @@ describe('the send_text tool', () => {
     return { tools, sessions, portA, portB }
   }
 
-  test('only send_text is registered, because a peer link carries text alone', async () => {
+  test('a peer link registers the text tool and the two ways to close a chain', async () => {
     const { tools } = await mountPair()
 
-    expect(tools.map((tool) => tool.name)).toEqual(['send_text'])
+    expect(tools.map((tool) => tool.name)).toEqual(['send_text', 'end', 'decline'])
   })
 
   test('a push with no arguments answers the peer that just messaged this session', async () => {
@@ -478,6 +484,181 @@ describe('the send_text tool', () => {
     const second = JSON.parse((await tools[0]?.execute({ text: 'once', idempotencyKey: 'k1' }, { agent: { id: sessionId } })) as string)
 
     expect(second).toEqual(first)
+  })
+})
+
+describe('closing a peer conversation', () => {
+  interface Captured {
+    status?: string
+    final?: boolean
+    reason?: string
+    body?: string
+  }
+
+  interface Mounted {
+    posts: Captured[]
+    prompted: string[]
+    port: number
+    close: () => void
+  }
+
+  async function mount(first: 'end' | 'decline' | 'none', later: 'end' | 'decline' | 'none' = first): Promise<Mounted> {
+    const posts: Captured[] = []
+    const capture = createServer((request, response) => {
+      let raw = ''
+      request.on('data', (chunk: string) => {
+        raw += chunk
+      })
+      request.on('end', () => {
+        posts.push(JSON.parse(raw) as Captured)
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({ ok: true }))
+      })
+    })
+    await new Promise<void>((resolve) => capture.listen(0, '127.0.0.1', resolve))
+    const capturePort = (capture.address() as AddressInfo).port
+
+    const port = await freePort()
+    const ctx = new Context()
+    captureWarnings(ctx)
+    const prompted: string[] = []
+    const registered: { name: string; execute: (args: unknown, exec: unknown) => Promise<string> }[] = []
+    const controller = {
+      create(): Promise<{ sessionId: string }> {
+        return Promise.resolve({ sessionId: 'session-main' })
+      },
+      async prompt(request: {
+        sessionId: string
+        requestId: string
+        content: readonly { type: string; text?: string }[]
+      }): Promise<{ accepted: boolean }> {
+        prompted.push(request.content.map((part) => part.text ?? '').join(''))
+        const emit = (event: unknown): void => {
+          ctx.emit('session/event', { id: request.sessionId } as never, event as never)
+        }
+        emit({ type: 'turn/start' })
+        const call = prompted.length === 1 ? first : later
+        const tool = registered.find((candidate) => candidate.name === call)
+        if (tool !== undefined) {
+          await tool.execute({ reason: 'no' }, { agent: { id: request.sessionId }, concludeTurn: () => undefined } as never)
+        }
+        emit({ type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'a reply that must not leave' }] } } })
+        emit({ type: 'turn/end' })
+        return { accepted: true }
+      },
+    }
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', controller)
+        scope.provide('tools')
+        scope.set('tools', {
+          register(definition: { name: string; execute: (args: unknown, exec: unknown) => Promise<string> }) {
+            registered.push(definition)
+            return () => undefined
+          },
+        })
+      },
+    })
+    const fork = await ctx.plugin(entry, {
+      adapters: [
+        {
+          channel: 'p2p:b',
+          instance: 'inst-b',
+          botName: 'bot-b',
+          peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}` }],
+          listen: { host: '127.0.0.1', port },
+        },
+      ],
+    })
+    forks.push(fork)
+    return { posts, prompted, port, close: () => capture.close() }
+  }
+
+  test('end leaves the peer with nothing at all', async () => {
+    const mounted = await mount('end')
+    try {
+      await send(mounted.port, 'evt-1', 'hello')
+      await waitFor(() => mounted.prompted.length === 1)
+      await new Promise((resolve) => setTimeout(resolve, 60))
+      expect(mounted.posts).toHaveLength(0)
+    } finally {
+      mounted.close()
+    }
+  })
+
+  test('decline sends one refusal and nothing after it', async () => {
+    const mounted = await mount('decline')
+    try {
+      await send(mounted.port, 'evt-1', 'hello')
+      await waitFor(() => mounted.posts.length === 1)
+      expect(mounted.posts[0]).toMatchObject({ status: 'declined', final: true, reason: 'no', body: '' })
+
+      await send(mounted.port, 'reply:evt-1', 'are you there')
+      await waitFor(() => mounted.prompted.length === 2)
+      await new Promise((resolve) => setTimeout(resolve, 60))
+      expect(mounted.posts).toHaveLength(1)
+    } finally {
+      mounted.close()
+    }
+  })
+
+  test('a message on a closed chain still runs its turn and answers nothing', async () => {
+    const mounted = await mount('decline', 'none')
+    try {
+      await send(mounted.port, 'evt-1', 'hello')
+      await waitFor(() => mounted.posts.length === 1)
+
+      await send(mounted.port, 'reply:evt-1', 'are you there')
+      await waitFor(() => mounted.prompted.length === 2)
+      await new Promise((resolve) => setTimeout(resolve, 60))
+      expect(mounted.posts).toHaveLength(1)
+    } finally {
+      mounted.close()
+    }
+  })
+
+  test('a declined message still runs a turn and answers nothing', async () => {
+    const mounted = await mount('none')
+    try {
+      const sent = await sendToPeer({
+        peer: { instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${mounted.port}` },
+        credentials,
+        to: 'bot-b',
+        body: 'stop it',
+        eventId: 'evt-9',
+        sender: 'bot-a',
+        instance: 'inst-a',
+        status: 'declined',
+        reason: 'not wanted',
+        final: true,
+      })
+      expect(sent.ok).toBe(true)
+
+      await waitFor(() => mounted.prompted.length === 1)
+      await new Promise((resolve) => setTimeout(resolve, 60))
+      expect(mounted.posts).toHaveLength(0)
+    } finally {
+      mounted.close()
+    }
+  })
+
+  test('the guidance rides the first message of a session only', async () => {
+    const mounted = await mount('none')
+    try {
+      await send(mounted.port, 'evt-1', 'first')
+      await waitFor(() => mounted.prompted.length === 1)
+      await send(mounted.port, 'evt-2', 'second')
+      await waitFor(() => mounted.prompted.length === 2)
+
+      expect(mounted.prompted[0]).toContain('call end')
+      expect(mounted.prompted[1]).not.toContain('call end')
+    } finally {
+      mounted.close()
+    }
   })
 })
 

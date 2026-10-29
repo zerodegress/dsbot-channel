@@ -5,6 +5,10 @@ export interface InboundRequest {
   instance: string
   body: string
   sentAt: number
+  /** The peer refused this request, so its turn runs but answers nothing. */
+  status?: 'declined'
+  reason?: string
+  final?: boolean
 }
 
 export interface SessionMessagePart {
