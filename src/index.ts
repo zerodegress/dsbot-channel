@@ -46,6 +46,8 @@ export type {
   SkipTarget,
 } from './pipeline.js'
 export { DEFAULT_PIPELINE, checkPipeline, defaultPipelineNodes } from './pipeline-config.js'
+export { compilePolicy } from './policy-config.js'
+export type { CompiledPolicy, PolicyConfig } from './policy-config.js'
 export type { CheckReport, PipelineNodeSpec, PipelineSettings } from './pipeline-config.js'
 export { BudgetLedger, DEFAULT_BUDGET, sessionKeyFor } from './budget-ledger.js'
 export type {
@@ -106,3 +108,5 @@ export { DEFAULT_SEND_TIMEOUT_MS, sendToPeer } from './p2p-send.js'
 export type { PeerTarget, SendFailure, SendFailureCode, SendInput, SendResult, SendSuccess } from './p2p-send.js'
 export { DEFAULT_LOOP_IDLE_RESET_MS, DEFAULT_LOOP_MAX_TURNS, InboundGate } from './inbound-gate.js'
 export type { AdmitInput, GateDecision, GateOptions, GateReason, LoopConfig } from './inbound-gate.js'
+export { BuildError, buildPipeline } from './build-pipeline.js'
+export type { BudgetVerdict, JudgeVerdict, MatchRule, PipelineDeps } from './build-pipeline.js'

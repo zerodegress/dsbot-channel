@@ -153,6 +153,8 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
               eventKey: event.meta.derived.eventKey,
               scope: event.source.scope,
               mentioned: event.meta.transport.mentioned,
+              text: request.body,
+              peer: request.instance,
             },
             peer: request.instance,
             botId: adapter.botName,

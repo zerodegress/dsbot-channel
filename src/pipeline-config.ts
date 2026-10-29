@@ -66,6 +66,9 @@ export function checkPipeline(nodes: readonly PipelineNodeSpec[]): CheckReport {
   }
   const deny = index('deny')
   const allow = index('allow')
+  if (nodes.length > 0 && allow < 0) {
+    warnings.push('no "allow" node: every message is denied while this pipeline is attached')
+  }
   if (deny >= 0 && allow >= 0 && allow < deny) warnings.push('allow runs before deny')
 
   const score = index('score')

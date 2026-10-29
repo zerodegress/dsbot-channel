@@ -12,6 +12,10 @@ export interface PipelineEvent {
   eventKey: string
   scope: Scope
   mentioned: boolean
+  /** What the rules match on; empty when the adapter carries no text. */
+  text: string
+  /** The identity that admitted the message, when the adapter has one. */
+  peer?: string
 }
 
 export interface DenyOutput {
@@ -33,6 +37,7 @@ export interface RestrictOutput {
 export interface ScoreOutput {
   kind: 'score'
   value: number
+  reason?: string
 }
 
 export interface PassOutput {
@@ -131,6 +136,7 @@ export class Pipeline {
           break
         case 'score':
           score += output.value
+          if (output.reason) reasons[node.id] = output.reason
           break
         case 'pass':
           break

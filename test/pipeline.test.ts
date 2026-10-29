@@ -3,7 +3,7 @@ import { Pipeline } from '../src/pipeline.js'
 import type { PipelineNode } from '../src/pipeline.js'
 import { DEFAULT_PIPELINE, checkPipeline, defaultPipelineNodes } from '../src/pipeline-config.js'
 
-const event = { eventKey: 'onebot:1:m1', scope: 'group' as const, mentioned: false }
+const event = { eventKey: 'onebot:1:m1', scope: 'group' as const, mentioned: false, text: 'hello' }
 
 function node(id: string, type: PipelineNode['type'], outcome: unknown, calls?: string[]): PipelineNode {
   return {
@@ -132,6 +132,29 @@ describe('load time checks', () => {
   test('a prepare node before allow or judge is a warning', () => {
     const report = checkPipeline([{ id: 'p', type: 'prepare' }, { id: 'a', type: 'allow' }])
     expect(report.warnings.join(' ')).toMatch(/prepare/)
+  })
+
+  test('a pipeline without an allow node warns that nothing will get through', () => {
+    const report = checkPipeline([{ id: 'd', type: 'deny' }])
+    expect(report.fatal).toEqual([])
+    expect(report.warnings).toEqual(['no "allow" node: every message is denied while this pipeline is attached'])
+  })
+
+  test('an empty node list means no pipeline at all, so it warns about nothing', () => {
+    const report = checkPipeline([])
+    expect(report.fatal).toEqual([])
+    expect(report.warnings).toEqual([])
+  })
+
+  test('a pipeline with an allow node does not carry that warning', () => {
+    const report = checkPipeline([{ id: 'd', type: 'deny' }, { id: 'a', type: 'allow' }])
+    expect(report.warnings).not.toContain('no "allow" node: every message is denied while this pipeline is attached')
+  })
+
+  test('the shipped default template carries no such warning', () => {
+    const report = checkPipeline(defaultPipelineNodes())
+    expect(report.fatal).toEqual([])
+    expect(report.warnings).not.toContain('no "allow" node: every message is denied while this pipeline is attached')
   })
 
   test('an illegal skip value refuses to load', () => {
