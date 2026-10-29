@@ -33,12 +33,14 @@
     "test:watch": "vitest",
     "prepack": "pnpm build"
   },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "~3.18.5"
+  },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.0.5"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "~4.0.5",
-    "@deepseek-ai/schemastery": "~3.18.5",
     "@eslint/js": "~10.0.1",
     "@types/node": "~22.20.5",
     "eslint": "~10.13.0",

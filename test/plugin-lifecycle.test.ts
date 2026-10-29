@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'vitest'
-import { request } from 'node:http'
+import { createServer, request } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
 import * as entry from '../src/index.js'
+import { DEFAULT_PORT } from '../src/index.js'
 import { ConfigError } from '../src/config.js'
 import { P2P_ROUTE } from '../src/p2p-protocol.js'
 import type { Listener } from '../src/p2p-listener.js'
@@ -177,6 +178,22 @@ describe('running peer messages', () => {
     const ctx = await contextWithCredentials()
     const fork = await ctx.plugin(entry.default, config())
     expect(ctx.get('dsbot-channel.peers')).toHaveLength(1)
+    await fork.dispose()
+  })
+})
+
+describe('the shipped empty base', () => {
+  test('binds no port when the adapter list is empty', async () => {
+    const ctx = await contextWithCredentials()
+    const fork = await ctx.plugin(entry.default, { adapters: [] })
+
+    const taken = await new Promise<boolean>((resolve) => {
+      const probe = createServer()
+      probe.once('error', () => resolve(true))
+      probe.listen(DEFAULT_PORT, '127.0.0.1', () => probe.close(() => resolve(false)))
+    })
+
+    expect(taken).toBe(false)
     await fork.dispose()
   })
 })

@@ -17,11 +17,12 @@ describe('bundle manifest', () => {
     expect(existsSync(join(root, String(patch).slice(2)))).toBe(true)
   })
 
-  test('inserts the plugin row disabled by default', () => {
+  test('inserts the plugin row enabled, because an empty adapter list is already idle', () => {
     const patch = readFileSync(join(root, 'cordis.patch.yml'), 'utf8')
     expect(patch).toMatch(/^- insert:/m)
     expect(patch).toContain(`name: ${pkg.name}`)
-    expect(patch).toMatch(/disabled: true/)
+    expect(patch).toMatch(/adapters: \[\]/)
+    expect(patch).not.toMatch(/disabled:/)
   })
 
   test('ships no secret value', () => {
