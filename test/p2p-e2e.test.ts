@@ -493,6 +493,7 @@ describe('closing a peer conversation', () => {
     final?: boolean
     reason?: string
     body?: string
+    seenHost?: string | undefined
   }
 
   interface Mounted {
@@ -502,7 +503,11 @@ describe('closing a peer conversation', () => {
     close: () => void
   }
 
-  async function mount(first: 'end' | 'decline' | 'none', later: 'end' | 'decline' | 'none' = first): Promise<Mounted> {
+  async function mount(
+    first: 'end' | 'decline' | 'none',
+    later: 'end' | 'decline' | 'none' = first,
+    host?: string,
+  ): Promise<Mounted> {
     const posts: Captured[] = []
     const capture = createServer((request, response) => {
       let raw = ''
@@ -510,7 +515,7 @@ describe('closing a peer conversation', () => {
         raw += chunk
       })
       request.on('end', () => {
-        posts.push(JSON.parse(raw) as Captured)
+        posts.push({ ...(JSON.parse(raw) as Captured), seenHost: request.headers.host })
         response.writeHead(200, { 'content-type': 'application/json' })
         response.end(JSON.stringify({ ok: true }))
       })
@@ -569,7 +574,14 @@ describe('closing a peer conversation', () => {
           channel: 'p2p:b',
           instance: 'inst-b',
           botName: 'bot-b',
-          peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}` }],
+          peers: [
+            {
+              instance: 'inst-a',
+              secret: REF,
+              url: `http://127.0.0.1:${capturePort}`,
+              ...(host === undefined ? {} : { host }),
+            },
+          ],
           listen: { host: '127.0.0.1', port },
         },
       ],
@@ -601,6 +613,17 @@ describe('closing a peer conversation', () => {
       await waitFor(() => mounted.prompted.length === 2)
       await new Promise((resolve) => setTimeout(resolve, 60))
       expect(mounted.posts).toHaveLength(1)
+    } finally {
+      mounted.close()
+    }
+  })
+
+  test('a decline reaches a peer that answers to a name, not the dialled address', async () => {
+    const mounted = await mount('decline', 'decline', 'peer.example')
+    try {
+      await send(mounted.port, 'evt-1', 'hello')
+      await waitFor(() => mounted.posts.length === 1)
+      expect(mounted.posts[0]).toMatchObject({ status: 'declined', seenHost: 'peer.example' })
     } finally {
       mounted.close()
     }
