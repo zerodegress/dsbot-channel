@@ -123,6 +123,12 @@ function prepareAdapter(adapter: AdapterConfig, index: number): DedupeTable {
   if (budget !== undefined && budget.capacity === undefined) {
     throw new ConfigError('policy.budget.capacity is required', [...path('policy'), 'budget', 'capacity'])
   }
+  if (budget?.softLimit !== undefined) {
+    throw new ConfigError(
+      'policy.budget.softLimit is not supported in this version: a soft limit is computed but nothing acts on it yet',
+      [...path('policy'), 'budget', 'softLimit'],
+    )
+  }
   if (budget?.capacity !== undefined && (!Number.isInteger(budget.capacity) || budget.capacity < 1)) {
     throw new ConfigError(
       `budget capacity must be a whole number of points, at least 1: ${budget.capacity}`,

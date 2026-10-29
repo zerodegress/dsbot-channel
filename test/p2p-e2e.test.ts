@@ -480,6 +480,16 @@ describe('policy budget', () => {
     await expect(mountWith({ budget: { capacity: 2.5 } })).rejects.toThrow(/budget capacity/)
   })
 
+  test('a soft limit is refused while nothing acts on it', async () => {
+    await expect(mountWith({ budget: { capacity: 100, softLimit: 0.8 } })).rejects.toThrow(
+      'policy.budget.softLimit is not supported in this version',
+    )
+  })
+
+  test('a hard limit is accepted, because the gate reads it', async () => {
+    await expect(mountWith({ budget: { capacity: 100, hardLimit: 0.9 } })).resolves.toBeDefined()
+  })
+
   test('a budget without a capacity is refused by the schema', async () => {
     await expect(mountWith({ budget: {} })).rejects.toThrow(/capacity/)
   })
