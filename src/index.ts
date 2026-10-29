@@ -52,6 +52,8 @@ export { compilePolicy } from './policy-config.js'
 export type { CompiledPolicy, PolicyConfig } from './policy-config.js'
 export type { CheckReport, PipelineNodeSpec, PipelineSettings } from './pipeline-config.js'
 export { BudgetLedger, DEFAULT_BUDGET, sessionKeyFor } from './budget-ledger.js'
+export { TurnBilling } from './turn-billing.js'
+export type { TurnBillingOptions } from './turn-billing.js'
 export type {
   BudgetLimits,
   BudgetPoints,
