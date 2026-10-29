@@ -21,6 +21,7 @@ import type { Hold } from './budget-ledger.js'
 
 import { toP2PEvent } from './p2p-mapping.js'
 import { createWarn } from './warn.js'
+import { ChannelStats } from './channel-stats.js'
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
@@ -195,6 +196,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const started = await Promise.all(
     pairs.map(({ adapter, table }) => {
       const sessions = new PeerSessions({ controller, observe })
+      const stats = new ChannelStats()
       const compiled = compilePolicy(adapter.policy)
       const pipeline = compiled.specs.length > 0 ? buildPipeline(compiled.specs, compiled.deps) : undefined
       const budget = adapter.policy.budget
@@ -280,6 +282,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         config: { ...adapter, credentials },
         table,
         onMessage: handOff,
+        stats,
         onError: (error, request) => {
           warn(`dsbot-channel: handing off ${request.eventId} from ${request.instance} failed: ${String(error)}`)
         },

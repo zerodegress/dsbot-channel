@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { DedupeTable } from '../src/p2p-dedupe.js'
+import { ChannelStats } from '../src/channel-stats.js'
 import { P2P_ROUTE, handleMessage, parseRequest } from '../src/p2p-protocol.js'
 import { signBody } from '../src/p2p-auth.js'
 
@@ -10,6 +11,8 @@ const fakeCredentials = (values: Record<string, string>) => ({
     return { value }
   },
 })
+
+const NOW = 1_700_000_000_000
 
 const config = {
   botName: 'self-bot',
@@ -25,11 +28,83 @@ const request = (overrides: Record<string, unknown> = {}) => ({
   sender: 'bot-a',
   instance: 'peer-a',
   body: 'hello',
-  sentAt: 1_700_000_000_000,
+  sentAt: NOW,
   ...overrides,
 })
 
 const auth = { authorization: 'Bearer secret-a', claimedInstance: 'peer-a' }
+
+describe('the channel reports what happened to it', () => {
+  test('an accepted delivery records the authentication time', async () => {
+    const channel = new ChannelStats(() => NOW)
+    const result = await handleMessage({
+      config,
+      table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
+      auth: { authorization: 'Bearer secret-a', claimedInstance: 'peer-a' },
+      payload: request(),
+      stats: channel,
+    })
+    expect(result.ok).toBe(true)
+    expect(channel.snapshot().lastAuthenticatedAt).toBe(NOW)
+  })
+
+  test('a refused delivery records why, and does not record an authentication', async () => {
+    const channel = new ChannelStats(() => NOW)
+    await handleMessage({
+      config,
+      table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
+      auth: { authorization: 'Bearer wrong', claimedInstance: 'peer-a' },
+      payload: request(),
+      stats: channel,
+    })
+    const snapshot = channel.snapshot()
+    expect(snapshot.lastAuthenticatedAt).toBeNull()
+    expect(snapshot.lastFailure?.reason).toMatch(/bearer|credential|secret/)
+  })
+
+  test('a delivery still being processed is counted, and the count comes back down', async () => {
+    const channel = new ChannelStats(() => NOW)
+    let during = -1
+    await handleMessage({
+      config,
+      table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
+      auth: { authorization: 'Bearer secret-a', claimedInstance: 'peer-a' },
+      payload: request(),
+      stats: channel,
+      process: () => {
+        during = channel.snapshot().inFlight
+        return Promise.resolve(true)
+      },
+    })
+    expect(during).toBe(1)
+    expect(channel.snapshot().inFlight).toBe(0)
+  })
+
+  test('a process that throws still brings the count back down', async () => {
+    const channel = new ChannelStats(() => NOW)
+    await expect(
+      handleMessage({
+        config,
+        table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
+        auth: { authorization: 'Bearer secret-a', claimedInstance: 'peer-a' },
+        payload: request(),
+        stats: channel,
+        process: () => Promise.reject(new Error('boom')),
+      }),
+    ).rejects.toThrow('boom')
+    expect(channel.snapshot().inFlight).toBe(0)
+  })
+
+  test('without a collector nothing breaks', async () => {
+    const result = await handleMessage({
+      config,
+      table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
+      auth: { authorization: 'Bearer secret-a', claimedInstance: 'peer-a' },
+      payload: request(),
+    })
+    expect(result.ok).toBe(true)
+  })
+})
 
 describe('route', () => {
   test('is the v1 message endpoint', () => {

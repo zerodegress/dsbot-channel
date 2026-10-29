@@ -3,6 +3,7 @@ import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { assertBindHost } from './config.js'
 import type { DedupeTable } from './p2p-dedupe.js'
+import type { ChannelStats } from './channel-stats.js'
 import { MAX_BODY_BYTES, P2P_ROUTE, handleMessage, parseRequest } from './p2p-protocol.js'
 import type { HandleResult, P2PConfig, P2PPayload } from './p2p-protocol.js'
 import type { InboundRequest } from './p2p-inbound.js'
@@ -69,6 +70,8 @@ export interface ListenerOptions {
   onMessage?: (request: InboundRequest) => void | Promise<void>
   /** Receives a rejected asynchronous hand off so it never becomes a crash. */
   onError?: (error: unknown, request: InboundRequest) => void
+  /** Collects what this channel can report about itself. */
+  stats?: ChannelStats | undefined
 }
 
 export interface Listener {
@@ -115,6 +118,7 @@ export async function startListener(options: ListenerOptions): Promise<Listener>
           claimedInstance: claimed,
         },
         payload,
+        ...(options.stats === undefined ? {} : { stats: options.stats }),
         ...(onMessage === undefined
           ? {}
           : {
@@ -154,13 +158,25 @@ export async function startListener(options: ListenerOptions): Promise<Listener>
       server.off('error', reject)
       resolve()
     })
+  }).catch((error: unknown) => {
+    options.stats?.failed(error instanceof Error ? error.message : String(error))
+    throw error
   })
+  options.stats?.listening((server.address() as AddressInfo).port)
 
   return {
     address: () => server.address() as AddressInfo,
     close: () =>
       new Promise<void>((resolve, reject) => {
-        server.close((error) => (error ? reject(error) : resolve()))
+        server.close((error) => {
+          if (error) {
+            options.stats?.failed(error.message)
+            reject(error)
+            return
+          }
+          options.stats?.closed()
+          resolve()
+        })
       }),
     handle,
   }

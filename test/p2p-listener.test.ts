@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'vitest'
 import { request } from 'node:http'
 import { DedupeTable } from '../src/p2p-dedupe.js'
 import { checkListenerConfig, startListener } from '../src/p2p-listener.js'
+import { ChannelStats } from '../src/channel-stats.js'
 import type { Listener, ListenerConfig } from '../src/p2p-listener.js'
 import { P2P_ROUTE } from '../src/p2p-protocol.js'
 import { signBody } from '../src/p2p-auth.js'
@@ -141,6 +142,35 @@ describe('listener', () => {
     const signature = signBody(secret, { eventId: payload.eventId, sentAt: payload.sentAt, body: 'other' })
     const reply = await post(listener.address().port, payload, { 'x-p2p-signature': signature })
     expect(reply.status).toBe(401)
+  })
+
+  test('reports the port the OS actually bound', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
+    open.push(listener)
+    expect(channel.snapshot()).toMatchObject({ state: 'listening', boundPort: listener.address().port })
+  })
+
+  test('reports a listener that closed', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
+    await listener.close()
+    expect(channel.snapshot()).toMatchObject({ state: 'closed', boundPort: null })
+  })
+
+  test('reports a start that failed instead of failing silently', async () => {
+    const first = await startListener({ config: baseConfig(), table: table() })
+    open.push(first)
+    const channel = new ChannelStats()
+    await expect(
+      startListener({
+        config: { ...baseConfig(), listen: { host: '127.0.0.1', port: first.address().port } },
+        table: table(),
+        stats: channel,
+      }),
+    ).rejects.toThrow()
+    expect(channel.snapshot()).toMatchObject({ state: 'failed', boundPort: null })
+    expect(channel.snapshot().lastFailure?.reason.length).toBeGreaterThan(0)
   })
 
   test('answers unknown routes with 404', async () => {
