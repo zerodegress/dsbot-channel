@@ -422,6 +422,51 @@ describe('a reply goes back to the sender of the inbound message', () => {
   })
 })
 
+describe('one service reports every adapter at once', () => {
+  test('two adapters appear in one snapshot, and it empties when they stop', async () => {
+    const [portA, portB] = [await freePort(), await freePort()]
+    const ctx = new Context()
+    captureWarnings(ctx)
+    const sessions = new StubSessions(ctx, 1)
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', sessions)
+      },
+    })
+    const fork = await ctx.plugin(entry, {
+      adapters: [
+        {
+          channel: 'p2p:a',
+          instance: 'inst-a',
+          botName: 'bot-a',
+          peers: [{ instance: 'inst-b', secret: REF }],
+          listen: { host: '127.0.0.1', port: portA },
+        },
+        {
+          channel: 'p2p:b',
+          instance: 'inst-b',
+          botName: 'bot-b',
+          peers: [{ instance: 'inst-a', secret: REF }],
+          listen: { host: '127.0.0.1', port: portB },
+        },
+      ],
+    })
+
+    const service = ctx.get('dsbot-channel.status') as { snapshot(): { adapters: { channel: string }[] } }
+
+    expect(service.snapshot().adapters.map((report) => report.channel).sort()).toEqual(['p2p:a', 'p2p:b'])
+    expect(service.snapshot().adapters[0]).toMatchObject({ snapshot: { state: 'listening' } })
+
+    await fork.dispose()
+
+    expect(service.snapshot().adapters).toEqual([])
+  })
+})
+
 describe('a mounted adapter can report on itself', () => {
   async function getStatus(port: number): Promise<{ status: number; body: Record<string, unknown> }> {
     return new Promise((resolve, reject) => {

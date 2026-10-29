@@ -23,6 +23,7 @@ import type { Hold } from './budget-ledger.js'
 import { toP2PEvent } from './p2p-mapping.js'
 import { createWarn } from './warn.js'
 import { ChannelStats } from './channel-stats.js'
+import { StatusRegistry } from './p2p-status.js'
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
@@ -205,10 +206,17 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const observe = (listener: (sessionId: string, event: SessionEventLike) => void): (() => void) =>
     ctx.on('session/event', (session: { id: string }, event: SessionEventLike) => listener(session.id, event))
   const warn = createWarn(ctx)
+  const registry = new StatusRegistry()
   const started = await Promise.all(
     pairs.map(({ adapter, table }) => {
       const sessions = new PeerSessions({ controller, observe })
       const stats = new ChannelStats()
+      registry.register(adapter.channel, () => ({
+        channel: adapter.channel,
+        bot: adapter.botName,
+        instance: adapter.instance,
+        snapshot: stats.snapshot(),
+      }))
       const compiled = compilePolicy(adapter.policy)
       const pipeline = compiled.specs.length > 0 ? buildPipeline(compiled.specs, compiled.deps) : undefined
       const budget = adapter.policy.budget
@@ -313,9 +321,12 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
       })
     }),
   )
+  ctx.provide('dsbot-channel.status')
+  ctx.set('dsbot-channel.status', { snapshot: () => registry.snapshot() })
   ctx.provide('dsbot-channel.peers')
   ctx.set('dsbot-channel.peers', started)
   ctx.effect(() => async () => {
+    registry.clear()
     ctx.set('dsbot-channel.peers', [])
     await Promise.all(started.map((listener) => listener.close()))
   }, 'dsbot-channel: peer listeners')

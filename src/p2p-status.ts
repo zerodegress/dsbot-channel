@@ -14,6 +14,26 @@ export interface StatusReport {
   adapters: AdapterReport[]
 }
 
+/** Collects one report per channel so a reader sees every adapter at once. */
+export class StatusRegistry {
+  readonly #reports = new Map<string, () => AdapterReport>()
+
+  register(channel: string, report: () => AdapterReport): () => void {
+    this.#reports.set(channel, report)
+    return () => {
+      if (this.#reports.get(channel) === report) this.#reports.delete(channel)
+    }
+  }
+
+  clear(): void {
+    this.#reports.clear()
+  }
+
+  snapshot(now: () => number = Date.now): StatusReport {
+    return { sampledAt: now(), adapters: [...this.#reports.values()].map((report) => report()) }
+  }
+}
+
 /** True only for an address the operating system reports as loopback. */
 export function isLoopbackPeer(address: string | undefined): boolean {
   if (address === undefined) return false
