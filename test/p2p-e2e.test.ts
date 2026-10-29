@@ -396,6 +396,91 @@ describe('the configured session', () => {
   })
 })
 
+describe('the send_text tool', () => {
+  interface Registered {
+    name: string
+    execute: (args: unknown, exec: unknown) => Promise<string>
+  }
+
+  async function mountPair(): Promise<{ tools: Registered[]; sessions: StubSessions; portA: number; portB: number }> {
+    const [portA, portB] = [await freePort(), await freePort()]
+    const ctx = new Context()
+    captureWarnings(ctx)
+    const sessions = new StubSessions(ctx, 99)
+    const tools: Registered[] = []
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', sessions)
+        scope.provide('tools')
+        scope.set('tools', {
+          register(definition: Registered) {
+            tools.push(definition)
+            return () => undefined
+          },
+        })
+      },
+    })
+    const adapter = (
+      channel: string,
+      instance: string,
+      botName: string,
+      peerInstance: string,
+      peerBotName: string,
+      port: number,
+      peerPort: number,
+    ) => ({
+      channel,
+      instance,
+      botName,
+      peers: [{ instance: peerInstance, secret: REF, url: `http://127.0.0.1:${peerPort}`, botName: peerBotName }],
+      listen: { host: '127.0.0.1', port },
+    })
+    const fork = await ctx.plugin(entry, {
+      adapters: [
+        adapter('p2p:a', 'inst-a', 'bot-a', 'inst-b', 'bot-b', portA, portB),
+        adapter('p2p:b', 'inst-b', 'bot-b', 'inst-a', 'bot-a', portB, portA),
+      ],
+    })
+    forks.push(fork)
+    return { tools, sessions, portA, portB }
+  }
+
+  test('only send_text is registered, because a peer link carries text alone', async () => {
+    const { tools } = await mountPair()
+
+    expect(tools.map((tool) => tool.name)).toEqual(['send_text'])
+  })
+
+  test('a push with no arguments answers the peer that just messaged this session', async () => {
+    const { tools, sessions, portB } = await mountPair()
+    await send(portB, 'evt-1', 'hello')
+    await waitFor(() => sessions.prompted.length > 0)
+    const sessionId = sessions.prompted[0]?.sessionId as string
+
+    const raw = await tools[0]?.execute({ text: 'back' }, { agent: { id: sessionId } })
+    const result = JSON.parse(raw as string) as Record<string, unknown>
+
+    expect(result).toMatchObject({ ok: true, channel: 'p2p:b', scope: 'direct', target: 'inst-a' })
+    await waitFor(() => sessions.prompted.some((entry) => entry.text.includes('back')))
+  })
+
+  test('one idempotency key delivers once and replays the same message id', async () => {
+    const { tools, sessions, portB } = await mountPair()
+    await send(portB, 'evt-1', 'hello')
+    await waitFor(() => sessions.prompted.length > 0)
+    const sessionId = sessions.prompted[0]?.sessionId as string
+
+    const first = JSON.parse((await tools[0]?.execute({ text: 'once', idempotencyKey: 'k1' }, { agent: { id: sessionId } })) as string)
+    const second = JSON.parse((await tools[0]?.execute({ text: 'once', idempotencyKey: 'k1' }, { agent: { id: sessionId } })) as string)
+
+    expect(second).toEqual(first)
+  })
+})
+
 describe('a reply goes back to the sender of the inbound message', () => {
   async function mountWithCapture(): Promise<{
     captured: () => Record<string, unknown> | undefined
