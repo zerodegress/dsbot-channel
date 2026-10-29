@@ -21,10 +21,12 @@ describe('p2p event mapping', () => {
     expect(toP2PEvent(inbound).meta.derived.eventKey).toBe('peer-a:p2p-e1')
   })
 
-  test('the body carries an origin prefix for the peer sender', () => {
-    expect(toP2PEvent(inbound).body.text).toContain('[p2p from peer-a')
-    expect(toP2PEvent(inbound).body.text).toContain('bot-a')
-    expect(toP2PEvent(inbound).body.text).toContain('p2p-e1')
+  test('the body starts with the exact origin prefix', () => {
+    expect(toP2PEvent(inbound).body.text).toBe('[p2p from peer-a · bot-a · p2p-e1] hello')
+  })
+
+  test('an empty body leaves the prefix alone', () => {
+    expect(toP2PEvent({ ...inbound, body: '' }).body.text).toBe('[p2p from peer-a · bot-a · p2p-e1]')
   })
 
   test('a retry with the same eventId maps to the same eventKey', () => {
