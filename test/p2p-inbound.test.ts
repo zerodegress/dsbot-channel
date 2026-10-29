@@ -65,7 +65,7 @@ function turn(sessionId: string, emit: (sessionId: string, event: SessionEventLi
   emit(sessionId, { type: 'turn/end' })
 }
 
-function harness(options: { timeoutMs?: number; cwd?: string; agentPreset?: string } = {}) {
+function harness(options: { timeoutMs?: number; cwd?: string; agentPreset?: string; session?: string } = {}) {
   const controller = new FakeController()
   const events = bus()
   const bridge = new PeerSessions({ controller, observe: events.observe, ...options })
@@ -108,6 +108,31 @@ describe('peer sessions', () => {
     await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })
 
     expect(controller.creates[0]).toEqual({ cwd: '/tmp/sandbox', agentPreset: 'peer' })
+  })
+
+  test('runs the turn on the configured session and creates nothing', async () => {
+    const { controller, events, bridge } = harness({ session: 'session-main' })
+    controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['ok'])
+
+    const result = await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })
+
+    expect(controller.creates).toHaveLength(0)
+    expect(controller.prompts[0]?.request.sessionId).toBe('session-main')
+    expect(result.sessionId).toBe('session-main')
+    expect(result.text).toBe('ok')
+  })
+
+  test('lands every peer in the one configured session', async () => {
+    const { controller, events, bridge } = harness({ session: 'session-main' })
+    controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['ok'])
+
+    const a = await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'a' })
+    const b = await bridge.runTurn({ peer: 'peer-b', requestId: 'evt-2', text: 'b' })
+
+    expect(controller.creates).toHaveLength(0)
+    expect(a.sessionId).toBe('session-main')
+    expect(b.sessionId).toBe('session-main')
+    expect(controller.prompts.map((entry) => entry.request.sessionId)).toEqual(['session-main', 'session-main'])
   })
 
   test('sends the inbound event id as the request id and a live cancellation signal', async () => {

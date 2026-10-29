@@ -43,6 +43,7 @@ function captureWarnings(ctx: Context): void {
 class StubSessions {
   readonly prompted: Prompted[] = []
   readonly signals: AbortSignal[] = []
+  readonly created: string[] = []
   readonly #ctx: Context
   readonly #replies: number
   readonly #failTimes: number
@@ -56,7 +57,9 @@ class StubSessions {
 
   create(): Promise<{ sessionId: string }> {
     this.#count += 1
-    return Promise.resolve({ sessionId: `session-${this.#count}` })
+    const sessionId = `session-${this.#count}`
+    this.created.push(sessionId)
+    return Promise.resolve({ sessionId })
   }
 
   prompt(
@@ -339,6 +342,57 @@ describe('the session controller call shape', () => {
     await waitFor(() => sessions.prompted.length > 0)
     expect(sessions.signals[0]).toBeInstanceOf(AbortSignal)
     expect(sessions.signals[0]?.aborted).toBe(false)
+  })
+})
+
+describe('the configured session', () => {
+  async function mountWithSession(session: string): Promise<{ sessions: StubSessions; port: number }> {
+    const port = await freePort()
+    const ctx = new Context()
+    captureWarnings(ctx)
+    const sessions = new StubSessions(ctx, 99)
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', sessions)
+      },
+    })
+    const fork = await ctx.plugin(entry, {
+      adapters: [
+        {
+          channel: 'p2p:a',
+          instance: 'inst-a',
+          botName: 'bot-a',
+          session,
+          peers: [{ instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${await freePort()}` }],
+          listen: { host: '127.0.0.1', port },
+        },
+      ],
+    })
+    forks.push(fork)
+    return { sessions, port }
+  }
+
+  test('an inbound message runs its turn on the session the profile names', async () => {
+    const { sessions, port } = await mountWithSession('session-main')
+
+    const sent = await sendToPeer({
+      peer: { instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${port}` },
+      credentials,
+      to: 'bot-a',
+      body: 'hello',
+      eventId: 'evt-1',
+      sender: 'bot-b',
+      instance: 'inst-b',
+    })
+    expect(sent.ok).toBe(true)
+
+    await waitFor(() => sessions.prompted.length > 0)
+    expect(sessions.prompted[0]?.sessionId).toBe('session-main')
+    expect(sessions.created).toHaveLength(0)
   })
 })
 

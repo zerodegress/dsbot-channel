@@ -32,6 +32,8 @@ export interface SessionControllerLike {
 export interface PeerSessionsOptions {
   controller: SessionControllerLike
   observe: (listener: (sessionId: string, event: SessionEventLike) => void) => () => void
+  /** An existing session every peer turn runs in, instead of one created per peer. */
+  session?: string
   timeoutMs?: number
   cwd?: string
   agentPreset?: string
@@ -76,6 +78,7 @@ function textOf(content: readonly SessionMessagePart[] | undefined): string {
 export class PeerSessions {
   readonly #controller: SessionControllerLike
   readonly #observe: PeerSessionsOptions['observe']
+  readonly #session: string | undefined
   readonly #timeoutMs: number
   readonly #cwd: string | undefined
   readonly #agentPreset: string | undefined
@@ -85,6 +88,7 @@ export class PeerSessions {
   constructor(options: PeerSessionsOptions) {
     this.#controller = options.controller
     this.#observe = options.observe
+    this.#session = options.session
     this.#timeoutMs = options.timeoutMs ?? DEFAULT_TURN_TIMEOUT_MS
     this.#cwd = options.cwd
     this.#agentPreset = options.agentPreset
@@ -92,6 +96,7 @@ export class PeerSessions {
 
   /** Creates the peer session once and hands the same identity to every later turn. */
   sessionFor(peer: string): Promise<string> {
+    if (this.#session !== undefined) return Promise.resolve(this.#session)
     const cached = this.#sessions.get(peer)
     if (cached !== undefined) return cached
     const created = this.#controller
