@@ -116,5 +116,5 @@ export { DEFAULT_LOOP_IDLE_RESET_MS, DEFAULT_LOOP_MAX_TURNS, InboundGate } from 
 export type { AdmitInput, GateDecision, GateOptions, GateReason, LoopConfig } from './inbound-gate.js'
 export { ChannelStats } from './channel-stats.js'
 export type { ChannelFailure, ChannelSnapshot, ChannelState } from './channel-stats.js'
-export { STATUS_ROUTE, isLoopbackPeer } from './p2p-status.js'
+export { STATUS_ROUTE, hasForwardingHeaders, isLoopbackPeer } from './p2p-status.js'
 export type { AdapterReport, StatusReport } from './p2p-status.js'

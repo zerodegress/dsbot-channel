@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net'
 import { assertBindHost } from './config.js'
 import type { DedupeTable } from './p2p-dedupe.js'
 import type { ChannelStats } from './channel-stats.js'
-import { STATUS_ROUTE, isLoopbackPeer } from './p2p-status.js'
+import { STATUS_ROUTE, hasForwardingHeaders, isLoopbackPeer } from './p2p-status.js'
 import { MAX_BODY_BYTES, P2P_ROUTE, handleMessage, parseRequest } from './p2p-protocol.js'
 import type { HandleResult, P2PConfig, P2PPayload } from './p2p-protocol.js'
 import type { InboundRequest } from './p2p-inbound.js'
@@ -94,7 +94,7 @@ export async function startListener(options: ListenerOptions): Promise<Listener>
   const handle = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     const status = options.status
     if (status !== undefined && request.method === 'GET' && request.url === (status.route ?? STATUS_ROUTE)) {
-      if (!isLoopbackPeer(request.socket.remoteAddress)) {
+      if (!isLoopbackPeer(request.socket.remoteAddress) || hasForwardingHeaders(request.headers)) {
         options.stats?.unknownPath()
         send(response, 404, { error: 'not found' })
         return
