@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Self-hosted p2p listener on `127.0.0.1` by default, with its configuration checked before any socket is opened.
 - Pipeline node chain that can deny, allow, restrict scoring and judging, score, or pass an event.
 - Budget ledger over global, per-bot and per-session scopes, with two ways to charge: a synchronous check-and-charge decision, and a hold that is reserved up front and then settled or refunded.
+- A p2p channel that runs end to end: an accepted message starts a turn with the host session controller, and the reply is sent back to the peer that sent it.
+- Adapters are declared as a list, each with its own listener settings and its own peer list.
+- Per-adapter `policy` rules that deny a message by word or regular expression, allow named peers through, and cap how many rounds one peer may hold, tuned with `relayLimit` and `relayResetMs`.
+- Per-adapter `policy.budget` with a required `capacity` in points and an optional `hardLimit` ratio; once the window reaches the hard limit the next turn is refused.
+
+### Changed
+
+- Every adapter requires its own `instance` and a `channel` no other adapter uses, and peer secrets are credential references resolved through the host rather than inline values. An empty adapter list mounts the plugin without opening a listener.
 
 ### Fixed
 
