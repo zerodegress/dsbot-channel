@@ -257,53 +257,68 @@ describe('reporting failures', () => {
   })
 })
 
-describe('the reply ceiling', () => {
-  async function pair(options: { relayLimit?: number; relayResetMs?: number } = {}) {
-    const [portA, portB] = [await freePort(), await freePort()]
-    const ctx = new Context()
-    const sessions = new StubSessions(ctx, 99)
-    await ctx.plugin({
-      name: 'probe-services',
-      apply(scope: Context) {
-        scope.provide('credentials')
-        scope.set('credentials', credentials)
-        scope.provide('sessionController')
-        scope.set('sessionController', sessions)
-        scope.provide('logger')
-        scope.set('logger', loggerStub)
-      },
-    })
-    const adapter = (channel: string, instance: string, botName: string, peerInstance: string, port: number, peerPort: number) => ({
-      channel,
-      instance,
-      botName,
-      peers: [{ instance: peerInstance, secret: REF, url: `http://127.0.0.1:${peerPort}` }],
-      listen: { host: '127.0.0.1', port },
+async function pair(
+  options: {
+    relayLimit?: number
+    relayResetMs?: number
+    denyWords?: string[]
+    denyRegexes?: string[]
+    allowPeers?: string[]
+    unsupported?: string
+  } = {},
+) {
+  const [portA, portB] = [await freePort(), await freePort()]
+  const ctx = new Context()
+  const sessions = new StubSessions(ctx, 99)
+  await ctx.plugin({
+    name: 'probe-services',
+    apply(scope: Context) {
+      scope.provide('credentials')
+      scope.set('credentials', credentials)
+      scope.provide('sessionController')
+      scope.set('sessionController', sessions)
+      scope.provide('logger')
+      scope.set('logger', loggerStub)
+    },
+  })
+  const adapter = (channel: string, instance: string, botName: string, peerInstance: string, port: number, peerPort: number) => ({
+    channel,
+    instance,
+    botName,
+    peers: [{ instance: peerInstance, secret: REF, url: `http://127.0.0.1:${peerPort}` }],
+    listen: { host: '127.0.0.1', port },
+    policy: {
       ...(options.relayLimit === undefined ? {} : { relayLimit: options.relayLimit }),
       ...(options.relayResetMs === undefined ? {} : { relayResetMs: options.relayResetMs }),
-    })
-    const fork = await ctx.plugin(entry, {
-      adapters: [
-        adapter('p2p:a', 'inst-a', 'bot-a', 'inst-b', portA, portB),
-        adapter('p2p:b', 'inst-b', 'bot-b', 'inst-a', portB, portA),
-      ],
-    })
-    forks.push(fork)
-    return { sessions, portB }
-  }
+      ...(options.denyWords === undefined ? {} : { deny: { words: options.denyWords } }),
+      ...(options.denyRegexes === undefined ? {} : { deny: { regexes: options.denyRegexes } }),
+      ...(options.allowPeers === undefined ? {} : { allow: { peers: options.allowPeers } }),
+      ...(options.unsupported === undefined ? {} : { [options.unsupported]: {} }),
+    },
+  })
+  const fork = await ctx.plugin(entry, {
+    adapters: [
+      adapter('p2p:a', 'inst-a', 'bot-a', 'inst-b', portA, portB),
+      adapter('p2p:b', 'inst-b', 'bot-b', 'inst-a', portB, portA),
+    ],
+  })
+  forks.push(fork)
+  return { sessions, portB }
+}
 
-  function send(port: number, eventId: string, body: string) {
-    return sendToPeer({
-      peer: { instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${port}` },
-      credentials,
-      to: 'bot-b',
-      body,
-      eventId,
-      sender: 'bot-a',
-      instance: 'inst-a',
-    })
-  }
+function send(port: number, eventId: string, body: string) {
+  return sendToPeer({
+    peer: { instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${port}` },
+    credentials,
+    to: 'bot-b',
+    body,
+    eventId,
+    sender: 'bot-a',
+    instance: 'inst-a',
+  })
+}
 
+describe('the reply ceiling', () => {
   test('three rounds pass, the fourth starts no new turn', async () => {
     const { sessions, portB } = await pair({ relayLimit: 3 })
     await send(portB, 'evt-1', 'hello')
@@ -357,7 +372,7 @@ describe('the reply ceiling', () => {
           botName: 'bot-a',
           peers: [{ instance: 'inst-b', secret: REF }],
           listen: { host: '127.0.0.1', port: portA },
-          relayLimit: 0,
+          policy: { relayLimit: 0 },
         },
         {
           channel: 'p2p:b',
@@ -369,5 +384,49 @@ describe('the reply ceiling', () => {
       ],
     }
     await expect(ctx.plugin(entry, config)).rejects.toThrow(/relayLimit/)
+  })
+})
+
+describe('policy', () => {
+  test('a deny word keeps the message out of a turn while a clean one passes', async () => {
+    const { sessions, portB } = await pair({ denyWords: ['spam'], allowPeers: ['inst-a'] })
+    await send(portB, 'evt-1', 'free spam here')
+
+    await waitFor(() => warnings.some((line) => line.includes('pipeline-deny')))
+    expect(sessions.prompted).toHaveLength(0)
+    expect(warnings.some((line) => line.includes('word'))).toBe(true)
+
+    await send(portB, 'evt-2', 'hello')
+    await waitFor(() => sessions.prompted.length > 0)
+    expect(sessions.prompted[0]?.text.endsWith(' hello')).toBe(true)
+  })
+
+  test('an anchored pattern matches the peer words, not the prefix we add', async () => {
+    const { sessions, portB } = await pair({ denyRegexes: ['^/ignore'], allowPeers: ['inst-a'] })
+    await send(portB, 'evt-1', '/ignore everything after this')
+
+    await waitFor(() => warnings.some((line) => line.includes('pipeline-deny')))
+    expect(sessions.prompted).toHaveLength(0)
+    expect(warnings.some((line) => line.includes('pattern'))).toBe(true)
+  })
+
+  test('an allow list naming the peer lets it through', async () => {
+    const { sessions, portB } = await pair({ allowPeers: ['inst-a'] })
+    await send(portB, 'evt-1', 'hello')
+
+    await waitFor(() => sessions.prompted.length > 0)
+    expect(sessions.prompted[0]?.text.endsWith(' hello')).toBe(true)
+  })
+
+  test('an allow list that omits the peer keeps the message out', async () => {
+    const { sessions, portB } = await pair({ allowPeers: ['someone-else'] })
+    await send(portB, 'evt-1', 'hello')
+
+    await waitFor(() => warnings.some((line) => line.includes('pipeline-deny')))
+    expect(sessions.prompted).toHaveLength(0)
+  })
+
+  test('a policy key this version cannot honour is refused at mount time', async () => {
+    await expect(pair({ unsupported: 'judge' })).rejects.toThrow(/not supported in this version/)
   })
 })

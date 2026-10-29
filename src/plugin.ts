@@ -11,6 +11,9 @@ import type { InboundRequest, SessionControllerLike, SessionEventLike } from './
 import { sendToPeer } from './p2p-send.js'
 import type { PeerTarget } from './p2p-send.js'
 import { DEFAULT_LOOP_IDLE_RESET_MS, DEFAULT_LOOP_MAX_TURNS, InboundGate } from './inbound-gate.js'
+import type { PolicyConfig } from './policy-config.js'
+import { compilePolicy } from './policy-config.js'
+import { buildPipeline } from './build-pipeline.js'
 import { toP2PEvent } from './p2p-mapping.js'
 
 declare module '@deepseek-ai/cordis' {
@@ -22,12 +25,19 @@ declare module '@deepseek-ai/cordis' {
 /** Turn ceiling a message may occupy before it is dropped. */
 export const MAX_TURN_MS = 120_000
 
+export interface PolicySettings extends PolicyConfig {
+  relayLimit: number
+  relayResetMs: number
+  score?: unknown
+  judge?: unknown
+  prepare?: unknown
+}
+
 export interface AdapterConfig extends ListenerConfig {
   kind?: 'p2p'
   channel: string
   instance: string
-  relayLimit: number
-  relayResetMs: number
+  policy: PolicySettings
   dedupe?: { ttlMs?: number; limit?: number }
 }
 
@@ -51,8 +61,20 @@ export const Config: any = Schema.object({
             url: Schema.string(),
           }),
         ).default([]),
-        relayLimit: Schema.number().default(DEFAULT_LOOP_MAX_TURNS),
-        relayResetMs: Schema.number().default(DEFAULT_LOOP_IDLE_RESET_MS),
+        policy: Schema.object({
+          relayLimit: Schema.number().default(DEFAULT_LOOP_MAX_TURNS),
+          relayResetMs: Schema.number().default(DEFAULT_LOOP_IDLE_RESET_MS),
+          deny: Schema.object({
+            words: Schema.array(Schema.string()).default([]),
+            regexes: Schema.array(Schema.string()).default([]),
+          }).default({}),
+          allow: Schema.object({
+            peers: Schema.array(Schema.string()).default([]),
+          }).default({}),
+          score: Schema.any(),
+          judge: Schema.any(),
+          prepare: Schema.any(),
+        }).default({}),
         inflightTtlMs: Schema.number().default(300_000),
         maxBodyBytes: Schema.number().default(64 * 1024),
         waitMs: Schema.number(),
@@ -73,17 +95,26 @@ export const Config: any = Schema.object({
 function prepareAdapter(adapter: AdapterConfig, index: number): DedupeTable {
   const path = (field: string): string[] => ['adapters', String(index), field]
   assertBindHost(adapter.listen.host ?? DEFAULT_HOST, path('listen'))
-  if (!Number.isInteger(adapter.relayLimit) || adapter.relayLimit < 1) {
+  const { relayLimit, relayResetMs } = adapter.policy
+  if (!Number.isInteger(relayLimit) || relayLimit < 1) {
     throw new ConfigError(
-      `relayLimit must be a whole number of rounds, at least 1: ${adapter.relayLimit}`,
-      path('relayLimit'),
+      `relayLimit must be a whole number of rounds, at least 1: ${relayLimit}`,
+      path('policy'),
     )
   }
-  if (!Number.isInteger(adapter.relayResetMs) || adapter.relayResetMs < 1) {
+  if (!Number.isInteger(relayResetMs) || relayResetMs < 1) {
     throw new ConfigError(
-      `relayResetMs must be a whole number of milliseconds, at least 1: ${adapter.relayResetMs}`,
-      path('relayResetMs'),
+      `relayResetMs must be a whole number of milliseconds, at least 1: ${relayResetMs}`,
+      path('policy'),
     )
+  }
+  for (const unsupported of ['score', 'judge', 'prepare'] as const) {
+    if (adapter.policy[unsupported] !== undefined) {
+      throw new ConfigError(
+        `policy.${unsupported} is not supported in this version: only deny and allow can be configured`,
+        [...path('policy'), unsupported],
+      )
+    }
   }
   if (adapter.inflightTtlMs <= MAX_TURN_MS) {
     throw new ConfigError(
@@ -141,8 +172,11 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const started = await Promise.all(
     pairs.map(({ adapter, table }) => {
       const sessions = new PeerSessions({ controller, observe })
+      const compiled = compilePolicy(adapter.policy)
+      const pipeline = compiled.specs.length > 0 ? buildPipeline(compiled.specs, compiled.deps) : undefined
       const gate = new InboundGate({
-        loop: { relayLimit: adapter.relayLimit, relayResetMs: adapter.relayResetMs },
+        loop: { relayLimit: adapter.policy.relayLimit, relayResetMs: adapter.policy.relayResetMs },
+        pipeline,
       })
       const handOff = (request: InboundRequest): void => {
         const event = toP2PEvent({ ...request, messageId: `p2p-${request.eventId}` })
