@@ -10,6 +10,7 @@ export type PushCode = SendFailureCode | 'unknown_channel' | 'unknown_target' | 
 export interface PushPeer {
   instance: string
   botName?: string
+  host?: string
 }
 
 export interface PushChannel {

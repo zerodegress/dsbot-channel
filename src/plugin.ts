@@ -74,6 +74,7 @@ export const Config: any = Schema.object({
             secret: Schema.string().required(),
             url: Schema.string(),
             botName: Schema.string(),
+            host: Schema.string(),
           }),
         ).default([]),
         policy: Schema.object({
@@ -296,10 +297,12 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
             return
           }
           const url = (configured as PeerRef & { url?: string }).url
+          const host = (configured as PeerRef & { host?: string }).host
           const peer: PeerTarget = {
             instance: configured.instance,
             secret: configured.secret,
             ...(url === undefined ? {} : { url }),
+            ...(host === undefined ? {} : { host }),
           }
           const sent = await sendToPeer({
             peer,
@@ -364,6 +367,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         peers: adapter.peers.map((peer) => ({
           instance: peer.instance,
           ...(peer.botName === undefined ? {} : { botName: peer.botName }),
+          ...(peer.host === undefined ? {} : { host: peer.host }),
         })),
       })),
       source: (sessionId) => (sessionId === undefined ? undefined : sources.get(sessionId)),
@@ -379,10 +383,12 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
           }
         }
         const url = (peer as PeerRef & { url?: string }).url
+        const host = (peer as PeerRef & { host?: string }).host
         const target: PeerTarget = {
           instance: peer.instance,
           secret: peer.secret,
           ...(url === undefined ? {} : { url }),
+          ...(host === undefined ? {} : { host }),
         }
         return sendToPeer({
           peer: target,

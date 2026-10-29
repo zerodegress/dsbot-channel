@@ -5,6 +5,7 @@ export interface PeerRef {
   secret: string
   /** The name the peer answers to; an active push needs it, a reply borrows the sender's. */
   botName?: string
+  host?: string
 }
 
 export interface ResolvedSecret {
