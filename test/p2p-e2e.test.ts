@@ -319,14 +319,14 @@ async function pair(
   return { sessions, portB }
 }
 
-function send(port: number, eventId: string, body: string) {
+function send(port: number, eventId: string, body: string, sender = 'bot-a') {
   return sendToPeer({
     peer: { instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${port}` },
     credentials,
     to: 'bot-b',
     body,
     eventId,
-    sender: 'bot-a',
+    sender,
     instance: 'inst-a',
   })
 }
@@ -339,6 +339,87 @@ describe('the session controller call shape', () => {
     await waitFor(() => sessions.prompted.length > 0)
     expect(sessions.signals[0]).toBeInstanceOf(AbortSignal)
     expect(sessions.signals[0]?.aborted).toBe(false)
+  })
+})
+
+describe('a reply goes back to the sender of the inbound message', () => {
+  async function mountWithCapture(): Promise<{
+    captured: () => Record<string, unknown> | undefined
+    port: number
+    sessions: StubSessions
+    close: () => void
+  }> {
+    let captured: Record<string, unknown> | undefined
+    const capture = createServer((request, response) => {
+      let raw = ''
+      request.on('data', (chunk: string) => {
+        raw += chunk
+      })
+      request.on('end', () => {
+        captured = JSON.parse(raw) as Record<string, unknown>
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({ ok: true }))
+      })
+    })
+    await new Promise<void>((resolve) => capture.listen(0, '127.0.0.1', resolve))
+    const capturePort = (capture.address() as AddressInfo).port
+
+    const port = await freePort()
+    const ctx = new Context()
+    const sessions = new StubSessions(ctx, 99)
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', sessions)
+        scope.provide('logger')
+        scope.set('logger', loggerStub)
+      },
+    })
+    const fork = await ctx.plugin(entry, {
+      adapters: [
+        {
+          channel: 'p2p:b',
+          instance: 'inst-b',
+          botName: 'bot-b',
+          peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}` }],
+          listen: { host: '127.0.0.1', port },
+        },
+      ],
+    })
+    forks.push(fork)
+    return {
+      captured: () => captured,
+      port,
+      sessions,
+      close: () => {
+        capture.close()
+      },
+    }
+  }
+
+  test('the outgoing message is addressed to the inbound sender, not to anything else', async () => {
+    const mounted = await mountWithCapture()
+    try {
+      await send(mounted.port, 'evt-1', 'hello')
+      await waitFor(() => mounted.captured() !== undefined)
+      const sent = mounted.captured()
+      expect(sent?.to).toBe('bot-a')
+      expect(sent?.sender).toBe('bot-b')
+      expect(sent?.instance).toBe('inst-b')
+    } finally {
+      mounted.close()
+    }
+  })
+
+  test('a reply that nobody answers to fails visibly instead of going quiet', async () => {
+    const { sessions, portB } = await pair()
+    await send(portB, 'evt-1', 'hello', 'probe')
+
+    await waitFor(() => warnings.some((line) => line.includes('forbidden')))
+    expect(sessions.prompted).toHaveLength(1)
   })
 })
 
