@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'vitest'
 import { request } from 'node:http'
 import { DedupeTable } from '../src/p2p-dedupe.js'
 import { checkListenerConfig, startListener } from '../src/p2p-listener.js'
+import { ChannelStats } from '../src/channel-stats.js'
 import type { Listener, ListenerConfig } from '../src/p2p-listener.js'
 import { P2P_ROUTE } from '../src/p2p-protocol.js'
 import { signBody } from '../src/p2p-auth.js'
@@ -142,6 +143,184 @@ describe('listener', () => {
     const signature = signBody(secret, { eventId: payload.eventId, sentAt: payload.sentAt, body: 'other' })
     const reply = await post(listener.address().port, payload, { 'x-p2p-signature': signature })
     expect(reply.status).toBe(401)
+  })
+
+  test('records a refusal whose authentication still succeeded', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
+    open.push(listener)
+    const payload = message({ to: 'somebody-else' })
+    const signature = signBody(secret, { eventId: payload.eventId, sentAt: payload.sentAt, body: payload.body })
+    const reply = await post(listener.address().port, payload, { 'x-p2p-signature': signature })
+
+    expect(reply.status).toBe(403)
+    const snapshot = channel.snapshot()
+    expect(snapshot.lastFailure?.reason).toBe('message is addressed to another bot')
+    expect(snapshot.lastAuthenticatedAt).not.toBeNull()
+  })
+
+  test('records a body that is not json as a failure', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
+    open.push(listener)
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = request(
+        {
+          host: '127.0.0.1',
+          port: listener.address().port,
+          path: P2P_ROUTE,
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'content-length': 6 },
+        },
+        (response) => resolve(response.statusCode ?? 0),
+      )
+      req.on('error', reject)
+      req.end('{oops!')
+    })
+    expect(status).toBe(400)
+    expect(channel.snapshot().lastFailure?.reason).toBe('body must be valid json')
+  })
+
+  test('records an oversized body as a failure', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
+    open.push(listener)
+    const reply = await post(listener.address().port, message({ body: 'x'.repeat(70 * 1024) }), {
+      authorization: `Bearer ${secret}`,
+    })
+    expect(reply.status).toBe(413)
+    expect(channel.snapshot().lastFailure?.reason).toBe('body exceeds the size limit')
+  })
+
+  test('counts an unknown route without calling it a failure', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
+    open.push(listener)
+    const reply = await new Promise<number>((resolve, reject) => {
+      const req = request(
+        { host: '127.0.0.1', port: listener.address().port, path: '/nope', method: 'POST' },
+        (response) => resolve(response.statusCode ?? 0),
+      )
+      req.on('error', reject)
+      req.end('{}')
+    })
+    expect(reply).toBe(404)
+    expect(channel.snapshot()).toMatchObject({ unknownPaths: 1, lastFailure: null })
+  })
+
+  test('an accepted delivery leaves no failure behind', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
+    open.push(listener)
+    const payload = message()
+    const signature = signBody(secret, { eventId: payload.eventId, sentAt: payload.sentAt, body: payload.body })
+    const reply = await post(listener.address().port, payload, { 'x-p2p-signature': signature })
+
+    expect(reply.status).toBe(200)
+    expect(channel.snapshot()).toMatchObject({ lastFailure: null, inFlight: 0, underruns: 0 })
+  })
+
+  test('the status route does not exist unless it was asked for', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
+    open.push(listener)
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = request(
+        { host: '127.0.0.1', port: listener.address().port, path: '/p2p/v1/status', method: 'GET' },
+        (response) => resolve(response.statusCode ?? 0),
+      )
+      req.on('error', reject)
+      req.end()
+    })
+    expect(status).toBe(404)
+    expect(channel.snapshot()).toMatchObject({ unknownPaths: 1, lastFailure: null })
+  })
+
+  test('an enabled status route answers with what it was given', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({
+      config: baseConfig(),
+      table: table(),
+      stats: channel,
+      status: { report: () => ({ allowed: true }) },
+    })
+    open.push(listener)
+    const reply = await new Promise<{ status: number; body: unknown }>((resolve, reject) => {
+      const req = request(
+        { host: '127.0.0.1', port: listener.address().port, path: '/p2p/v1/status', method: 'GET' },
+        (response) => {
+          const chunks: Buffer[] = []
+          response.on('data', (chunk: Buffer) => chunks.push(chunk))
+          response.on('end', () =>
+            resolve({
+              status: response.statusCode ?? 0,
+              body: JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown,
+            }),
+          )
+        },
+      )
+      req.on('error', reject)
+      req.end()
+    })
+    expect(reply).toEqual({ status: 200, body: { allowed: true } })
+  })
+
+  test('a status read from anywhere but loopback is refused', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({
+      config: baseConfig(),
+      table: table(),
+      stats: channel,
+      status: { report: () => ({ allowed: true }) },
+    })
+    open.push(listener)
+    const sent: { status: number; body: unknown }[] = []
+    const fakeRequest = {
+      method: 'GET',
+      url: '/p2p/v1/status',
+      headers: {},
+      socket: { remoteAddress: '10.1.2.3' },
+    } as unknown as Parameters<typeof listener.handle>[0]
+    const fakeResponse = {
+      writeHead: (status: number) => {
+        sent.push({ status, body: undefined })
+      },
+      end: (body: string) => {
+        sent[sent.length - 1] = { status: sent[sent.length - 1]!.status, body: JSON.parse(body) as unknown }
+      },
+    } as unknown as Parameters<typeof listener.handle>[1]
+    await listener.handle(fakeRequest, fakeResponse)
+    expect(sent[0]?.status).toBe(404)
+    expect(channel.snapshot().unknownPaths).toBe(1)
+  })
+
+  test('reports the port the OS actually bound', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
+    open.push(listener)
+    expect(channel.snapshot()).toMatchObject({ state: 'listening', boundPort: listener.address().port })
+  })
+
+  test('reports a listener that closed', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
+    await listener.close()
+    expect(channel.snapshot()).toMatchObject({ state: 'closed', boundPort: null })
+  })
+
+  test('reports a start that failed instead of failing silently', async () => {
+    const first = await startListener({ config: baseConfig(), table: table() })
+    open.push(first)
+    const channel = new ChannelStats()
+    await expect(
+      startListener({
+        config: { ...baseConfig(), listen: { host: '127.0.0.1', port: first.address().port } },
+        table: table(),
+        stats: channel,
+      }),
+    ).rejects.toThrow()
+    expect(channel.snapshot()).toMatchObject({ state: 'failed', boundPort: null })
+    expect(channel.snapshot().lastFailure?.reason.length).toBeGreaterThan(0)
   })
 
   test('refuses a signed request whose sentAt is outside the window', async () => {

@@ -2,6 +2,7 @@ import { verifyRequest } from './p2p-auth.js'
 import type { CredentialsLike, PeerRef } from './p2p-secrets.js'
 import { SecretRefError, resolvePeers } from './p2p-secrets.js'
 import type { DedupeTable } from './p2p-dedupe.js'
+import type { ChannelStats } from './channel-stats.js'
 
 export const P2P_ROUTE = '/p2p/v1/message'
 
@@ -57,6 +58,7 @@ export interface HandleInput {
   auth: AuthHeader
   payload: P2PPayload
   process?: (eventId: string) => Promise<boolean>
+  stats?: ChannelStats | undefined
 }
 
 export type HandleResult =
@@ -94,6 +96,7 @@ export async function handleMessage(input: HandleInput): Promise<HandleResult> {
     body: request.body,
   })
   if (!verified.ok) return { ok: false, status: verified.status ?? 401, body: { error: verified.reason ?? 'unauthorized' } }
+  input.stats?.authenticated()
   const window = config.sentAtWindowMs ?? DEFAULT_SENT_AT_WINDOW_MS
   const at = config.now?.() ?? Date.now()
   if (Math.abs(at - request.sentAt) > window) {
@@ -112,19 +115,25 @@ export async function handleMessage(input: HandleInput): Promise<HandleResult> {
   if (request.to !== config.botName) return { ok: false, status: 403, body: { error: 'message is addressed to another bot' } }
 
   const key = `${request.instance}|${request.to}|${request.eventId}`
-  const claim = await table.claim(key, config.waitMs ?? 10_000)
-  if (claim.done) {
-    if (!claim.entry) return { ok: false, status: 503, body: { error: 'the first delivery is still being processed' } }
-    return { ok: true, status: 200, body: { duplicate: true, messageId: claim.entry.messageId, eventId: request.eventId } }
-  }
-
-  const messageId = messageIdFor(request.eventId)
+  const stats = input.stats
+  stats?.beginDelivery()
   try {
-    if (input.process) await input.process(request.eventId)
-    table.commit(key, messageId)
-  } catch (error) {
-    table.abort(key)
-    throw error
+    const claim = await table.claim(key, config.waitMs ?? 10_000)
+    if (claim.done) {
+      if (!claim.entry) return { ok: false, status: 503, body: { error: 'the first delivery is still being processed' } }
+      return { ok: true, status: 200, body: { duplicate: true, messageId: claim.entry.messageId, eventId: request.eventId } }
+    }
+
+    const messageId = messageIdFor(request.eventId)
+    try {
+      if (input.process) await input.process(request.eventId)
+      table.commit(key, messageId)
+    } catch (error) {
+      table.abort(key)
+      throw error
+    }
+    return { ok: true, status: 200, body: { duplicate: false, messageId, eventId: request.eventId } }
+  } finally {
+    stats?.endDelivery()
   }
-  return { ok: true, status: 200, body: { duplicate: false, messageId, eventId: request.eventId } }
 }

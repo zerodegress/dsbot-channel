@@ -22,6 +22,7 @@ import type { Hold } from './budget-ledger.js'
 
 import { toP2PEvent } from './p2p-mapping.js'
 import { createWarn } from './warn.js'
+import { ChannelStats } from './channel-stats.js'
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
@@ -47,6 +48,7 @@ export interface AdapterConfig extends ListenerConfig {
   instance: string
   policy: PolicySettings
   dedupe?: { ttlMs?: number; limit?: number }
+  status?: boolean
 }
 
 export interface ChannelConfig {
@@ -96,6 +98,8 @@ export const Config: any = Schema.object({
           host: Schema.string().default(DEFAULT_HOST),
           port: Schema.number().default(DEFAULT_PORT),
         }).default({}),
+        /** Loopback only; do not enable behind a proxy or serve, where every caller looks local. */
+        status: Schema.boolean().default(false),
         dedupe: Schema.object({
           ttlMs: Schema.number().default(7 * 24 * 60 * 60 * 1000),
           limit: Schema.number().default(100_000),
@@ -204,6 +208,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const started = await Promise.all(
     pairs.map(({ adapter, table }) => {
       const sessions = new PeerSessions({ controller, observe })
+      const stats = new ChannelStats()
       const compiled = compilePolicy(adapter.policy)
       const pipeline = compiled.specs.length > 0 ? buildPipeline(compiled.specs, compiled.deps) : undefined
       const budget = adapter.policy.budget
@@ -289,6 +294,19 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         config: { ...adapter, credentials },
         table,
         onMessage: handOff,
+        stats,
+        ...(adapter.status === true
+          ? {
+              status: {
+                report: () => ({
+                  channel: adapter.channel,
+                  bot: adapter.botName,
+                  instance: adapter.instance,
+                  snapshot: stats.snapshot(),
+                }),
+              },
+            }
+          : {}),
         onError: (error, request) => {
           warn(`dsbot-channel: handing off ${request.eventId} from ${request.instance} failed: ${String(error)}`)
         },

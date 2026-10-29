@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { DedupeTable } from '../src/p2p-dedupe.js'
+import { ChannelStats } from '../src/channel-stats.js'
 import { P2P_ROUTE, handleMessage, parseRequest } from '../src/p2p-protocol.js'
 import { signBody } from '../src/p2p-auth.js'
 
@@ -12,6 +13,7 @@ const fakeCredentials = (values: Record<string, string>) => ({
 })
 
 const NOW = 1_700_000_000_000
+
 
 const config = {
   botName: 'self-bot',
@@ -34,83 +36,89 @@ const request = (overrides: Record<string, unknown> = {}) => ({
 
 const auth = { authorization: 'Bearer secret-a', claimedInstance: 'peer-a' }
 
-describe('sentAt freshness', () => {
-  const sign = (body: string, sentAt: number): { signature: string; payload: Record<string, unknown> } => ({
-    signature: signBody('secret-a', { eventId: 'e1', sentAt, body }),
-    payload: request({ body, sentAt }),
-  })
-
-  const signed = async (
-    sentAt: number,
-    overrides: { now?: number; window?: number; body?: string } = {},
-  ): Promise<Awaited<ReturnType<typeof handleMessage>>> => {
-    const body = overrides.body ?? 'hello'
-    const { signature, payload } = sign(body, sentAt)
-    return handleMessage({
-      config: {
-        ...config,
-        ...(overrides.now === undefined ? {} : { now: () => overrides.now as number }),
-        ...(overrides.window === undefined ? {} : { sentAtWindowMs: overrides.window }),
-      },
-      table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
-      auth: { signature, claimedInstance: 'peer-a' },
-      payload,
-    })
-  }
-
-  test('a message sent now is accepted', async () => {
-    expect((await signed(NOW)).ok).toBe(true)
-  })
-
-  test('a message inside the window is accepted', async () => {
-    expect((await signed(NOW - 60_000)).ok).toBe(true)
-  })
-
-  test('a message exactly at the edge of the window is accepted', async () => {
-    expect((await signed(NOW - 300_000)).ok).toBe(true)
-  })
-
-  test('a message older than the window is refused with its own code', async () => {
-    const result = await signed(NOW - 300_001)
-    expect(result).toEqual({
-      ok: false,
-      status: 403,
-      body: {
-        error: 'sentAt is outside the accepted window of 300000ms',
-        code: 'stale_sent_at',
-        sentAt: NOW - 300_001,
-        now: NOW,
-      },
-    })
-  })
-
-  test('a message from too far in the future is refused the same way', async () => {
-    const result = await signed(NOW + 400_000)
-    expect(result).toMatchObject({ ok: false, status: 403, body: { code: 'stale_sent_at' } })
-  })
-
-  test('the refusal carries both clocks, so a skewed host is visible without reading logs closely', async () => {
-    const result = await signed(NOW - 400_000)
-    expect(result).toMatchObject({ body: { sentAt: NOW - 400_000, now: NOW } })
-    const body = (result as { body: { now: number; sentAt: number } }).body
-    expect(body.now - body.sentAt).toBe(400_000)
-  })
-
-  test('the window can be narrowed', async () => {
-    expect((await signed(NOW - 2_000, { window: 1_000 })).ok).toBe(false)
-    expect((await signed(NOW - 2_000, { window: 5_000 })).ok).toBe(true)
-  })
-
-  test('a bad signature is reported as a bad signature, never as stale', async () => {
-    const stale = sign('hello', NOW - 600_000)
+describe('the channel reports what happened to it', () => {
+  test('an accepted delivery records the authentication time', async () => {
+    const channel = new ChannelStats(() => NOW)
     const result = await handleMessage({
       config,
       table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
-      auth: { signature: signBody('wrong-secret', { eventId: 'e1', sentAt: NOW - 600_000, body: 'hello' }), claimedInstance: 'peer-a' },
-      payload: stale.payload,
+      auth: { authorization: 'Bearer secret-a', claimedInstance: 'peer-a' },
+      payload: request(),
+      stats: channel,
     })
-    expect(result).toMatchObject({ ok: false, status: 401, body: { error: 'bad signature' } })
-    expect((result as { body: { code?: string } }).body.code).toBeUndefined()
+    expect(result.ok).toBe(true)
+    expect(channel.snapshot().lastAuthenticatedAt).toBe(NOW)
+  })
+
+  test('a refused delivery records no authentication', async () => {
+    const channel = new ChannelStats(() => NOW)
+    await handleMessage({
+      config,
+      table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
+      auth: { authorization: 'Bearer wrong', claimedInstance: 'peer-a' },
+      payload: request(),
+      stats: channel,
+    })
+    expect(channel.snapshot().lastAuthenticatedAt).toBeNull()
+  })
+
+  test('a delivery still being processed is counted, and the count comes back down', async () => {
+    const channel = new ChannelStats(() => NOW)
+    let during = -1
+    await handleMessage({
+      config,
+      table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
+      auth: { authorization: 'Bearer secret-a', claimedInstance: 'peer-a' },
+      payload: request(),
+      stats: channel,
+      process: () => {
+        during = channel.snapshot().inFlight
+        return Promise.resolve(true)
+      },
+    })
+    expect(during).toBe(1)
+    expect(channel.snapshot().inFlight).toBe(0)
+  })
+
+  test('a process that throws still brings the count back down', async () => {
+    const channel = new ChannelStats(() => NOW)
+    await expect(
+      handleMessage({
+        config,
+        table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
+        auth: { authorization: 'Bearer secret-a', claimedInstance: 'peer-a' },
+        payload: request(),
+        stats: channel,
+        process: () => Promise.reject(new Error('boom')),
+      }),
+    ).rejects.toThrow('boom')
+    expect(channel.snapshot().inFlight).toBe(0)
+  })
+
+  test('without a collector the answer is identical to the one with it', async () => {
+    const attempt = (stats?: ChannelStats): Promise<Awaited<ReturnType<typeof handleMessage>>> =>
+      handleMessage({
+        config,
+        table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
+        auth: { authorization: 'Bearer secret-a', claimedInstance: 'peer-a' },
+        payload: request(),
+        ...(stats === undefined ? {} : { stats }),
+      })
+
+    expect(await attempt()).toEqual(await attempt(new ChannelStats(() => NOW)))
+  })
+
+  test('a refused delivery answers the same with or without a collector', async () => {
+    const attempt = (stats?: ChannelStats): Promise<Awaited<ReturnType<typeof handleMessage>>> =>
+      handleMessage({
+        config,
+        table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
+        auth: { authorization: 'Bearer wrong', claimedInstance: 'peer-a' },
+        payload: request(),
+        ...(stats === undefined ? {} : { stats }),
+      })
+
+    expect(await attempt()).toEqual(await attempt(new ChannelStats(() => NOW)))
   })
 })
 
@@ -260,5 +268,99 @@ describe('inflight TTL', () => {
 
   test('the default 5 minutes clears a 120 second turn', () => {
     expect(() => new DedupeTable({ ttlMs: 1000, limit: 10, inflightTtlMs: 300_000, maxTurnMs: 120_000 })).not.toThrow()
+  })
+})
+
+describe('sentAt freshness', () => {
+  const sign = (body: string, sentAt: number): { signature: string; payload: Record<string, unknown> } => ({
+    signature: signBody('secret-a', { eventId: 'e1', sentAt, body }),
+    payload: request({ body, sentAt }),
+  })
+
+  const signed = async (
+    sentAt: number,
+    overrides: { now?: number; window?: number; body?: string } = {},
+  ): Promise<Awaited<ReturnType<typeof handleMessage>>> => {
+    const body = overrides.body ?? 'hello'
+    const { signature, payload } = sign(body, sentAt)
+    return handleMessage({
+      config: {
+        ...config,
+        ...(overrides.now === undefined ? {} : { now: () => overrides.now as number }),
+        ...(overrides.window === undefined ? {} : { sentAtWindowMs: overrides.window }),
+      },
+      table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
+      auth: { signature, claimedInstance: 'peer-a' },
+      payload,
+    })
+  }
+
+  test('a message sent now is accepted', async () => {
+    expect((await signed(NOW)).ok).toBe(true)
+  })
+
+  test('a message inside the window is accepted', async () => {
+    expect((await signed(NOW - 60_000)).ok).toBe(true)
+  })
+
+  test('a message exactly at the edge of the window is accepted', async () => {
+    expect((await signed(NOW - 300_000)).ok).toBe(true)
+  })
+
+  test('a message older than the window is refused with its own code', async () => {
+    const result = await signed(NOW - 300_001)
+    expect(result).toEqual({
+      ok: false,
+      status: 403,
+      body: {
+        error: 'sentAt is outside the accepted window of 300000ms',
+        code: 'stale_sent_at',
+        sentAt: NOW - 300_001,
+        now: NOW,
+      },
+    })
+  })
+
+  test('a message from too far in the future is refused the same way', async () => {
+    const result = await signed(NOW + 400_000)
+    expect(result).toMatchObject({ ok: false, status: 403, body: { code: 'stale_sent_at' } })
+  })
+
+  test('the refusal carries both clocks, so a skewed host is visible without reading logs closely', async () => {
+    const result = await signed(NOW - 400_000)
+    expect(result).toMatchObject({ body: { sentAt: NOW - 400_000, now: NOW } })
+    const body = (result as { body: { now: number; sentAt: number } }).body
+    expect(body.now - body.sentAt).toBe(400_000)
+  })
+
+  test('a stale message still counts as authenticated, because the key was right', async () => {
+    const stats = new ChannelStats(() => NOW)
+    const { signature, payload } = sign('hello', NOW - 400_000)
+    const result = await handleMessage({
+      config: { ...config, now: () => NOW },
+      table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
+      auth: { signature, claimedInstance: 'peer-a' },
+      payload,
+      stats,
+    })
+    expect(result).toMatchObject({ ok: false, status: 403, body: { code: 'stale_sent_at' } })
+    expect(stats.snapshot().lastAuthenticatedAt).toBe(NOW)
+  })
+
+  test('the window can be narrowed', async () => {
+    expect((await signed(NOW - 2_000, { window: 1_000 })).ok).toBe(false)
+    expect((await signed(NOW - 2_000, { window: 5_000 })).ok).toBe(true)
+  })
+
+  test('a bad signature is reported as a bad signature, never as stale', async () => {
+    const stale = sign('hello', NOW - 600_000)
+    const result = await handleMessage({
+      config,
+      table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
+      auth: { signature: signBody('wrong-secret', { eventId: 'e1', sentAt: NOW - 600_000, body: 'hello' }), claimedInstance: 'peer-a' },
+      payload: stale.payload,
+    })
+    expect(result).toMatchObject({ ok: false, status: 401, body: { error: 'bad signature' } })
+    expect((result as { body: { code?: string } }).body.code).toBeUndefined()
   })
 })

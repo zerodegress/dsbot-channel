@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { createServer } from 'node:http'
+import { createServer, request as httpRequest } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
@@ -419,6 +419,95 @@ describe('a reply goes back to the sender of the inbound message', () => {
 
     await waitFor(() => warnings.some((line) => line.includes('forbidden')))
     expect(sessions.prompted).toHaveLength(1)
+  })
+})
+
+describe('a mounted adapter can report on itself', () => {
+  async function getStatus(port: number): Promise<{ status: number; body: Record<string, unknown> }> {
+    return new Promise((resolve, reject) => {
+      const req = httpRequest(
+        { host: '127.0.0.1', port, path: '/p2p/v1/status', method: 'GET' },
+        (response) => {
+          const chunks: Buffer[] = []
+          response.on('data', (chunk: Buffer) => chunks.push(chunk))
+          response.on('end', () =>
+            resolve({
+              status: response.statusCode ?? 0,
+              body: JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>,
+            }),
+          )
+        },
+      )
+      req.on('error', reject)
+      req.end()
+    })
+  }
+
+  test('the reply names the channel and the port it is really listening on', async () => {
+    const port = await freePort()
+    const ctx = new Context()
+    const sessions = new StubSessions(ctx, 1)
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', sessions)
+      },
+    })
+    const fork = await ctx.plugin(entry, {
+      adapters: [
+        {
+          channel: 'p2p:a',
+          instance: 'inst-a',
+          botName: 'bot-a',
+          peers: [{ instance: 'inst-b', secret: REF }],
+          listen: { host: '127.0.0.1', port },
+          status: true,
+        },
+      ],
+    })
+    forks.push(fork)
+
+    const reply = await getStatus(port)
+
+    expect(reply.status).toBe(200)
+    expect(reply.body).toMatchObject({
+      channel: 'p2p:a',
+      bot: 'bot-a',
+      instance: 'inst-a',
+      snapshot: { state: 'listening', boundPort: port, inFlight: 0, unknownPaths: 0, lastFailure: null },
+    })
+  })
+
+  test('an adapter that did not ask for the route does not answer it', async () => {
+    const port = await freePort()
+    const ctx = new Context()
+    const sessions = new StubSessions(ctx, 1)
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', sessions)
+      },
+    })
+    const fork = await ctx.plugin(entry, {
+      adapters: [
+        {
+          channel: 'p2p:a',
+          instance: 'inst-a',
+          botName: 'bot-a',
+          peers: [{ instance: 'inst-b', secret: REF }],
+          listen: { host: '127.0.0.1', port },
+        },
+      ],
+    })
+    forks.push(fork)
+
+    expect((await getStatus(port)).status).toBe(404)
   })
 })
 

@@ -3,6 +3,8 @@ import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { assertBindHost } from './config.js'
 import type { DedupeTable } from './p2p-dedupe.js'
+import type { ChannelStats } from './channel-stats.js'
+import { STATUS_ROUTE, isLoopbackPeer } from './p2p-status.js'
 import { MAX_BODY_BYTES, P2P_ROUTE, handleMessage, parseRequest } from './p2p-protocol.js'
 import type { HandleResult, P2PConfig, P2PPayload } from './p2p-protocol.js'
 import type { InboundRequest } from './p2p-inbound.js'
@@ -69,6 +71,10 @@ export interface ListenerOptions {
   onMessage?: (request: InboundRequest) => void | Promise<void>
   /** Receives a rejected asynchronous hand off so it never becomes a crash. */
   onError?: (error: unknown, request: InboundRequest) => void
+  /** Collects what this channel can report about itself. */
+  stats?: ChannelStats | undefined
+  /** Answers a loopback only status read; absent means the route does not exist. */
+  status?: { route?: string | undefined; report: () => unknown } | undefined
 }
 
 export interface Listener {
@@ -86,19 +92,32 @@ export async function startListener(options: ListenerOptions): Promise<Listener>
   const limit = options.config.maxBodyBytes ?? MAX_BODY_BYTES
 
   const handle = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+    const status = options.status
+    if (status !== undefined && request.method === 'GET' && request.url === (status.route ?? STATUS_ROUTE)) {
+      if (!isLoopbackPeer(request.socket.remoteAddress)) {
+        options.stats?.unknownPath()
+        send(response, 404, { error: 'not found' })
+        return
+      }
+      send(response, 200, status.report())
+      return
+    }
     if (request.method !== 'POST' || request.url !== P2P_ROUTE) {
+      options.stats?.unknownPath()
       send(response, 404, { error: 'not found' })
       return
     }
     const raw = await readBody(request, limit)
     let payload: P2PPayload
     if (!raw.ok) {
+      options.stats?.rejected('body exceeds the size limit')
       send(response, 413, { error: 'body exceeds the size limit' })
       return
     }
     try {
       payload = JSON.parse(raw.text) as P2PPayload
     } catch {
+      options.stats?.rejected('body must be valid json')
       send(response, 400, { error: 'body must be valid json' })
       return
     }
@@ -115,6 +134,7 @@ export async function startListener(options: ListenerOptions): Promise<Listener>
           claimedInstance: claimed,
         },
         payload,
+        ...(options.stats === undefined ? {} : { stats: options.stats }),
         ...(onMessage === undefined
           ? {}
           : {
@@ -138,9 +158,11 @@ export async function startListener(options: ListenerOptions): Promise<Listener>
             }),
       })
     } catch (error) {
+      options.stats?.rejected(error instanceof Error ? error.message : 'internal error')
       send(response, 500, { error: error instanceof Error ? error.message : 'internal error' })
       return
     }
+    if (result.status !== 200) options.stats?.rejected(result.body.error)
     send(response, result.status, result.body)
   }
 
@@ -154,13 +176,25 @@ export async function startListener(options: ListenerOptions): Promise<Listener>
       server.off('error', reject)
       resolve()
     })
+  }).catch((error: unknown) => {
+    options.stats?.failed(error instanceof Error ? error.message : String(error))
+    throw error
   })
+  options.stats?.listening((server.address() as AddressInfo).port)
 
   return {
     address: () => server.address() as AddressInfo,
     close: () =>
       new Promise<void>((resolve, reject) => {
-        server.close((error) => (error ? reject(error) : resolve()))
+        server.close((error) => {
+          if (error) {
+            options.stats?.failed(error.message)
+            reject(error)
+            return
+          }
+          options.stats?.closed()
+          resolve()
+        })
       }),
     handle,
   }
