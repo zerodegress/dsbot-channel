@@ -158,7 +158,16 @@ describe('running peer messages', () => {
   test('stays inactive while the session service is missing', async () => {
     const ctx = new Context()
     await ctx.plugin(credentialsProvider)
-    await ctx.plugin(entry.default, config())
+    let applies = 0
+    const spied = {
+      ...entry.default,
+      apply: (...args: Parameters<typeof entry.apply>) => {
+        applies += 1
+        return entry.apply(...args)
+      },
+    }
+    await ctx.plugin(spied, config())
+    expect(applies).toBe(0)
     expect(ctx.get('dsbot-channel.peers')).toBeUndefined()
   })
 
