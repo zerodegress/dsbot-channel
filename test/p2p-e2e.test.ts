@@ -39,6 +39,7 @@ const loggerStub = {
 
 class StubSessions {
   readonly prompted: Prompted[] = []
+  readonly signals: AbortSignal[] = []
   readonly #ctx: Context
   readonly #replies: number
   readonly #failTimes: number
@@ -55,7 +56,12 @@ class StubSessions {
     return Promise.resolve({ sessionId: `session-${this.#count}` })
   }
 
-  prompt(request: Prompted & { content: readonly { type: 'text'; text: string }[] }): Promise<{ accepted: boolean }> {
+  prompt(
+    request: Prompted & { content: readonly { type: 'text'; text: string }[] },
+    signal: AbortSignal,
+  ): Promise<{ accepted: boolean }> {
+    signal.throwIfAborted()
+    this.signals.push(signal)
     const text = request.content.map((part) => part.text).join('')
     this.prompted.push({ sessionId: request.sessionId, requestId: request.requestId, text })
     if (this.prompted.length <= this.#failTimes) {
@@ -324,6 +330,17 @@ function send(port: number, eventId: string, body: string) {
     instance: 'inst-a',
   })
 }
+
+describe('the session controller call shape', () => {
+  test('the controller is handed a live signal, as the host signature requires', async () => {
+    const { sessions, portB } = await pair()
+    await send(portB, 'evt-1', 'hello')
+
+    await waitFor(() => sessions.prompted.length > 0)
+    expect(sessions.signals[0]).toBeInstanceOf(AbortSignal)
+    expect(sessions.signals[0]?.aborted).toBe(false)
+  })
+})
 
 describe('the reply ceiling', () => {
   test('three rounds pass, the fourth starts no new turn', async () => {

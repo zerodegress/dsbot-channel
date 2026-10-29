@@ -26,7 +26,7 @@ export interface PromptRequest {
 
 export interface SessionControllerLike {
   create(request: { cwd?: string; agentPreset?: string }): Promise<{ sessionId: string }>
-  prompt(request: PromptRequest, source: { kind: 'user' }): Promise<{ accepted: boolean }>
+  prompt(request: PromptRequest, signal: AbortSignal): Promise<{ accepted: boolean }>
 }
 
 export interface PeerSessionsOptions {
@@ -153,15 +153,19 @@ export class PeerSessions {
       }
       if (event.type === 'turn/end') settle()
     })
+    const cancelled = new AbortController()
     let timer: ReturnType<typeof setTimeout> | undefined
     const expired = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new TurnTimeoutError(this.#timeoutMs)), this.#timeoutMs)
+      timer = setTimeout(() => {
+        cancelled.abort()
+        reject(new TurnTimeoutError(this.#timeoutMs))
+      }, this.#timeoutMs)
       timer.unref()
     })
     const delivered = (async (): Promise<void> => {
       await this.#controller.prompt(
         { sessionId, requestId: input.requestId, mode: 'queue', content: [{ type: 'text', text: input.text }] },
-        { kind: 'user' },
+        cancelled.signal,
       )
       await finished
     })()
