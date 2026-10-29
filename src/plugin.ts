@@ -4,15 +4,46 @@ import { ConfigError, assertBindHost, validateConfig } from './config.js'
 import { DedupeTable } from './p2p-dedupe.js'
 import { DEFAULT_HOST, DEFAULT_PORT, startListener } from './p2p-listener.js'
 import type { ListenerConfig } from './p2p-listener.js'
-import type { CredentialsLike } from './p2p-secrets.js'
+import type { CredentialsLike, PeerRef } from './p2p-secrets.js'
 import { assertPeersResolvable } from './p2p-secrets.js'
+import { PeerSessions } from './p2p-inbound.js'
+import type { InboundRequest, SessionControllerLike, SessionEventLike } from './p2p-inbound.js'
+import { sendToPeer } from './p2p-send.js'
+import type { PeerTarget } from './p2p-send.js'
+import { DEFAULT_LOOP_IDLE_RESET_MS, DEFAULT_LOOP_MAX_TURNS, InboundGate } from './inbound-gate.js'
+import type { PolicyConfig } from './policy-config.js'
+import { compilePolicy } from './policy-config.js'
+import { buildPipeline } from './build-pipeline.js'
+import { createLedger } from './budget-config.js'
+import type { BudgetConfig } from './budget-config.js'
+import { TurnBilling } from './turn-billing.js'
+import type { Hold } from './budget-ledger.js'
+
+import { toP2PEvent } from './p2p-mapping.js'
+
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    'session/event': (session: { id: string }, event: SessionEventLike) => void
+  }
+}
 
 /** Turn ceiling a message may occupy before it is dropped. */
 export const MAX_TURN_MS = 120_000
 
+export interface PolicySettings extends PolicyConfig {
+  relayLimit: number
+  relayResetMs: number
+  score?: unknown
+  judge?: unknown
+  prepare?: unknown
+  budget?: BudgetConfig | undefined
+}
+
 export interface AdapterConfig extends ListenerConfig {
   kind?: 'p2p'
   channel: string
+  instance: string
+  policy: PolicySettings
   dedupe?: { ttlMs?: number; limit?: number }
 }
 
@@ -27,13 +58,34 @@ export const Config: any = Schema.object({
       Schema.object({
         kind: Schema.const('p2p').default('p2p'),
         channel: Schema.string().required(),
+        instance: Schema.string().required(),
         botName: Schema.string().required(),
         peers: Schema.array(
           Schema.object({
             instance: Schema.string().required(),
             secret: Schema.string().required(),
+            url: Schema.string(),
           }),
         ).default([]),
+        policy: Schema.object({
+          relayLimit: Schema.number().default(DEFAULT_LOOP_MAX_TURNS),
+          relayResetMs: Schema.number().default(DEFAULT_LOOP_IDLE_RESET_MS),
+          deny: Schema.object({
+            words: Schema.array(Schema.string()).default([]),
+            regexes: Schema.array(Schema.string()).default([]),
+          }).default({}),
+          allow: Schema.object({
+            peers: Schema.array(Schema.string()).default([]),
+          }).default({}),
+          score: Schema.any(),
+          judge: Schema.any(),
+          prepare: Schema.any(),
+          budget: Schema.object({
+            capacity: Schema.number(),
+            softLimit: Schema.number(),
+            hardLimit: Schema.number(),
+          }).default(undefined as never),
+        }).default({}),
         inflightTtlMs: Schema.number().default(300_000),
         maxBodyBytes: Schema.number().default(64 * 1024),
         waitMs: Schema.number(),
@@ -54,6 +106,37 @@ export const Config: any = Schema.object({
 function prepareAdapter(adapter: AdapterConfig, index: number): DedupeTable {
   const path = (field: string): string[] => ['adapters', String(index), field]
   assertBindHost(adapter.listen.host ?? DEFAULT_HOST, path('listen'))
+  const { relayLimit, relayResetMs } = adapter.policy
+  if (!Number.isInteger(relayLimit) || relayLimit < 1) {
+    throw new ConfigError(
+      `relayLimit must be a whole number of rounds, at least 1: ${relayLimit}`,
+      path('policy'),
+    )
+  }
+  if (!Number.isInteger(relayResetMs) || relayResetMs < 1) {
+    throw new ConfigError(
+      `relayResetMs must be a whole number of milliseconds, at least 1: ${relayResetMs}`,
+      path('policy'),
+    )
+  }
+  const budget = adapter.policy.budget
+  if (budget !== undefined && budget.capacity === undefined) {
+    throw new ConfigError('policy.budget.capacity is required', [...path('policy'), 'budget', 'capacity'])
+  }
+  if (budget?.capacity !== undefined && (!Number.isInteger(budget.capacity) || budget.capacity < 1)) {
+    throw new ConfigError(
+      `budget capacity must be a whole number of points, at least 1: ${budget.capacity}`,
+      [...path('policy'), 'budget', 'capacity'],
+    )
+  }
+  for (const unsupported of ['score', 'judge', 'prepare'] as const) {
+    if (adapter.policy[unsupported] !== undefined) {
+      throw new ConfigError(
+        `policy.${unsupported} is not supported in this version: only deny and allow can be configured`,
+        [...path('policy'), unsupported],
+      )
+    }
+  }
   if (adapter.inflightTtlMs <= MAX_TURN_MS) {
     throw new ConfigError(
       `inflightTtlMs must exceed maxTurnMs: ${adapter.inflightTtlMs} <= ${MAX_TURN_MS}`,
@@ -95,8 +178,111 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
     }
     await assertPeersResolvable(adapter.peers, credentials)
   }
+  const controller = ctx.get('sessionController') as SessionControllerLike | undefined
+  if (controller === undefined || typeof controller.create !== 'function' || typeof controller.prompt !== 'function') {
+    throw new ConfigError('the sessionController service is required to run peer messages', ['adapters'])
+  }
+  const observe = (listener: (sessionId: string, event: SessionEventLike) => void): (() => void) =>
+    ctx.on('session/event', (session: { id: string }, event: SessionEventLike) => listener(session.id, event))
+  const logger = ctx.get('logger') as { warn(message: string): void } | undefined
+  const warn = (message: string): void => {
+    void Promise.resolve()
+      .then(() => logger?.warn(message))
+      .catch(() => undefined)
+  }
   const started = await Promise.all(
-    pairs.map(({ adapter, table }) => startListener({ config: { ...adapter, credentials }, table })),
+    pairs.map(({ adapter, table }) => {
+      const sessions = new PeerSessions({ controller, observe })
+      const compiled = compilePolicy(adapter.policy)
+      const pipeline = compiled.specs.length > 0 ? buildPipeline(compiled.specs, compiled.deps) : undefined
+      const budget = adapter.policy.budget
+      const ledger = budget === undefined ? undefined : createLedger(budget)
+      const billing = new TurnBilling({ ledger })
+      const gate = new InboundGate({
+        loop: { relayLimit: adapter.policy.relayLimit, relayResetMs: adapter.policy.relayResetMs },
+        pipeline,
+        ledger,
+      })
+      const handOff = (request: InboundRequest): void => {
+        const event = toP2PEvent({ ...request, messageId: `p2p-${request.eventId}` })
+        let hold: Hold | undefined
+        const reply = async (): Promise<void> => {
+          const sessionId = await sessions.sessionFor(request.instance)
+          const decision = await gate.admit({
+            event: {
+              eventKey: event.meta.derived.eventKey,
+              scope: event.source.scope,
+              mentioned: event.meta.transport.mentioned,
+              text: request.body,
+              peer: request.instance,
+            },
+            peer: request.instance,
+            botId: adapter.botName,
+            session: sessionId,
+          })
+          if (!decision.allow) {
+            const detail = decision.detail === undefined ? '' : ` (${decision.detail})`
+            warn(
+              `dsbot-channel: kept ${request.eventId} from ${request.instance} out of a turn: ${decision.reason}${detail}`,
+            )
+            return
+          }
+          hold = billing.begin(adapter.botName, request.instance, sessionId)
+          const turn = await sessions.runTurn({
+            peer: request.instance,
+            requestId: request.eventId,
+            text: event.body.text,
+          })
+          if (turn.text.length === 0) {
+            billing.reject(hold)
+            hold = undefined
+            return
+          }
+          const configured = adapter.peers.find((candidate) => candidate.instance === request.instance)
+          if (configured === undefined) {
+            billing.reject(hold)
+            hold = undefined
+            return
+          }
+          const url = (configured as PeerRef & { url?: string }).url
+          const peer: PeerTarget = {
+            instance: configured.instance,
+            secret: configured.secret,
+            ...(url === undefined ? {} : { url }),
+          }
+          const sent = await sendToPeer({
+            peer,
+            credentials,
+            to: request.sender,
+            body: turn.text,
+            eventId: `reply:${request.eventId}`,
+            sender: adapter.botName,
+            instance: adapter.instance,
+          })
+          if (sent.ok) {
+            gate.recordReply(adapter.botName, request.instance)
+            billing.accept(hold)
+            hold = undefined
+            return
+          }
+          billing.reject(hold)
+          hold = undefined
+          warn(`dsbot-channel: reply to ${request.instance} was not delivered: ${sent.code} ${sent.reason}`)
+        }
+        void reply().catch((error: unknown) => {
+          billing.refund(hold)
+          warn(`dsbot-channel: peer turn for ${request.instance} failed: ${String(error)}`)
+        })
+      }
+      return startListener({
+        config: { ...adapter, credentials },
+        table,
+        onMessage: handOff,
+        onError: (error, request) => {
+          warn(`dsbot-channel: handing off ${request.eventId} from ${request.instance} failed: ${String(error)}`)
+        },
+      })
+    }),
   )
   ctx.provide('dsbot-channel.peers')
   ctx.set('dsbot-channel.peers', started)
