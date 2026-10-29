@@ -366,6 +366,7 @@ describe('a reply goes back to the sender of the inbound message', () => {
 
     const port = await freePort()
     const ctx = new Context()
+    captureWarnings(ctx)
     const sessions = new StubSessions(ctx, 99)
     await ctx.plugin({
       name: 'probe-services',
@@ -374,8 +375,6 @@ describe('a reply goes back to the sender of the inbound message', () => {
         scope.set('credentials', credentials)
         scope.provide('sessionController')
         scope.set('sessionController', sessions)
-        scope.provide('logger')
-        scope.set('logger', loggerStub)
       },
     })
     const fork = await ctx.plugin(entry, {
