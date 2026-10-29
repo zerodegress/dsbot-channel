@@ -24,6 +24,8 @@ import { toP2PEvent } from './p2p-mapping.js'
 import { createWarn } from './warn.js'
 import { ChannelStats } from './channel-stats.js'
 import { StatusRegistry } from './p2p-status.js'
+import { PushRouter, createSendText } from './push-tool.js'
+import type { PushSource, SendTextTool } from './push-tool.js'
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
@@ -73,6 +75,7 @@ export const Config: any = Schema.object({
             instance: Schema.string().required(),
             secret: Schema.string().required(),
             url: Schema.string(),
+            botName: Schema.string(),
           }),
         ).default([]),
         policy: Schema.object({
@@ -210,6 +213,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
     ctx.on('session/event', (session: { id: string }, event: SessionEventLike) => listener(session.id, event))
   const warn = createWarn(ctx)
   const registry = new StatusRegistry()
+  const sources = new Map<string, PushSource>()
   const started = await Promise.all(
     pairs.map(({ adapter, table }) => {
       const sessions = new PeerSessions({
@@ -239,6 +243,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         let hold: Hold | undefined
         const reply = async (): Promise<void> => {
           const sessionId = await sessions.sessionFor(request.instance)
+          sources.set(sessionId, { channel: adapter.channel, peer: request.instance })
           const decision = await gate.admit({
             event: {
               eventKey: event.meta.derived.eventKey,
@@ -332,6 +337,50 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   ctx.set('dsbot-channel.status', { snapshot: () => registry.snapshot() })
   ctx.provide('dsbot-channel.peers')
   ctx.set('dsbot-channel.peers', started)
+  const tools = ctx.get('tools') as { register: (definition: SendTextTool) => () => void } | undefined
+  if (tools !== undefined && typeof tools.register === 'function') {
+    const byChannel = new Map(pairs.map(({ adapter }) => [adapter.channel, adapter]))
+    const router = new PushRouter({
+      channels: pairs.map(({ adapter }) => ({
+        channel: adapter.channel,
+        instance: adapter.instance,
+        botName: adapter.botName,
+        peers: adapter.peers.map((peer) => ({
+          instance: peer.instance,
+          ...(peer.botName === undefined ? {} : { botName: peer.botName }),
+        })),
+      })),
+      source: (sessionId) => (sessionId === undefined ? undefined : sources.get(sessionId)),
+      send: async (delivery) => {
+        const adapter = byChannel.get(delivery.channel)
+        const peer = adapter?.peers.find((candidate) => candidate.instance === delivery.peer)
+        if (adapter === undefined || peer === undefined) {
+          return {
+            ok: false,
+            code: 'no_url',
+            retryable: false,
+            reason: `peer "${delivery.peer}" is gone from channel "${delivery.channel}"`,
+          }
+        }
+        const url = (peer as PeerRef & { url?: string }).url
+        const target: PeerTarget = {
+          instance: peer.instance,
+          secret: peer.secret,
+          ...(url === undefined ? {} : { url }),
+        }
+        return sendToPeer({
+          peer: target,
+          credentials,
+          to: delivery.to,
+          body: delivery.text,
+          eventId: delivery.eventId,
+          sender: adapter.botName,
+          instance: adapter.instance,
+        })
+      },
+    })
+    ctx.effect(() => tools.register(createSendText(router)), 'dsbot-channel: send_text tool')
+  }
   ctx.effect(() => async () => {
     registry.clear()
     ctx.set('dsbot-channel.peers', [])
