@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
-import { signBody } from '../src/p2p-auth.js'
+import { signEnvelope } from '../src/p2p-auth.js'
+import type { Envelope } from '../src/p2p-auth.js'
 import { DedupeTable } from '../src/p2p-dedupe.js'
 import { handleMessage } from '../src/p2p-protocol.js'
 import type { HandleInput, P2PConfig } from '../src/p2p-protocol.js'
@@ -38,7 +39,7 @@ function table(): DedupeTable {
 
 describe('signature authentication through handleMessage', () => {
   test('accepts a request signed over eventId, sentAt and the body', async () => {
-    const signature = signBody(secret, { eventId: payload.eventId, sentAt: payload.sentAt, body: payload.body })
+    const signature = signEnvelope(secret, payload as unknown as Envelope)
     const input: HandleInput = { config, table: table(), auth: { signature, claimedInstance: 'inst-b' }, payload }
     const result = await handleMessage(input)
     expect(result.ok).toBe(true)
@@ -46,7 +47,7 @@ describe('signature authentication through handleMessage', () => {
   })
 
   test('still rejects a signature made over a different body', async () => {
-    const signature = signBody(secret, { eventId: payload.eventId, sentAt: payload.sentAt, body: 'tampered' })
+    const signature = signEnvelope(secret, { ...payload, body: 'tampered' } as unknown as Envelope)
     const input: HandleInput = { config, table: table(), auth: { signature, claimedInstance: 'inst-b' }, payload }
     const result = await handleMessage(input)
     expect(result.ok).toBe(false)
@@ -56,7 +57,7 @@ describe('signature authentication through handleMessage', () => {
 
 describe('signature encoding', () => {
   test('emits and accepts a base64 signature', async () => {
-    const signature = signBody(secret, { eventId: payload.eventId, sentAt: payload.sentAt, body: payload.body })
+    const signature = signEnvelope(secret, payload as unknown as Envelope)
     expect(signature).toMatch(/^[A-Za-z0-9+/]+={0,2}$/)
     expect(signature).not.toMatch(/^[0-9a-f]{64}$/)
     const input: HandleInput = { config, table: table(), auth: { signature, claimedInstance: 'inst-b' }, payload }
@@ -65,7 +66,7 @@ describe('signature encoding', () => {
   })
 
   test('rejects a hex encoded signature', async () => {
-    const hex = Buffer.from(signBody(secret, { eventId: payload.eventId, sentAt: payload.sentAt, body: payload.body }), 'base64').toString('hex')
+    const hex = Buffer.from(signEnvelope(secret, payload as unknown as Envelope), 'base64').toString('hex')
     const input: HandleInput = { config, table: table(), auth: { signature: hex, claimedInstance: 'inst-b' }, payload }
     const result = await handleMessage(input)
     expect(result).toMatchObject({ ok: false, status: 401 })

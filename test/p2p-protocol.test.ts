@@ -2,7 +2,8 @@ import { describe, expect, test } from 'vitest'
 import { DedupeTable } from '../src/p2p-dedupe.js'
 import { ChannelStats } from '../src/channel-stats.js'
 import { P2P_ROUTE, handleMessage, parseRequest } from '../src/p2p-protocol.js'
-import { signBody } from '../src/p2p-auth.js'
+import { signEnvelope } from '../src/p2p-auth.js'
+import type { Envelope } from '../src/p2p-auth.js'
 
 const fakeCredentials = (values: Record<string, string>) => ({
   resolve: async (reference: string) => {
@@ -210,7 +211,7 @@ describe('handleMessage', () => {
   test('a signed request with a valid signature is accepted', async () => {
     const table = new DedupeTable({ ttlMs: 604_800_000, limit: 100_000 })
     const signed = { ...request(), body: 'hello', sentAt: 1_700_000_000_000 }
-    const signature = signBody('secret-a', { eventId: signed.eventId, sentAt: signed.sentAt, body: signed.body })
+    const signature = signEnvelope('secret-a', signed as unknown as Envelope)
     const result = await handleMessage({ config, table, auth: { signature, claimedInstance: 'peer-a' }, payload: signed })
     expect(result).toMatchObject({ ok: true, status: 200, body: { messageId: 'p2p-e1' } })
   })
@@ -218,7 +219,7 @@ describe('handleMessage', () => {
   test('a signature over a different body is rejected', async () => {
     const table = new DedupeTable({ ttlMs: 604_800_000, limit: 100_000 })
     const signed = { ...request(), body: 'hello', sentAt: 1_700_000_000_000 }
-    const signature = signBody('secret-a', { eventId: signed.eventId, sentAt: signed.sentAt, body: 'tampered' })
+    const signature = signEnvelope('secret-a', { ...signed, body: 'tampered' } as unknown as Envelope)
     const result = await handleMessage({ config, table, auth: { signature, claimedInstance: 'peer-a' }, payload: signed })
     expect(result).toMatchObject({ ok: false, status: 401 })
   })
@@ -272,10 +273,10 @@ describe('inflight TTL', () => {
 })
 
 describe('sentAt freshness', () => {
-  const sign = (body: string, sentAt: number): { signature: string; payload: Record<string, unknown> } => ({
-    signature: signBody('secret-a', { eventId: 'e1', sentAt, body }),
-    payload: request({ body, sentAt }),
-  })
+  const sign = (body: string, sentAt: number): { signature: string; payload: Record<string, unknown> } => {
+    const payload = request({ body, sentAt })
+    return { signature: signEnvelope('secret-a', payload as unknown as Envelope), payload }
+  }
 
   const signed = async (
     sentAt: number,
@@ -357,7 +358,7 @@ describe('sentAt freshness', () => {
     const result = await handleMessage({
       config,
       table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
-      auth: { signature: signBody('wrong-secret', { eventId: 'e1', sentAt: NOW - 600_000, body: 'hello' }), claimedInstance: 'peer-a' },
+      auth: { signature: signEnvelope('wrong-secret', { ...stale.payload, sentAt: NOW - 600_000 } as unknown as Envelope), claimedInstance: 'peer-a' },
       payload: stale.payload,
     })
     expect(result).toMatchObject({ ok: false, status: 401, body: { error: 'bad signature' } })

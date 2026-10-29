@@ -5,7 +5,8 @@ import { checkListenerConfig, startListener } from '../src/p2p-listener.js'
 import { ChannelStats } from '../src/channel-stats.js'
 import type { Listener, ListenerConfig } from '../src/p2p-listener.js'
 import { P2P_ROUTE } from '../src/p2p-protocol.js'
-import { signBody } from '../src/p2p-auth.js'
+import { signEnvelope } from '../src/p2p-auth.js'
+import type { Envelope } from '../src/p2p-auth.js'
 import { staticCredentials } from '../src/p2p-secrets.js'
 import type { InboundRequest } from '../src/p2p-inbound.js'
 
@@ -130,7 +131,7 @@ describe('listener', () => {
     const listener = await startListener({ config: baseConfig(), table: table() })
     open.push(listener)
     const payload = message()
-    const signature = signBody(secret, { eventId: payload.eventId, sentAt: payload.sentAt, body: payload.body })
+    const signature = signEnvelope(secret, payload as unknown as Envelope)
     const reply = await post(listener.address().port, payload, { 'x-p2p-signature': signature })
     expect(reply.status).toBe(200)
     expect(reply.body).toMatchObject({ duplicate: false, messageId: 'p2p-evt-1' })
@@ -140,7 +141,7 @@ describe('listener', () => {
     const listener = await startListener({ config: baseConfig(), table: table() })
     open.push(listener)
     const payload = message()
-    const signature = signBody(secret, { eventId: payload.eventId, sentAt: payload.sentAt, body: 'other' })
+    const signature = signEnvelope(secret, { ...payload, body: 'other' } as unknown as Envelope)
     const reply = await post(listener.address().port, payload, { 'x-p2p-signature': signature })
     expect(reply.status).toBe(401)
   })
@@ -150,7 +151,7 @@ describe('listener', () => {
     const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
     open.push(listener)
     const payload = message({ to: 'somebody-else' })
-    const signature = signBody(secret, { eventId: payload.eventId, sentAt: payload.sentAt, body: payload.body })
+    const signature = signEnvelope(secret, payload as unknown as Envelope)
     const reply = await post(listener.address().port, payload, { 'x-p2p-signature': signature })
 
     expect(reply.status).toBe(403)
@@ -213,7 +214,7 @@ describe('listener', () => {
     const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
     open.push(listener)
     const payload = message()
-    const signature = signBody(secret, { eventId: payload.eventId, sentAt: payload.sentAt, body: payload.body })
+    const signature = signEnvelope(secret, payload as unknown as Envelope)
     const reply = await post(listener.address().port, payload, { 'x-p2p-signature': signature })
 
     expect(reply.status).toBe(200)
@@ -400,7 +401,7 @@ describe('listener', () => {
     const listener = await startListener({ config: baseConfig(), table: table() })
     open.push(listener)
     const stale = message({ sentAt: 1_700_000_000_000 - 600_000 })
-    const signature = signBody(secret, { eventId: stale.eventId, sentAt: stale.sentAt, body: stale.body })
+    const signature = signEnvelope(secret, stale as unknown as Envelope)
     const reply = await post(listener.address().port, stale, { 'x-p2p-signature': signature })
     expect(reply.status).toBe(403)
     expect(reply.body).toMatchObject({ code: 'stale_sent_at' })
@@ -411,11 +412,11 @@ describe('listener', () => {
     const listener = await startListener({ config: baseConfig(), table: table0 })
     open.push(listener)
     const stale = message({ sentAt: 1_700_000_000_000 - 600_000 })
-    const staleSignature = signBody(secret, { eventId: stale.eventId, sentAt: stale.sentAt, body: stale.body })
+    const staleSignature = signEnvelope(secret, stale as unknown as Envelope)
     expect((await post(listener.address().port, stale, { 'x-p2p-signature': staleSignature })).status).toBe(403)
 
     const fresh = message()
-    const freshSignature = signBody(secret, { eventId: fresh.eventId, sentAt: fresh.sentAt, body: fresh.body })
+    const freshSignature = signEnvelope(secret, fresh as unknown as Envelope)
     const reply = await post(listener.address().port, fresh, { 'x-p2p-signature': freshSignature })
     expect(reply).toMatchObject({ status: 200, body: { duplicate: false } })
   })
