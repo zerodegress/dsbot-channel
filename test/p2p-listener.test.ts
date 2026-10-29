@@ -16,6 +16,7 @@ const baseConfig = (): ListenerConfig => ({
   peers: [{ instance: 'inst-b', secret: secretRef }],
   credentials: staticCredentials({ [secretRef]: secret }),
   inflightTtlMs: 300_000,
+  now: () => 1_700_000_000_000,
   maxBodyBytes: 64 * 1024,
   listen: { port: 0 },
 })
@@ -141,6 +142,30 @@ describe('listener', () => {
     const signature = signBody(secret, { eventId: payload.eventId, sentAt: payload.sentAt, body: 'other' })
     const reply = await post(listener.address().port, payload, { 'x-p2p-signature': signature })
     expect(reply.status).toBe(401)
+  })
+
+  test('refuses a signed request whose sentAt is outside the window', async () => {
+    const listener = await startListener({ config: baseConfig(), table: table() })
+    open.push(listener)
+    const stale = message({ sentAt: 1_700_000_000_000 - 600_000 })
+    const signature = signBody(secret, { eventId: stale.eventId, sentAt: stale.sentAt, body: stale.body })
+    const reply = await post(listener.address().port, stale, { 'x-p2p-signature': signature })
+    expect(reply.status).toBe(403)
+    expect(reply.body).toMatchObject({ code: 'stale_sent_at' })
+  })
+
+  test('a stale request does not take the dedupe slot of its event id', async () => {
+    const table0 = table()
+    const listener = await startListener({ config: baseConfig(), table: table0 })
+    open.push(listener)
+    const stale = message({ sentAt: 1_700_000_000_000 - 600_000 })
+    const staleSignature = signBody(secret, { eventId: stale.eventId, sentAt: stale.sentAt, body: stale.body })
+    expect((await post(listener.address().port, stale, { 'x-p2p-signature': staleSignature })).status).toBe(403)
+
+    const fresh = message()
+    const freshSignature = signBody(secret, { eventId: fresh.eventId, sentAt: fresh.sentAt, body: fresh.body })
+    const reply = await post(listener.address().port, fresh, { 'x-p2p-signature': freshSignature })
+    expect(reply).toMatchObject({ status: 200, body: { duplicate: false } })
   })
 
   test('answers unknown routes with 404', async () => {

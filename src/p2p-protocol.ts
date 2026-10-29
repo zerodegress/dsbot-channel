@@ -7,6 +7,8 @@ export const P2P_ROUTE = '/p2p/v1/message'
 
 export const MAX_BODY_BYTES = 64 * 1024
 
+export const DEFAULT_SENT_AT_WINDOW_MS = 300_000
+
 export interface P2PConfig {
   botName: string
   peers: readonly PeerRef[]
@@ -14,6 +16,8 @@ export interface P2PConfig {
   inflightTtlMs: number
   maxBodyBytes: number
   waitMs?: number
+  sentAtWindowMs?: number
+  now?: () => number
 }
 
 export interface P2PPayload {
@@ -57,7 +61,11 @@ export interface HandleInput {
 
 export type HandleResult =
   | { ok: true; status: 200; body: { duplicate: boolean; messageId: string; eventId: string } }
-  | { ok: false; status: 400 | 401 | 403 | 413 | 503; body: { error: string } }
+  | {
+      ok: false
+      status: 400 | 401 | 403 | 413 | 503
+      body: { error: string; code?: string; sentAt?: number; now?: number }
+    }
 
 function messageIdFor(eventId: string): string {
   return `p2p-${eventId}`
@@ -86,6 +94,20 @@ export async function handleMessage(input: HandleInput): Promise<HandleResult> {
     body: request.body,
   })
   if (!verified.ok) return { ok: false, status: verified.status ?? 401, body: { error: verified.reason ?? 'unauthorized' } }
+  const window = config.sentAtWindowMs ?? DEFAULT_SENT_AT_WINDOW_MS
+  const at = config.now?.() ?? Date.now()
+  if (Math.abs(at - request.sentAt) > window) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        error: `sentAt is outside the accepted window of ${window}ms`,
+        code: 'stale_sent_at',
+        sentAt: request.sentAt,
+        now: at,
+      },
+    }
+  }
   if (request.instance !== verified.instance) return { ok: false, status: 403, body: { error: 'instance does not match the bound secret' } }
   if (request.to !== config.botName) return { ok: false, status: 403, body: { error: 'message is addressed to another bot' } }
 

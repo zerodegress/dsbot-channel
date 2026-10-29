@@ -54,7 +54,7 @@ const message = {
   sender: 'bot-b',
   instance: 'inst-b',
   body: 'hello',
-  sentAt: 1_700_000_000_000,
+  sentAt: Date.now(),
 }
 
 function post(port: number, body: unknown): Promise<number> {
@@ -107,6 +107,8 @@ describe('plugin lifecycle', () => {
     const ctx = await contextWithCredentials()
     await expect(ctx.plugin(entry.default, config({ inflightTtlMs: 5000 }))).rejects.toThrow(ConfigError)
     await expect(ctx.plugin(entry.default, config({ inflightTtlMs: 120_000 }))).rejects.toThrow(/must exceed/)
+    await expect(ctx.plugin(entry.default, config({ sentAtWindowMs: 0 }))).rejects.toThrow(/sentAtWindowMs/)
+    await expect(ctx.plugin(entry.default, config({ sentAtWindowMs: 1.5 }))).rejects.toThrow(/sentAtWindowMs/)
   })
 
   test('does not silently rewrite the configured inflight ttl', async () => {
