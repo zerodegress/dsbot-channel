@@ -264,6 +264,7 @@ async function pair(
     denyWords?: string[]
     denyRegexes?: string[]
     allowPeers?: string[]
+    budget?: { capacity: number }
     unsupported?: string
   } = {},
 ) {
@@ -293,6 +294,7 @@ async function pair(
       ...(options.denyWords === undefined ? {} : { deny: { words: options.denyWords } }),
       ...(options.denyRegexes === undefined ? {} : { deny: { regexes: options.denyRegexes } }),
       ...(options.allowPeers === undefined ? {} : { allow: { peers: options.allowPeers } }),
+      ...(options.budget === undefined ? {} : { budget: options.budget }),
       ...(options.unsupported === undefined ? {} : { [options.unsupported]: {} }),
     },
   })
@@ -432,7 +434,7 @@ describe('policy', () => {
 })
 
 describe('policy budget', () => {
-  test('a budget section is refused until something charges the ledger', async () => {
+  async function mountWith(policy: Record<string, unknown>): Promise<Context> {
     const ctx = new Context()
     const sessions = new StubSessions(ctx, 1)
     await ctx.plugin({
@@ -454,12 +456,83 @@ describe('policy budget', () => {
           botName: 'bot-a',
           peers: [{ instance: 'inst-b', secret: REF }],
           listen: { host: '127.0.0.1', port: await freePort() },
-          policy: { budget: { capacity: 1000 } },
+          policy,
         },
       ],
     }
-    await expect(ctx.plugin(entry, config)).rejects.toThrow(
-      'policy.budget is not supported in this version: no budget is charged yet',
-    )
+    const fork = await ctx.plugin(entry, config)
+    forks.push(fork)
+    return ctx
+  }
+
+  test('a budget section mounts, because a turn is now charged against it', async () => {
+    await expect(mountWith({ budget: { capacity: 1000 } })).resolves.toBeDefined()
+  })
+
+  test('a capacity below one is refused, since zero would divide the window to nothing', async () => {
+    await expect(mountWith({ budget: { capacity: 0 } })).rejects.toThrow(/budget capacity/)
+    await expect(mountWith({ budget: { capacity: -5 } })).rejects.toThrow(/budget capacity/)
+    await expect(mountWith({ budget: { capacity: 2.5 } })).rejects.toThrow(/budget capacity/)
+  })
+
+  test('a budget without a capacity is refused by the schema', async () => {
+    await expect(mountWith({ budget: {} })).rejects.toThrow(/capacity/)
+  })
+
+  test('a full window refuses the next turn instead of starting it', async () => {
+    const { sessions, portB } = await pair({ budget: { capacity: 20 } })
+    await send(portB, 'evt-1', 'hello')
+
+    await waitFor(() => warnings.some((line) => line.includes('budget-hard')))
+    expect(sessions.prompted).toHaveLength(2)
+    expect(sessions.prompted[0]?.text).toContain('hello')
+  })
+
+  test('a turn whose reply cannot be sent costs the refused price, not the reserved one', async () => {
+    const port = await freePort()
+    const ctx = new Context()
+    const sessions = new StubSessions(ctx, 99)
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', sessions)
+        scope.provide('logger')
+        scope.set('logger', loggerStub)
+      },
+    })
+    const fork = await ctx.plugin(entry, {
+      adapters: [
+        {
+          channel: 'p2p:a',
+          instance: 'inst-a',
+          botName: 'bot-b',
+          peers: [{ instance: 'inst-a', secret: REF }],
+          listen: { host: '127.0.0.1', port },
+          policy: { budget: { capacity: 15 } },
+        },
+      ],
+    })
+    forks.push(fork)
+
+    await send(port, 'evt-1', 'one')
+    await waitFor(() => sessions.prompted.length === 1)
+    await send(port, 'evt-2', 'two')
+    await waitFor(() => sessions.prompted.length === 2)
+    await send(port, 'evt-3', 'three')
+
+    await waitFor(() => warnings.some((line) => line.includes('budget-hard')))
+    expect(sessions.prompted).toHaveLength(2)
+  })
+
+  test('a window wide enough lets the pair finish its rounds', async () => {
+    const { sessions, portB } = await pair({ budget: { capacity: 4000 }, relayLimit: 2 })
+    await send(portB, 'evt-1', 'hello')
+
+    await waitFor(() => warnings.some((line) => line.includes('loop-limit')))
+    expect(warnings.some((line) => line.includes('budget-hard'))).toBe(false)
+    expect(sessions.prompted.length).toBeGreaterThan(0)
   })
 })

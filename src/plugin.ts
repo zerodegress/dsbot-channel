@@ -14,6 +14,10 @@ import { DEFAULT_LOOP_IDLE_RESET_MS, DEFAULT_LOOP_MAX_TURNS, InboundGate } from 
 import type { PolicyConfig } from './policy-config.js'
 import { compilePolicy } from './policy-config.js'
 import { buildPipeline } from './build-pipeline.js'
+import { createLedger } from './budget-config.js'
+import type { BudgetConfig } from './budget-config.js'
+import { TurnBilling } from './turn-billing.js'
+import type { Hold } from './budget-ledger.js'
 
 import { toP2PEvent } from './p2p-mapping.js'
 
@@ -32,7 +36,7 @@ export interface PolicySettings extends PolicyConfig {
   score?: unknown
   judge?: unknown
   prepare?: unknown
-  budget?: unknown
+  budget?: BudgetConfig | undefined
 }
 
 export interface AdapterConfig extends ListenerConfig {
@@ -76,7 +80,11 @@ export const Config: any = Schema.object({
           score: Schema.any(),
           judge: Schema.any(),
           prepare: Schema.any(),
-          budget: Schema.any(),
+          budget: Schema.object({
+            capacity: Schema.number(),
+            softLimit: Schema.number(),
+            hardLimit: Schema.number(),
+          }).default(undefined as never),
         }).default({}),
         inflightTtlMs: Schema.number().default(300_000),
         maxBodyBytes: Schema.number().default(64 * 1024),
@@ -111,10 +119,14 @@ function prepareAdapter(adapter: AdapterConfig, index: number): DedupeTable {
       path('policy'),
     )
   }
-  if (adapter.policy.budget !== undefined) {
+  const budget = adapter.policy.budget
+  if (budget !== undefined && budget.capacity === undefined) {
+    throw new ConfigError('policy.budget.capacity is required', [...path('policy'), 'budget', 'capacity'])
+  }
+  if (budget?.capacity !== undefined && (!Number.isInteger(budget.capacity) || budget.capacity < 1)) {
     throw new ConfigError(
-      'policy.budget is not supported in this version: no budget is charged yet',
-      [...path('policy'), 'budget'],
+      `budget capacity must be a whole number of points, at least 1: ${budget.capacity}`,
+      [...path('policy'), 'budget', 'capacity'],
     )
   }
   for (const unsupported of ['score', 'judge', 'prepare'] as const) {
@@ -183,12 +195,17 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
       const sessions = new PeerSessions({ controller, observe })
       const compiled = compilePolicy(adapter.policy)
       const pipeline = compiled.specs.length > 0 ? buildPipeline(compiled.specs, compiled.deps) : undefined
+      const budget = adapter.policy.budget
+      const ledger = budget === undefined ? undefined : createLedger(budget)
+      const billing = new TurnBilling({ ledger })
       const gate = new InboundGate({
         loop: { relayLimit: adapter.policy.relayLimit, relayResetMs: adapter.policy.relayResetMs },
         pipeline,
+        ledger,
       })
       const handOff = (request: InboundRequest): void => {
         const event = toP2PEvent({ ...request, messageId: `p2p-${request.eventId}` })
+        let hold: Hold | undefined
         const reply = async (): Promise<void> => {
           const sessionId = await sessions.sessionFor(request.instance)
           const decision = await gate.admit({
@@ -210,14 +227,23 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
             )
             return
           }
+          hold = billing.begin(adapter.botName, request.instance, sessionId)
           const turn = await sessions.runTurn({
             peer: request.instance,
             requestId: request.eventId,
             text: event.body.text,
           })
-          if (turn.text.length === 0) return
+          if (turn.text.length === 0) {
+            billing.reject(hold)
+            hold = undefined
+            return
+          }
           const configured = adapter.peers.find((candidate) => candidate.instance === request.instance)
-          if (configured === undefined) return
+          if (configured === undefined) {
+            billing.reject(hold)
+            hold = undefined
+            return
+          }
           const url = (configured as PeerRef & { url?: string }).url
           const peer: PeerTarget = {
             instance: configured.instance,
@@ -235,11 +261,16 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
           })
           if (sent.ok) {
             gate.recordReply(adapter.botName, request.instance)
+            billing.accept(hold)
+            hold = undefined
             return
           }
+          billing.reject(hold)
+          hold = undefined
           warn(`dsbot-channel: reply to ${request.instance} was not delivered: ${sent.code} ${sent.reason}`)
         }
         void reply().catch((error: unknown) => {
+          billing.refund(hold)
           warn(`dsbot-channel: peer turn for ${request.instance} failed: ${String(error)}`)
         })
       }
