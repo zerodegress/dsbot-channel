@@ -265,6 +265,7 @@ async function pair(
     denyRegexes?: string[]
     allowPeers?: string[]
     unsupported?: string
+    budget?: { capacity: number; softLimit?: number; hardLimit?: number }
   } = {},
 ) {
   const [portA, portB] = [await freePort(), await freePort()]
@@ -428,5 +429,44 @@ describe('policy', () => {
 
   test('a policy key this version cannot honour is refused at mount time', async () => {
     await expect(pair({ unsupported: 'judge' })).rejects.toThrow(/not supported in this version/)
+  })
+})
+
+describe('policy budget', () => {
+  test('a budget section is accepted and does not block an unspent adapter', async () => {
+    const { sessions, portB } = await pair({ budget: { capacity: 1000 } })
+    await send(portB, 'evt-1', 'hello')
+
+    await waitFor(() => sessions.prompted.length > 0)
+    expect(sessions.prompted[0]?.text.endsWith(' hello')).toBe(true)
+  })
+
+  test('a budget section without a capacity is refused', async () => {
+    const ctx = new Context()
+    const sessions = new StubSessions(ctx, 1)
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', sessions)
+        scope.provide('logger')
+        scope.set('logger', loggerStub)
+      },
+    })
+    const config = {
+      adapters: [
+        {
+          channel: 'p2p:a',
+          instance: 'inst-a',
+          botName: 'bot-a',
+          peers: [{ instance: 'inst-b', secret: REF }],
+          listen: { host: '127.0.0.1', port: await freePort() },
+          policy: { budget: {} },
+        },
+      ],
+    }
+    await expect(ctx.plugin(entry, config)).rejects.toThrow(/capacity/)
   })
 })

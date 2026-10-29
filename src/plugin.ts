@@ -14,6 +14,14 @@ import { DEFAULT_LOOP_IDLE_RESET_MS, DEFAULT_LOOP_MAX_TURNS, InboundGate } from 
 import type { PolicyConfig } from './policy-config.js'
 import { compilePolicy } from './policy-config.js'
 import { buildPipeline } from './build-pipeline.js'
+import { createLedger } from './budget-config.js'
+import type { BudgetConfig } from './budget-config.js'
+
+interface BudgetDraft {
+  capacity?: number | undefined
+  softLimit?: number | undefined
+  hardLimit?: number | undefined
+}
 import { toP2PEvent } from './p2p-mapping.js'
 
 declare module '@deepseek-ai/cordis' {
@@ -28,6 +36,7 @@ export const MAX_TURN_MS = 120_000
 export interface PolicySettings extends PolicyConfig {
   relayLimit: number
   relayResetMs: number
+  budget?: BudgetDraft | undefined
   score?: unknown
   judge?: unknown
   prepare?: unknown
@@ -71,6 +80,11 @@ export const Config: any = Schema.object({
           allow: Schema.object({
             peers: Schema.array(Schema.string()).default([]),
           }).default({}),
+          budget: (Schema.object({
+            capacity: Schema.number(),
+            softLimit: Schema.number(),
+            hardLimit: Schema.number(),
+          }) as any).default(undefined),
           score: Schema.any(),
           judge: Schema.any(),
           prepare: Schema.any(),
@@ -107,6 +121,13 @@ function prepareAdapter(adapter: AdapterConfig, index: number): DedupeTable {
       `relayResetMs must be a whole number of milliseconds, at least 1: ${relayResetMs}`,
       path('policy'),
     )
+  }
+  if (adapter.policy.budget !== undefined && adapter.policy.budget.capacity === undefined) {
+    throw new ConfigError('budget.capacity is required when a budget is configured', [
+      ...path('policy'),
+      'budget',
+      'capacity',
+    ])
   }
   for (const unsupported of ['score', 'judge', 'prepare'] as const) {
     if (adapter.policy[unsupported] !== undefined) {
@@ -172,11 +193,22 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const started = await Promise.all(
     pairs.map(({ adapter, table }) => {
       const sessions = new PeerSessions({ controller, observe })
+      const draft = adapter.policy.budget
+      const budget: BudgetConfig | undefined =
+        draft === undefined || draft.capacity === undefined
+          ? undefined
+          : {
+              capacity: draft.capacity,
+              ...(draft.softLimit === undefined ? {} : { softLimit: draft.softLimit }),
+              ...(draft.hardLimit === undefined ? {} : { hardLimit: draft.hardLimit }),
+            }
+      const ledger = budget === undefined ? undefined : createLedger(budget)
       const compiled = compilePolicy(adapter.policy)
       const pipeline = compiled.specs.length > 0 ? buildPipeline(compiled.specs, compiled.deps) : undefined
       const gate = new InboundGate({
         loop: { relayLimit: adapter.policy.relayLimit, relayResetMs: adapter.policy.relayResetMs },
         pipeline,
+        ledger,
       })
       const handOff = (request: InboundRequest): void => {
         const event = toP2PEvent({ ...request, messageId: `p2p-${request.eventId}` })
