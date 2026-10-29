@@ -23,6 +23,10 @@ export interface SendInput {
   timeoutMs?: number
   waitMs?: number
   fetchImpl?: typeof fetch
+  /** Marks the message as a refusal; the peer runs no answer for it. */
+  status?: 'declined'
+  reason?: string
+  final?: boolean
 }
 
 export interface SendSuccess {
@@ -60,7 +64,17 @@ export async function sendToPeer(input: SendInput): Promise<SendResult> {
 
   const sentAt = input.sentAt ?? Date.now()
   const signature = signBody(secret, { eventId: input.eventId, sentAt, body: input.body })
-  const payload = JSON.stringify({ eventId: input.eventId, to: input.to, sender: input.sender, instance: input.instance, body: input.body, sentAt })
+  const payload = JSON.stringify({
+    eventId: input.eventId,
+    to: input.to,
+    sender: input.sender,
+    instance: input.instance,
+    body: input.body,
+    sentAt,
+    ...(input.status === undefined ? {} : { status: input.status }),
+    ...(input.reason === undefined ? {} : { reason: input.reason }),
+    ...(input.final === undefined ? {} : { final: input.final }),
+  })
   const send = input.fetchImpl ?? fetch
 
   let response: Response

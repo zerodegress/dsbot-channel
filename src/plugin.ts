@@ -26,6 +26,10 @@ import { ChannelStats } from './channel-stats.js'
 import { StatusRegistry } from './p2p-status.js'
 import { PushRouter, createSendText } from './push-tool.js'
 import type { PushSource, SendTextTool } from './push-tool.js'
+import { ClosedChains } from './chain-closer.js'
+import { InjectionLedger, guidanceFor } from './inbound-guidance.js'
+import { createDeclineTool, createEndTool } from './control-tools.js'
+import type { ControlPorts, PeerTurnRef } from './control-tools.js'
 
 /** Turn ceiling a message may occupy before it is dropped. */
 export const MAX_TURN_MS = 120_000
@@ -208,6 +212,9 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const warn = createWarn(ctx)
   const registry = new StatusRegistry()
   const sources = new Map<string, PushSource>()
+  const chains = new ClosedChains()
+  const injected = new InjectionLedger()
+  const activeTurns = new Map<string, PeerTurnRef>()
   const started = await Promise.all(
     pairs.map(({ adapter, table }) => {
       const sessions = new PeerSessions({
@@ -257,12 +264,26 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
             )
             return
           }
+          const turnRef: PeerTurnRef = {
+            eventId: request.eventId,
+            channel: adapter.channel,
+            peer: request.instance,
+            sender: request.sender,
+            suppressed: request.status === 'declined' || chains.isClosed(request.eventId),
+          }
+          activeTurns.set(sessionId, turnRef)
           hold = billing.begin(adapter.botName, request.instance, sessionId)
+          const guidance = injected.claim(sessionId) ? guidanceFor(event.source.scope) : ''
           const turn = await sessions.runTurn({
             peer: request.instance,
             requestId: request.eventId,
-            text: event.body.text,
+            text: guidance.length === 0 ? event.body.text : `${guidance}\n\n${event.body.text}`,
           })
+          if (turnRef.suppressed) {
+            billing.refund(hold)
+            hold = undefined
+            return
+          }
           if (turn.text.length === 0) {
             billing.reject(hold)
             hold = undefined
@@ -331,7 +352,8 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   ctx.set('dsbot-channel.status', { snapshot: () => registry.snapshot() })
   ctx.provide('dsbot-channel.peers')
   ctx.set('dsbot-channel.peers', started)
-  const tools = ctx.get('tools') as { register: (definition: SendTextTool) => () => void } | undefined
+  type AnyTool = SendTextTool | ReturnType<typeof createEndTool> | ReturnType<typeof createDeclineTool>
+  const tools = ctx.get('tools') as { register: (definition: AnyTool) => () => void } | undefined
   if (tools !== undefined && typeof tools.register === 'function') {
     const byChannel = new Map(pairs.map(({ adapter }) => [adapter.channel, adapter]))
     const router = new PushRouter({
@@ -374,6 +396,36 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
       },
     })
     ctx.effect(() => tools.register(createSendText(router)), 'dsbot-channel: send_text tool')
+    const ports: ControlPorts = {
+      turnOf: (sessionId) => (sessionId === undefined ? undefined : activeTurns.get(sessionId)),
+      isClosed: (eventId) => chains.isClosed(eventId),
+      closeChain: (eventId) => {
+        chains.close(eventId)
+      },
+      decline: async (turn, reason) => {
+        const adapter = byChannel.get(turn.channel)
+        const peer = adapter?.peers.find((candidate) => candidate.instance === turn.peer)
+        if (adapter === undefined || peer === undefined) {
+          return { ok: false, code: 'no_url', reason: `peer "${turn.peer}" is gone from channel "${turn.channel}"` }
+        }
+        const url = (peer as PeerRef & { url?: string }).url
+        const sent = await sendToPeer({
+          peer: { instance: peer.instance, secret: peer.secret, ...(url === undefined ? {} : { url }) },
+          credentials,
+          to: turn.sender,
+          body: '',
+          eventId: `decline:${turn.eventId}`,
+          sender: adapter.botName,
+          instance: adapter.instance,
+          status: 'declined',
+          final: true,
+          ...(reason === undefined ? {} : { reason }),
+        })
+        return sent.ok ? { ok: true } : { ok: false, code: sent.code, reason: sent.reason }
+      },
+    }
+    ctx.effect(() => tools.register(createEndTool(ports)), 'dsbot-channel: end tool')
+    ctx.effect(() => tools.register(createDeclineTool(ports)), 'dsbot-channel: decline tool')
   }
   ctx.effect(() => async () => {
     registry.clear()
