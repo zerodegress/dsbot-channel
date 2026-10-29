@@ -34,6 +34,18 @@ import type { ControlPorts, PeerTurnRef } from './control-tools.js'
 /** Turn ceiling a message may occupy before it is dropped. */
 export const MAX_TURN_MS = 120_000
 
+/** One place that turns a configured peer into a send target, so a new field reaches every path. */
+function targetOf(peer: PeerRef): PeerTarget {
+  const url = (peer as PeerRef & { url?: string }).url
+  const host = peer.host
+  return {
+    instance: peer.instance,
+    secret: peer.secret,
+    ...(url === undefined ? {} : { url }),
+    ...(host === undefined ? {} : { host }),
+  }
+}
+
 export interface PolicySettings extends PolicyConfig {
   relayLimit: number
   relayResetMs: number
@@ -296,14 +308,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
             hold = undefined
             return
           }
-          const url = (configured as PeerRef & { url?: string }).url
-          const host = (configured as PeerRef & { host?: string }).host
-          const peer: PeerTarget = {
-            instance: configured.instance,
-            secret: configured.secret,
-            ...(url === undefined ? {} : { url }),
-            ...(host === undefined ? {} : { host }),
-          }
+          const peer = targetOf(configured)
           const sent = await sendToPeer({
             peer,
             credentials,
@@ -382,16 +387,8 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
             reason: `peer "${delivery.peer}" is gone from channel "${delivery.channel}"`,
           }
         }
-        const url = (peer as PeerRef & { url?: string }).url
-        const host = (peer as PeerRef & { host?: string }).host
-        const target: PeerTarget = {
-          instance: peer.instance,
-          secret: peer.secret,
-          ...(url === undefined ? {} : { url }),
-          ...(host === undefined ? {} : { host }),
-        }
         return sendToPeer({
-          peer: target,
+          peer: targetOf(peer),
           credentials,
           to: delivery.to,
           body: delivery.text,
@@ -414,9 +411,8 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         if (adapter === undefined || peer === undefined) {
           return { ok: false, code: 'no_url', reason: `peer "${turn.peer}" is gone from channel "${turn.channel}"` }
         }
-        const url = (peer as PeerRef & { url?: string }).url
         const sent = await sendToPeer({
-          peer: { instance: peer.instance, secret: peer.secret, ...(url === undefined ? {} : { url }) },
+          peer: targetOf(peer),
           credentials,
           to: turn.sender,
           body: '',
