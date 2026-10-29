@@ -2,7 +2,8 @@ import { describe, expect, test } from 'vitest'
 import { DedupeTable } from '../src/p2p-dedupe.js'
 import { ChannelStats } from '../src/channel-stats.js'
 import { P2P_ROUTE, handleMessage, parseRequest } from '../src/p2p-protocol.js'
-import { signBody } from '../src/p2p-auth.js'
+import { signEnvelope } from '../src/p2p-auth.js'
+import type { Envelope } from '../src/p2p-auth.js'
 
 const fakeCredentials = (values: Record<string, string>) => ({
   resolve: async (reference: string) => {
@@ -34,7 +35,10 @@ const request = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 })
 
-const auth = { authorization: 'Bearer secret-a', claimedInstance: 'peer-a' }
+const signedAuth = (payload: Record<string, unknown>, key = 'secret-a') => ({
+  signature: signEnvelope(key, payload as unknown as Envelope),
+  claimedInstance: 'peer-a',
+})
 
 describe('the channel reports what happened to it', () => {
   test('an accepted delivery records the authentication time', async () => {
@@ -42,7 +46,7 @@ describe('the channel reports what happened to it', () => {
     const result = await handleMessage({
       config,
       table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
-      auth: { authorization: 'Bearer secret-a', claimedInstance: 'peer-a' },
+      auth: signedAuth(request()),
       payload: request(),
       stats: channel,
     })
@@ -55,7 +59,7 @@ describe('the channel reports what happened to it', () => {
     await handleMessage({
       config,
       table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
-      auth: { authorization: 'Bearer wrong', claimedInstance: 'peer-a' },
+      auth: signedAuth(request(), 'wrong'),
       payload: request(),
       stats: channel,
     })
@@ -68,7 +72,7 @@ describe('the channel reports what happened to it', () => {
     await handleMessage({
       config,
       table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
-      auth: { authorization: 'Bearer secret-a', claimedInstance: 'peer-a' },
+      auth: signedAuth(request()),
       payload: request(),
       stats: channel,
       process: () => {
@@ -86,7 +90,7 @@ describe('the channel reports what happened to it', () => {
       handleMessage({
         config,
         table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
-        auth: { authorization: 'Bearer secret-a', claimedInstance: 'peer-a' },
+        auth: signedAuth(request()),
         payload: request(),
         stats: channel,
         process: () => Promise.reject(new Error('boom')),
@@ -96,27 +100,31 @@ describe('the channel reports what happened to it', () => {
   })
 
   test('without a collector the answer is identical to the one with it', async () => {
-    const attempt = (stats?: ChannelStats): Promise<Awaited<ReturnType<typeof handleMessage>>> =>
-      handleMessage({
+    const attempt = (stats?: ChannelStats): Promise<Awaited<ReturnType<typeof handleMessage>>> => {
+      const payload = request()
+      return handleMessage({
         config,
         table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
-        auth: { authorization: 'Bearer secret-a', claimedInstance: 'peer-a' },
-        payload: request(),
+        auth: signedAuth(payload),
+        payload,
         ...(stats === undefined ? {} : { stats }),
       })
+    }
 
     expect(await attempt()).toEqual(await attempt(new ChannelStats(() => NOW)))
   })
 
   test('a refused delivery answers the same with or without a collector', async () => {
-    const attempt = (stats?: ChannelStats): Promise<Awaited<ReturnType<typeof handleMessage>>> =>
-      handleMessage({
+    const attempt = (stats?: ChannelStats): Promise<Awaited<ReturnType<typeof handleMessage>>> => {
+      const payload = request()
+      return handleMessage({
         config,
         table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
-        auth: { authorization: 'Bearer wrong', claimedInstance: 'peer-a' },
-        payload: request(),
+        auth: signedAuth(payload, 'wrong'),
+        payload,
         ...(stats === undefined ? {} : { stats }),
       })
+    }
 
     expect(await attempt()).toEqual(await attempt(new ChannelStats(() => NOW)))
   })
@@ -153,34 +161,34 @@ describe('handleMessage', () => {
 
   test('returns a messageId derived from the eventId', async () => {
     const table = new DedupeTable({ ttlMs: 604_800_000, limit: 100_000 })
-    const result = await handleMessage({ config, table, auth, payload: ok() })
+    const result = await handleMessage({ config, table, auth: signedAuth(ok()), payload: ok() })
     expect(result).toMatchObject({ ok: true, body: { messageId: 'p2p-e1', duplicate: false } })
   })
 
   test('a repeated event echoes the first messageId', async () => {
     const table = new DedupeTable({ ttlMs: 604_800_000, limit: 100_000 })
-    await handleMessage({ config, table, auth, payload: ok() })
-    const again = await handleMessage({ config, table, auth, payload: ok() })
+    await handleMessage({ config, table, auth: signedAuth(ok()), payload: ok() })
+    const again = await handleMessage({ config, table, auth: signedAuth(ok()), payload: ok() })
     expect(again).toMatchObject({ ok: true, body: { duplicate: true, messageId: 'p2p-e1', eventId: 'e1' } })
   })
 
   test('rejects a message addressed to another bot with 403', async () => {
     const table = new DedupeTable({ ttlMs: 604_800_000, limit: 100_000 })
-    const result = await handleMessage({ config, table, auth, payload: ok({ to: 'other-bot' }) })
+    const result = await handleMessage({ config, table, auth: signedAuth(ok({ to: 'other-bot' })), payload: ok({ to: 'other-bot' }) })
     expect(result.ok).toBe(false)
     expect(result.status).toBe(403)
   })
 
   test('rejects a body that claims another instance', async () => {
     const table = new DedupeTable({ ttlMs: 604_800_000, limit: 100_000 })
-    const result = await handleMessage({ config, table, auth, payload: ok({ instance: 'peer-b' }) })
+    const result = await handleMessage({ config, table, auth: signedAuth(ok({ instance: 'peer-b' })), payload: ok({ instance: 'peer-b' }) })
     expect(result.ok).toBe(false)
     expect(result.status).toBe(403)
   })
 
   test('rejects an unauthenticated call', async () => {
     const table = new DedupeTable({ ttlMs: 604_800_000, limit: 100_000 })
-    const result = await handleMessage({ config, table, auth: { authorization: null, claimedInstance: 'peer-a' }, payload: ok() })
+    const result = await handleMessage({ config, table, auth: { claimedInstance: 'peer-a' }, payload: ok() })
     expect(result.ok).toBe(false)
     expect(result.status).toBe(401)
   })
@@ -193,12 +201,12 @@ describe('handleMessage', () => {
     const first = handleMessage({
       config: fast,
       table,
-      auth,
+      auth: signedAuth(ok()),
       payload: ok(),
       process: () => { processed += 1; return new Promise<boolean>((resolve) => { release = resolve }) },
     })
     await new Promise((resolve) => setImmediate(resolve))
-    const second = handleMessage({ config: fast, table, auth, payload: ok() })
+    const second = handleMessage({ config: fast, table, auth: signedAuth(ok()), payload: ok() })
     await new Promise((resolve) => setImmediate(resolve))
     release(true)
     const [a, b] = await Promise.all([first, second])
@@ -210,7 +218,7 @@ describe('handleMessage', () => {
   test('a signed request with a valid signature is accepted', async () => {
     const table = new DedupeTable({ ttlMs: 604_800_000, limit: 100_000 })
     const signed = { ...request(), body: 'hello', sentAt: 1_700_000_000_000 }
-    const signature = signBody('secret-a', { eventId: signed.eventId, sentAt: signed.sentAt, body: signed.body })
+    const signature = signEnvelope('secret-a', signed as unknown as Envelope)
     const result = await handleMessage({ config, table, auth: { signature, claimedInstance: 'peer-a' }, payload: signed })
     expect(result).toMatchObject({ ok: true, status: 200, body: { messageId: 'p2p-e1' } })
   })
@@ -218,7 +226,7 @@ describe('handleMessage', () => {
   test('a signature over a different body is rejected', async () => {
     const table = new DedupeTable({ ttlMs: 604_800_000, limit: 100_000 })
     const signed = { ...request(), body: 'hello', sentAt: 1_700_000_000_000 }
-    const signature = signBody('secret-a', { eventId: signed.eventId, sentAt: signed.sentAt, body: 'tampered' })
+    const signature = signEnvelope('secret-a', { ...signed, body: 'tampered' } as unknown as Envelope)
     const result = await handleMessage({ config, table, auth: { signature, claimedInstance: 'peer-a' }, payload: signed })
     expect(result).toMatchObject({ ok: false, status: 401 })
   })
@@ -228,11 +236,11 @@ describe('handleMessage', () => {
     const first = handleMessage({
       config: { ...config, waitMs: 10 },
       table,
-      auth,
+      auth: signedAuth(ok()),
       payload: ok(),
       process: () => new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 60)),
     })
-    const second = await handleMessage({ config: { ...config, waitMs: 10 }, table, auth, payload: ok() })
+    const second = await handleMessage({ config: { ...config, waitMs: 10 }, table, auth: signedAuth(ok()), payload: ok() })
     await first
     expect(second).toMatchObject({ ok: false, status: 503 })
   })
@@ -272,10 +280,10 @@ describe('inflight TTL', () => {
 })
 
 describe('sentAt freshness', () => {
-  const sign = (body: string, sentAt: number): { signature: string; payload: Record<string, unknown> } => ({
-    signature: signBody('secret-a', { eventId: 'e1', sentAt, body }),
-    payload: request({ body, sentAt }),
-  })
+  const sign = (body: string, sentAt: number): { signature: string; payload: Record<string, unknown> } => {
+    const payload = request({ body, sentAt })
+    return { signature: signEnvelope('secret-a', payload as unknown as Envelope), payload }
+  }
 
   const signed = async (
     sentAt: number,
@@ -357,7 +365,7 @@ describe('sentAt freshness', () => {
     const result = await handleMessage({
       config,
       table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
-      auth: { signature: signBody('wrong-secret', { eventId: 'e1', sentAt: NOW - 600_000, body: 'hello' }), claimedInstance: 'peer-a' },
+      auth: { signature: signEnvelope('wrong-secret', { ...stale.payload, sentAt: NOW - 600_000 } as unknown as Envelope), claimedInstance: 'peer-a' },
       payload: stale.payload,
     })
     expect(result).toMatchObject({ ok: false, status: 401, body: { error: 'bad signature' } })

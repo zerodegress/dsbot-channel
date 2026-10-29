@@ -5,7 +5,8 @@ import { checkListenerConfig, startListener } from '../src/p2p-listener.js'
 import { ChannelStats } from '../src/channel-stats.js'
 import type { Listener, ListenerConfig } from '../src/p2p-listener.js'
 import { P2P_ROUTE } from '../src/p2p-protocol.js'
-import { signBody } from '../src/p2p-auth.js'
+import { signEnvelope } from '../src/p2p-auth.js'
+import type { Envelope } from '../src/p2p-auth.js'
 import { staticCredentials } from '../src/p2p-secrets.js'
 import type { InboundRequest } from '../src/p2p-inbound.js'
 
@@ -37,7 +38,8 @@ interface Reply {
   body: Record<string, unknown>
 }
 
-function post(port: number, body: unknown, headers: Record<string, string> = {}): Promise<Reply> {
+function post(port: number, body: unknown, headers?: Record<string, string>): Promise<Reply> {
+  const extra = headers ?? { 'x-p2p-signature': signEnvelope(secret, body as unknown as Envelope) }
   return new Promise((resolve, reject) => {
     const text = JSON.stringify(body)
     const req = request(
@@ -46,7 +48,7 @@ function post(port: number, body: unknown, headers: Record<string, string> = {})
         port,
         path: P2P_ROUTE,
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(text), ...headers },
+        headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(text), ...extra },
       },
       (response) => {
         const chunks: Buffer[] = []
@@ -88,7 +90,7 @@ describe('listener', () => {
   test('accepts a bearer request and returns a message id', async () => {
     const listener = await startListener({ config: baseConfig(), table: table() })
     open.push(listener)
-    const reply = await post(listener.address().port, message(), { authorization: `Bearer ${secret}` })
+    const reply = await post(listener.address().port, message())
     expect(reply.status).toBe(200)
     expect(reply.body).toEqual({ duplicate: false, messageId: 'p2p-evt-1', eventId: 'evt-1' })
   })
@@ -97,32 +99,37 @@ describe('listener', () => {
     const listener = await startListener({ config: baseConfig(), table: table() })
     open.push(listener)
     const port = listener.address().port
-    await post(port, message(), { authorization: `Bearer ${secret}` })
-    const second = await post(port, message(), { authorization: `Bearer ${secret}` })
+    await post(port, message())
+    const second = await post(port, message())
     expect(second.status).toBe(200)
     expect(second.body).toMatchObject({ duplicate: true, messageId: 'p2p-evt-1' })
   })
 
-  test('rejects a missing credential', async () => {
+  test('a bearer token in place of a signature is refused', async () => {
     const listener = await startListener({ config: baseConfig(), table: table() })
     open.push(listener)
-    const reply = await post(listener.address().port, message())
+    const reply = await post(listener.address().port, message(), { authorization: `Bearer ${secret}` })
+    expect(reply.status).toBe(401)
+  })
+
+  test('rejects a request with no signature at all', async () => {
+    const listener = await startListener({ config: baseConfig(), table: table() })
+    open.push(listener)
+    const reply = await post(listener.address().port, message(), {})
     expect(reply.status).toBe(401)
   })
 
   test('rejects a message addressed to another bot', async () => {
     const listener = await startListener({ config: baseConfig(), table: table() })
     open.push(listener)
-    const reply = await post(listener.address().port, message({ to: 'bot-z' }), { authorization: `Bearer ${secret}` })
+    const reply = await post(listener.address().port, message({ to: 'bot-z' }))
     expect(reply.status).toBe(403)
   })
 
   test('rejects an oversized body', async () => {
     const listener = await startListener({ config: baseConfig(), table: table() })
     open.push(listener)
-    const reply = await post(listener.address().port, message({ body: 'x'.repeat(70 * 1024) }), {
-      authorization: `Bearer ${secret}`,
-    })
+    const reply = await post(listener.address().port, message({ body: 'x'.repeat(70 * 1024) }))
     expect(reply.status).toBe(413)
   })
 
@@ -130,7 +137,7 @@ describe('listener', () => {
     const listener = await startListener({ config: baseConfig(), table: table() })
     open.push(listener)
     const payload = message()
-    const signature = signBody(secret, { eventId: payload.eventId, sentAt: payload.sentAt, body: payload.body })
+    const signature = signEnvelope(secret, payload as unknown as Envelope)
     const reply = await post(listener.address().port, payload, { 'x-p2p-signature': signature })
     expect(reply.status).toBe(200)
     expect(reply.body).toMatchObject({ duplicate: false, messageId: 'p2p-evt-1' })
@@ -140,7 +147,7 @@ describe('listener', () => {
     const listener = await startListener({ config: baseConfig(), table: table() })
     open.push(listener)
     const payload = message()
-    const signature = signBody(secret, { eventId: payload.eventId, sentAt: payload.sentAt, body: 'other' })
+    const signature = signEnvelope(secret, { ...payload, body: 'other' } as unknown as Envelope)
     const reply = await post(listener.address().port, payload, { 'x-p2p-signature': signature })
     expect(reply.status).toBe(401)
   })
@@ -150,7 +157,7 @@ describe('listener', () => {
     const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
     open.push(listener)
     const payload = message({ to: 'somebody-else' })
-    const signature = signBody(secret, { eventId: payload.eventId, sentAt: payload.sentAt, body: payload.body })
+    const signature = signEnvelope(secret, payload as unknown as Envelope)
     const reply = await post(listener.address().port, payload, { 'x-p2p-signature': signature })
 
     expect(reply.status).toBe(403)
@@ -185,9 +192,7 @@ describe('listener', () => {
     const channel = new ChannelStats()
     const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
     open.push(listener)
-    const reply = await post(listener.address().port, message({ body: 'x'.repeat(70 * 1024) }), {
-      authorization: `Bearer ${secret}`,
-    })
+    const reply = await post(listener.address().port, message({ body: 'x'.repeat(70 * 1024) }))
     expect(reply.status).toBe(413)
     expect(channel.snapshot().lastFailure?.reason).toBe('body exceeds the size limit')
   })
@@ -213,7 +218,7 @@ describe('listener', () => {
     const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
     open.push(listener)
     const payload = message()
-    const signature = signBody(secret, { eventId: payload.eventId, sentAt: payload.sentAt, body: payload.body })
+    const signature = signEnvelope(secret, payload as unknown as Envelope)
     const reply = await post(listener.address().port, payload, { 'x-p2p-signature': signature })
 
     expect(reply.status).toBe(200)
@@ -400,7 +405,7 @@ describe('listener', () => {
     const listener = await startListener({ config: baseConfig(), table: table() })
     open.push(listener)
     const stale = message({ sentAt: 1_700_000_000_000 - 600_000 })
-    const signature = signBody(secret, { eventId: stale.eventId, sentAt: stale.sentAt, body: stale.body })
+    const signature = signEnvelope(secret, stale as unknown as Envelope)
     const reply = await post(listener.address().port, stale, { 'x-p2p-signature': signature })
     expect(reply.status).toBe(403)
     expect(reply.body).toMatchObject({ code: 'stale_sent_at' })
@@ -411,11 +416,11 @@ describe('listener', () => {
     const listener = await startListener({ config: baseConfig(), table: table0 })
     open.push(listener)
     const stale = message({ sentAt: 1_700_000_000_000 - 600_000 })
-    const staleSignature = signBody(secret, { eventId: stale.eventId, sentAt: stale.sentAt, body: stale.body })
+    const staleSignature = signEnvelope(secret, stale as unknown as Envelope)
     expect((await post(listener.address().port, stale, { 'x-p2p-signature': staleSignature })).status).toBe(403)
 
     const fresh = message()
-    const freshSignature = signBody(secret, { eventId: fresh.eventId, sentAt: fresh.sentAt, body: fresh.body })
+    const freshSignature = signEnvelope(secret, fresh as unknown as Envelope)
     const reply = await post(listener.address().port, fresh, { 'x-p2p-signature': freshSignature })
     expect(reply).toMatchObject({ status: 200, body: { duplicate: false } })
   })
@@ -446,7 +451,7 @@ describe('listener hand off', () => {
       },
     })
     open.push(listener)
-    const reply = await post(listener.address().port, message(), { authorization: `Bearer ${secret}` })
+    const reply = await post(listener.address().port, message())
     expect(reply.status).toBe(200)
     expect(seen).toEqual([message()])
   })
@@ -462,9 +467,9 @@ describe('listener hand off', () => {
     })
     open.push(listener)
     const port = listener.address().port
-    await post(port, message(), { authorization: `Bearer ${secret}` })
-    await post(port, message(), { authorization: `Bearer ${secret}` })
-    await post(port, message({ eventId: 'evt-2' }))
+    await post(port, message())
+    await post(port, message())
+    await post(port, message({ eventId: 'evt-2' }), {})
     expect(seen.map((request) => request.eventId)).toEqual(['evt-1'])
   })
 
@@ -480,9 +485,9 @@ describe('listener hand off', () => {
     })
     open.push(listener)
     const port = listener.address().port
-    const first = await post(port, message(), { authorization: `Bearer ${secret}` })
+    const first = await post(port, message())
     expect(first.status).toBe(500)
-    const second = await post(port, message(), { authorization: `Bearer ${secret}` })
+    const second = await post(port, message())
     expect(second.status).toBe(200)
     expect(second.body).toMatchObject({ duplicate: false })
     expect(attempts).toBe(2)
@@ -501,7 +506,7 @@ describe('listener async hand off', () => {
       },
     })
     open.push(listener)
-    const reply = await post(listener.address().port, message(), { authorization: `Bearer ${secret}` })
+    const reply = await post(listener.address().port, message())
     expect(reply.status).toBe(200)
     expect(finished).toBe(false)
     await new Promise((resolve) => setTimeout(resolve, 60))
@@ -521,7 +526,7 @@ describe('listener async hand off', () => {
       },
     })
     open.push(listener)
-    const reply = await post(listener.address().port, message(), { authorization: `Bearer ${secret}` })
+    const reply = await post(listener.address().port, message())
     expect(reply.status).toBe(200)
     expect(reply.body).toMatchObject({ duplicate: false })
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -542,9 +547,9 @@ describe('listener async hand off', () => {
     })
     open.push(listener)
     const port = listener.address().port
-    await post(port, message(), { authorization: `Bearer ${secret}` })
+    await post(port, message())
     await new Promise((resolve) => setTimeout(resolve, 0))
-    const second = await post(port, message(), { authorization: `Bearer ${secret}` })
+    const second = await post(port, message())
     expect(second.body).toMatchObject({ duplicate: true })
     expect(seen).toEqual(['evt-1'])
   })
@@ -565,7 +570,7 @@ describe('listener error handler', () => {
       },
     })
     open.push(listener)
-    const reply = await post(listener.address().port, message(), { authorization: `Bearer ${secret}` })
+    const reply = await post(listener.address().port, message())
     expect(reply.status).toBe(200)
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(reported).toBe(1)

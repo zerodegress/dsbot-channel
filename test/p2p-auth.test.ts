@@ -1,75 +1,121 @@
 import { describe, expect, test } from 'vitest'
 import { createHash } from 'node:crypto'
-import { signBody, verifyRequest } from '../src/p2p-auth.js'
+import { signEnvelope, verifyRequest } from '../src/p2p-auth.js'
+import type { Envelope } from '../src/p2p-auth.js'
 
 const digest = (body: string) => createHash('sha256').update(body, 'utf8').digest('hex')
 
-describe('secret based auth', () => {
+function envelope(overrides: Partial<Envelope> = {}): Envelope {
+  return {
+    eventId: 'e1',
+    to: 'bot-b',
+    sender: 'bot-a',
+    instance: 'peer-a',
+    body: 'hello',
+    sentAt: 1700000000000,
+    ...overrides,
+  }
+}
+
+describe('the only way in', () => {
   const peers = [{ instance: 'peer-a', secret: 'secret-a' }, { instance: 'peer-b', secret: 'secret-b' }]
 
-  test('resolves the instance from the secret, not from the body', () => {
-    const result = verifyRequest({ peers, authorization: 'Bearer secret-a', claimedInstance: '' })
-    expect(result.ok).toBe(true)
-    expect(result.instance).toBe('peer-a')
-  })
-
-  test('rejects when the claimed instance disagrees with the secret', () => {
-    const result = verifyRequest({ peers, authorization: 'Bearer secret-a', claimedInstance: 'peer-b' })
-    expect(result.ok).toBe(false)
-    expect(result.status).toBe(403)
-  })
-
-  test('rejects an unknown secret', () => {
-    const result = verifyRequest({ peers, authorization: 'Bearer nope', claimedInstance: 'peer-a' })
+  test('a bearer token is no longer accepted, so every call must be signed', () => {
+    const result = verifyRequest({ peers, claimedInstance: 'peer-a' })
     expect(result.ok).toBe(false)
     expect(result.status).toBe(401)
+    expect(result.reason).toBe('missing signature')
   })
 
-  test('rejects a missing authorization header', () => {
-    const result = verifyRequest({ peers, authorization: null, claimedInstance: 'peer-a' })
+  test('a signature with no envelope to check it against is refused', () => {
+    const result = verifyRequest({ peers, signature: 'anything', claimedInstance: 'peer-a' })
     expect(result.ok).toBe(false)
     expect(result.status).toBe(401)
   })
 
   test('refuses to start with no peers configured', () => {
-    expect(() => verifyRequest({ peers: [], authorization: 'Bearer x', claimedInstance: 'a' })).toThrow(/secret/i)
-  })
-
-  test('a secret of another peer does not authenticate as this one', () => {
-    const result = verifyRequest({ peers, authorization: 'Bearer secret-b', claimedInstance: 'peer-a' })
-    expect(result.ok).toBe(false)
+    expect(() => verifyRequest({ peers: [], claimedInstance: 'a' })).toThrow(/secret/i)
   })
 })
 
 describe('signature mode', () => {
   const secret = 'shared'
-  const body = '{"eventId":"e1"}'
+  const peers = [{ instance: 'peer-a', secret }]
 
   test('accepts a correct signature', () => {
-    const header = signBody(secret, { eventId: 'e1', sentAt: 1700000000000, body })
-    const result = verifyRequest({ peers: [{ instance: 'peer-a', secret }], signature: header, eventId: 'e1', sentAt: 1700000000000, body, claimedInstance: 'peer-a' })
+    const signed = envelope()
+    const signature = signEnvelope(secret, signed)
+    const result = verifyRequest({ peers, signature, envelope: signed, claimedInstance: 'peer-a' })
     expect(result.ok).toBe(true)
     expect(result.instance).toBe('peer-a')
   })
 
   test('rejects a tampered body', () => {
-    const header = signBody(secret, { eventId: 'e1', sentAt: 1700000000000, body })
-    const result = verifyRequest({ peers: [{ instance: 'peer-a', secret }], signature: header, eventId: 'e1', sentAt: 1700000000000, body: '{"eventId":"e2"}', claimedInstance: 'peer-a' })
+    const signature = signEnvelope(secret, envelope())
+    const result = verifyRequest({ peers, signature, envelope: envelope({ body: 'other' }), claimedInstance: 'peer-a' })
     expect(result.ok).toBe(false)
     expect(result.status).toBe(401)
   })
 
   test('rejects a tampered eventId', () => {
-    const header = signBody(secret, { eventId: 'e1', sentAt: 1700000000000, body })
-    const result = verifyRequest({ peers: [{ instance: 'peer-a', secret }], signature: header, eventId: 'e9', sentAt: 1700000000000, body, claimedInstance: 'peer-a' })
+    const signature = signEnvelope(secret, envelope())
+    const result = verifyRequest({ peers, signature, envelope: envelope({ eventId: 'e9' }), claimedInstance: 'peer-a' })
     expect(result.ok).toBe(false)
   })
 
-  test('the digest covers eventId, sentAt and the body together', () => {
-    expect(digest(body)).not.toBe(digest('other'))
-    const a = signBody(secret, { eventId: 'e1', sentAt: 1, body })
-    expect(signBody(secret, { eventId: 'e2', sentAt: 1, body })).not.toBe(a)
-    expect(signBody(secret, { eventId: 'e1', sentAt: 2, body })).not.toBe(a)
-    expect(signBody(secret, { eventId: 'e1', sentAt: 1, body: 'other' })).not.toBe(a)
+  test('rejects a status the sender did not sign, so a refusal cannot be forged', () => {
+    const signature = signEnvelope(secret, envelope())
+    const result = verifyRequest({
+      peers,
+      signature,
+      envelope: envelope({ status: 'declined', reason: 'not wanted', final: true }),
+      claimedInstance: 'peer-a',
+    })
+    expect(result.ok).toBe(false)
+    expect(result.status).toBe(401)
+  })
+
+  test('rejects a status added on its own, with no other field changed', () => {
+    const signature = signEnvelope(secret, envelope())
+    const result = verifyRequest({ peers, signature, envelope: envelope({ status: 'declined' }), claimedInstance: 'peer-a' })
+    expect(result.ok).toBe(false)
+    expect(result.status).toBe(401)
+  })
+
+  test('rejects a rewritten reason on a signed refusal', () => {
+    const signature = signEnvelope(secret, envelope({ status: 'declined', reason: 'busy', final: true }))
+    const result = verifyRequest({
+      peers,
+      signature,
+      envelope: envelope({ status: 'declined', reason: 'not wanted', final: true }),
+      claimedInstance: 'peer-a',
+    })
+    expect(result.ok).toBe(false)
+  })
+
+  test('covers every field of the envelope, one at a time', () => {
+    const base = envelope()
+    const signature = signEnvelope(secret, base)
+    const changed: Envelope[] = [
+      envelope({ eventId: 'e2' }),
+      envelope({ to: 'bot-c' }),
+      envelope({ sender: 'bot-c' }),
+      envelope({ instance: 'peer-b' }),
+      envelope({ body: 'other' }),
+      envelope({ sentAt: 1 }),
+      envelope({ status: 'declined' }),
+      envelope({ reason: 'why' }),
+      envelope({ final: true }),
+    ]
+
+    for (const candidate of changed) expect(signEnvelope(secret, candidate)).not.toBe(signature)
+  })
+
+  test('a signature over a body digest alone no longer passes', () => {
+    const legacy = createHash('sha256')
+      .update(`${secret}.e1.1700000000000.${digest('hello')}`, 'utf8')
+      .digest('base64')
+    const result = verifyRequest({ peers, signature: legacy, envelope: envelope(), claimedInstance: 'peer-a' })
+    expect(result.ok).toBe(false)
   })
 })

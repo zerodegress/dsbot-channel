@@ -5,6 +5,8 @@ import * as entry from '../src/index.js'
 import { DEFAULT_PORT } from '../src/index.js'
 import { ConfigError } from '../src/config.js'
 import { P2P_ROUTE } from '../src/p2p-protocol.js'
+import { signEnvelope } from '../src/p2p-auth.js'
+import type { Envelope } from '../src/p2p-auth.js'
 import type { Listener } from '../src/p2p-listener.js'
 
 const secret = 'peer-secret-1'
@@ -70,7 +72,7 @@ function post(port: number, body: unknown): Promise<number> {
         headers: {
           'content-type': 'application/json',
           'content-length': Buffer.byteLength(text),
-          authorization: `Bearer ${secret}`,
+          'x-p2p-signature': signEnvelope(secret, body as unknown as Envelope),
         },
       },
       (response) => resolve(response.statusCode ?? 0),
