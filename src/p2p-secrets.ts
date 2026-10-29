@@ -3,6 +3,8 @@ import type { PeerSecret } from './p2p-auth.js'
 export interface PeerRef {
   instance: string
   secret: string
+  /** The name the peer answers to; an active push needs it, a reply borrows the sender's. */
+  botName?: string
 }
 
 export interface ResolvedSecret {
