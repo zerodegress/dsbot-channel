@@ -19,6 +19,7 @@ const config: P2PConfig = {
   peers: [{ instance: 'inst-b', secret: 'P2P_B_SECRET' }],
   credentials: fakeCredentials({ P2P_B_SECRET: secret }),
   inflightTtlMs: 300_000,
+  now: () => 1_700_000_000_000,
   maxBodyBytes: 64 * 1024,
 }
 
