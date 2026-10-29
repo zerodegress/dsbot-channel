@@ -333,6 +333,20 @@ describe('sentAt freshness', () => {
     expect(body.now - body.sentAt).toBe(400_000)
   })
 
+  test('a stale message still counts as authenticated, because the key was right', async () => {
+    const stats = new ChannelStats(() => NOW)
+    const { signature, payload } = sign('hello', NOW - 400_000)
+    const result = await handleMessage({
+      config: { ...config, now: () => NOW },
+      table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
+      auth: { signature, claimedInstance: 'peer-a' },
+      payload,
+      stats,
+    })
+    expect(result).toMatchObject({ ok: false, status: 403, body: { code: 'stale_sent_at' } })
+    expect(stats.snapshot().lastAuthenticatedAt).toBe(NOW)
+  })
+
   test('the window can be narrowed', async () => {
     expect((await signed(NOW - 2_000, { window: 1_000 })).ok).toBe(false)
     expect((await signed(NOW - 2_000, { window: 5_000 })).ok).toBe(true)
