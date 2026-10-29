@@ -53,7 +53,7 @@ const base = (url: string) => ({
   instance: 'sender-inst',
 })
 
-async function capture(): Promise<{ url: string; seen: () => { body: string; headers: Record<string, unknown> } }> {
+async function capture(status = 200): Promise<{ url: string; seen: () => { body: string; headers: Record<string, unknown> } }> {
   let seen: { body: string; headers: Record<string, unknown> } = { body: '', headers: {} }
   const server = createServer((request, response) => {
     let raw = ''
@@ -62,8 +62,8 @@ async function capture(): Promise<{ url: string; seen: () => { body: string; hea
     })
     request.on('end', () => {
       seen = { body: raw, headers: request.headers as Record<string, unknown> }
-      response.writeHead(200, { 'content-type': 'application/json' })
-      response.end(JSON.stringify({ duplicate: false, messageId: 'p2p-evt-1' }))
+      response.writeHead(status, { 'content-type': 'application/json' })
+      response.end(JSON.stringify(status === 200 ? { duplicate: false, messageId: 'p2p-evt-1' } : { error: 'forbidden' }))
     })
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
@@ -102,6 +102,48 @@ describe('sending a message', () => {
     const second = await sendToPeer(base(url))
     expect(first).toMatchObject({ ok: true, duplicate: false })
     expect(second).toMatchObject({ ok: true, duplicate: true, messageId: 'p2p-evt-1' })
+  })
+})
+
+describe('a peer reached by address behind a name router', () => {
+  test('the configured host is what the peer sees, not the dialled address', async () => {
+    const target = await capture()
+
+    const result = await sendToPeer({ ...base(target.url), peer: { ...base(target.url).peer, host: 'peer.example' } })
+
+    expect(result.ok).toBe(true)
+    expect(target.seen().headers.host).toBe('peer.example')
+  })
+
+  test('without a host the peer still sees its own address', async () => {
+    const target = await capture()
+
+    await sendToPeer(base(target.url))
+
+    expect(target.seen().headers.host).toBe(new URL(target.url).host)
+  })
+
+  test('the host path signs exactly the bytes it sends, like the other one', async () => {
+    const target = await capture()
+
+    await sendToPeer({
+      ...base(target.url),
+      peer: { ...base(target.url).peer, host: 'peer.example' },
+      status: 'declined',
+      reason: 'not wanted',
+      final: true,
+    })
+
+    const seen = target.seen()
+    expect(signEnvelope(SECRET, JSON.parse(seen.body) as Envelope)).toBe(seen.headers['x-p2p-signature'])
+  })
+
+  test('a refusal from behind the name router still reads as forbidden', async () => {
+    const target = await capture(403)
+
+    const result = await sendToPeer({ ...base(target.url), peer: { ...base(target.url).peer, host: 'peer.example' } })
+
+    expect(result).toMatchObject({ ok: false, code: 'forbidden', retryable: false })
   })
 })
 

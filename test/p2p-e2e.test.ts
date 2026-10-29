@@ -662,6 +662,112 @@ describe('closing a peer conversation', () => {
   })
 })
 
+describe('a reply to a peer behind a name router', () => {
+  test('the reply carries the configured host, not the dialled address', async () => {
+    let host: string | undefined
+    const capture = createServer((request, response) => {
+      host = request.headers.host
+      request.on('data', () => undefined)
+      request.on('end', () => {
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({ duplicate: false, messageId: 'p2p-reply' }))
+      })
+    })
+    await new Promise<void>((resolve) => capture.listen(0, '127.0.0.1', resolve))
+    const capturePort = (capture.address() as AddressInfo).port
+
+    const port = await freePort()
+    const ctx = new Context()
+    captureWarnings(ctx)
+    const sessions = new StubSessions(ctx, 99)
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', sessions)
+      },
+    })
+    const fork = await ctx.plugin(entry, {
+      adapters: [
+        {
+          channel: 'p2p:b',
+          instance: 'inst-b',
+          botName: 'bot-b',
+          peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}`, host: 'peer.example' }],
+          listen: { host: '127.0.0.1', port },
+        },
+      ],
+    })
+    forks.push(fork)
+    try {
+      await send(port, 'evt-1', 'hello')
+      await waitFor(() => host !== undefined)
+      expect(host).toBe('peer.example')
+    } finally {
+      capture.close()
+    }
+  })
+})
+
+describe('an active push to a peer behind a name router', () => {
+  test('the configured host is what the peer sees', async () => {
+    let host: string | undefined
+    const capture = createServer((request, response) => {
+      host = request.headers.host
+      request.on('data', () => undefined)
+      request.on('end', () => {
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({ duplicate: false, messageId: 'p2p-push' }))
+      })
+    })
+    await new Promise<void>((resolve) => capture.listen(0, '127.0.0.1', resolve))
+    const capturePort = (capture.address() as AddressInfo).port
+
+    const port = await freePort()
+    const ctx = new Context()
+    captureWarnings(ctx)
+    const sessions = new StubSessions(ctx, 99)
+    const tools: { name: string; execute: (args: unknown, exec: unknown) => Promise<string> }[] = []
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', sessions)
+        scope.provide('tools')
+        scope.set('tools', {
+          register(definition: { name: string; execute: (args: unknown, exec: unknown) => Promise<string> }) {
+            tools.push(definition)
+            return () => undefined
+          },
+        })
+      },
+    })
+    const fork = await ctx.plugin(entry, {
+      adapters: [
+        {
+          channel: 'p2p:b',
+          instance: 'inst-b',
+          botName: 'bot-b',
+          peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}`, botName: 'bot-a', host: 'peer.example' }],
+          listen: { host: '127.0.0.1', port },
+        },
+      ],
+    })
+    forks.push(fork)
+    try {
+      const raw = await tools[0]?.execute({ text: 'hello', channel: 'p2p:b', target: 'inst-a' }, {})
+      expect(JSON.parse(raw as string)).toMatchObject({ ok: true, channel: 'p2p:b', target: 'inst-a' })
+      expect(host).toBe('peer.example')
+    } finally {
+      capture.close()
+    }
+  })
+})
+
 describe('a reply goes back to the sender of the inbound message', () => {
   async function mountWithCapture(): Promise<{
     captured: () => Record<string, unknown> | undefined
