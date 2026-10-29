@@ -196,6 +196,13 @@ describe('what this channel can do', () => {
     expect(['send_file', 'send_image', 'read_history']).not.toContain(createSendText(router).name)
   })
 
+  test('the tool layer refuses a call without text before anything is sent', async () => {
+    const { router, deliveries } = harness({ source: { channel: 'p2p:orca', peer: 'seal' } })
+
+    await expect(createSendText(router).execute({} as never, {} as never)).rejects.toThrow()
+    expect(deliveries).toHaveLength(0)
+  })
+
   test('the description lists the channels and their peers', () => {
     expect(describeChannels(channels)).toBe('Channels: p2p:orca (peers: seal, probe); p2p:relay (peers: hive).')
     expect(describeChannels([])).toBe('No channel is configured, so this bot cannot send.')

@@ -75,7 +75,7 @@ class StubSessions {
     }
     const reply = this.prompted.length > this.#replies ? '' : `reply:${text}`
     const emit = (event: unknown): void => {
-      this.#ctx.emit('session/event', { id: request.sessionId } as { id: string }, event as never)
+      this.#ctx.emit('session/event', { id: request.sessionId } as never, event as never)
     }
     emit({ type: 'turn/start' })
     emit({ type: 'assistant/message', data: { message: { content: reply.length > 0 ? [{ type: 'text', text: reply }] : [] } } })

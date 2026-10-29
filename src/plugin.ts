@@ -27,12 +27,6 @@ import { StatusRegistry } from './p2p-status.js'
 import { PushRouter, createSendText } from './push-tool.js'
 import type { PushSource, SendTextTool } from './push-tool.js'
 
-declare module '@deepseek-ai/cordis' {
-  interface Events {
-    'session/event': (session: { id: string }, event: SessionEventLike) => void
-  }
-}
-
 /** Turn ceiling a message may occupy before it is dropped. */
 export const MAX_TURN_MS = 120_000
 
@@ -210,7 +204,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
     throw new ConfigError('the sessionController service is required to run peer messages', ['adapters'])
   }
   const observe = (listener: (sessionId: string, event: SessionEventLike) => void): (() => void) =>
-    ctx.on('session/event', (session: { id: string }, event: SessionEventLike) => listener(session.id, event))
+    ctx.on('session/event', (session, event) => listener(session.id, event as unknown as SessionEventLike))
   const warn = createWarn(ctx)
   const registry = new StatusRegistry()
   const sources = new Map<string, PushSource>()

@@ -1,3 +1,4 @@
+import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { SendFailureCode, SendResult } from './p2p-send.js'
 
 export const PUSH_WINDOW_MS = 10 * 60 * 1000
@@ -171,45 +172,26 @@ export function describeChannels(channels: readonly PushChannel[]): string {
   return `Channels: ${lines.join('; ')}.`
 }
 
-export interface SendTextTool {
-  name: string
-  description: string
-  parameters: Record<string, unknown>
-  output: { schema: Record<string, unknown>; render: (args: unknown, value: unknown) => { type: 'text'; text: string }[] }
-  execute: (args: PushRequest, exec: { agent?: { id?: string } }) => Promise<string>
-}
-
 /** Builds the send_text tool: one exit for an active push, the same sender as a reply. */
-export function createSendText(router: PushRouter): SendTextTool {
-  return {
+export function createSendText(router: PushRouter) {
+  return defineTool({
     name: 'send_text',
     description: `Send a text message to a peer over a peer link. ${describeChannels(router.channels)} Without a channel the last peer that messaged this session is used; a target names a peer instance.`,
     parameters: {
-      type: 'object',
-      properties: {
-        text: { type: 'string', description: 'The message body to deliver' },
-        channel: { type: 'string', description: 'Adapter instance to send through, e.g. p2p:orca. Omit to answer the current peer' },
-        scope: {
-          type: 'string',
-          enum: [...PUSH_SCOPES],
-          description: `Where the message lands; a peer link carries "${PUSH_SCOPE}" only`,
-        },
-        target: { type: 'string', description: 'Peer instance on that channel, e.g. seal' },
-        idempotencyKey: {
-          type: 'string',
-          description: 'Repeat this call safely within ten minutes; only a delivered push holds the key',
-        },
-      },
-      required: ['text'],
-      additionalProperties: false,
+      text: { type: 'string', required: true, description: 'The message body to deliver' },
+      channel: { type: 'string', description: 'Adapter instance to send through, e.g. p2p:orca. Omit to answer the current peer' },
+      scope: { type: 'string', enum: [...PUSH_SCOPES], description: `Where the message lands; a peer link carries "${PUSH_SCOPE}" only` },
+      target: { type: 'string', description: 'Peer instance on that channel, e.g. seal' },
+      idempotencyKey: { type: 'string', description: 'Repeat this call safely within ten minutes; only a delivered push holds the key' },
     },
     output: {
-      schema: { type: 'string' },
+      schema: { type: 'string' as const },
       render: (_args: unknown, value: unknown) => [{ type: 'text' as const, text: String(value) }],
     },
     async execute(args: PushRequest, exec: { agent?: { id?: string } }): Promise<string> {
-      if (typeof args?.text !== 'string' || args.text.length === 0) throw new Error('send_text needs a non-empty text')
       return JSON.stringify(await router.push(args, exec?.agent?.id))
     },
-  }
+  })
 }
+
+export type SendTextTool = ReturnType<typeof createSendText>
