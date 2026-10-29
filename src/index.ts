@@ -68,6 +68,17 @@ export type {
 } from './budget-ledger.js'
 export { DEFAULT_HOST, DEFAULT_PORT, SIGNATURE_HEADER, checkListenerConfig, startListener } from './p2p-listener.js'
 export type { Listener, ListenerConfig, ListenerOptions } from './p2p-listener.js'
+export { DEFAULT_TURN_TIMEOUT_MS, PeerSessions, TurnTimeoutError } from './p2p-inbound.js'
+export type {
+  InboundRequest,
+  PeerSessionsOptions,
+  PeerTurn,
+  PeerTurnInput,
+  PromptRequest,
+  SessionControllerLike,
+  SessionEventLike,
+  SessionMessagePart,
+} from './p2p-inbound.js'
 export {
   CONNECTION_STATES,
   LISTEN_STATES,
