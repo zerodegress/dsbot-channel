@@ -41,11 +41,13 @@ class StubSessions {
   readonly prompted: Prompted[] = []
   readonly #ctx: Context
   readonly #replies: number
+  readonly #failTimes: number
   #count = 0
 
-  constructor(ctx: Context, replies = 1) {
+  constructor(ctx: Context, replies = 1, failTimes = 0) {
     this.#ctx = ctx
     this.#replies = replies
+    this.#failTimes = failTimes
   }
 
   create(): Promise<{ sessionId: string }> {
@@ -56,6 +58,9 @@ class StubSessions {
   prompt(request: Prompted & { content: readonly { type: 'text'; text: string }[] }): Promise<{ accepted: boolean }> {
     const text = request.content.map((part) => part.text).join('')
     this.prompted.push({ sessionId: request.sessionId, requestId: request.requestId, text })
+    if (this.prompted.length <= this.#failTimes) {
+      return Promise.reject(new Error('the session could not run this turn'))
+    }
     const reply = this.prompted.length > this.#replies ? '' : `reply:${text}`
     const emit = (event: unknown): void => {
       this.#ctx.emit('session/event', { id: request.sessionId } as { id: string }, event as never)
@@ -475,6 +480,16 @@ describe('policy budget', () => {
     await expect(mountWith({ budget: { capacity: 2.5 } })).rejects.toThrow(/budget capacity/)
   })
 
+  test('a soft limit is refused while nothing acts on it', async () => {
+    await expect(mountWith({ budget: { capacity: 100, softLimit: 0.8 } })).rejects.toThrow(
+      'policy.budget.softLimit is not supported in this version',
+    )
+  })
+
+  test('a hard limit is accepted, because the gate reads it', async () => {
+    await expect(mountWith({ budget: { capacity: 100, hardLimit: 0.9 } })).resolves.toBeDefined()
+  })
+
   test('a budget without a capacity is refused by the schema', async () => {
     await expect(mountWith({ budget: {} })).rejects.toThrow(/capacity/)
   })
@@ -534,5 +549,85 @@ describe('policy budget', () => {
     await waitFor(() => warnings.some((line) => line.includes('loop-limit')))
     expect(warnings.some((line) => line.includes('budget-hard'))).toBe(false)
     expect(sessions.prompted.length).toBeGreaterThan(0)
+  })
+})
+
+
+async function mounted(
+  ctx: Context,
+  sessions: StubSessions,
+  options: { budget?: { capacity: number }; denyWords?: string[]; allowPeers?: string[] } = {},
+): Promise<{ portB: number }> {
+  const [portA, portB] = [await freePort(), await freePort()]
+  await ctx.plugin({
+    name: 'probe-services',
+    apply(scope: Context) {
+      scope.provide('credentials')
+      scope.set('credentials', credentials)
+      scope.provide('sessionController')
+      scope.set('sessionController', sessions)
+      scope.provide('logger')
+      scope.set('logger', loggerStub)
+    },
+  })
+  const adapter = (channel: string, instance: string, botName: string, peerInstance: string, port: number, peerPort: number) => ({
+    channel,
+    instance,
+    botName,
+    peers: [{ instance: peerInstance, secret: REF, url: `http://127.0.0.1:${peerPort}` }],
+    listen: { host: '127.0.0.1', port },
+    policy: {
+      ...(options.budget === undefined ? {} : { budget: options.budget }),
+      ...(options.denyWords === undefined ? {} : { deny: { words: options.denyWords } }),
+      ...(options.allowPeers === undefined ? {} : { allow: { peers: options.allowPeers } }),
+    },
+  })
+  const fork = await ctx.plugin(entry, {
+    adapters: [
+      adapter('p2p:a', 'inst-a', 'bot-a', 'inst-b', portA, portB),
+      adapter('p2p:b', 'inst-b', 'bot-b', 'inst-a', portB, portA),
+    ],
+  })
+  forks.push(fork)
+  return { portB }
+}
+
+describe('what the wiring charges', () => {
+  test('an empty turn costs the refused price, not the reserved one', async () => {
+    const ctx = new Context()
+    const sessions = new StubSessions(ctx, 0)
+    const { portB } = await mounted(ctx, sessions, { budget: { capacity: 20 } })
+    await send(portB, 'evt-1', 'hello')
+    await waitFor(() => sessions.prompted.length === 1)
+    await send(portB, 'evt-2', 'again')
+    await waitFor(() => sessions.prompted.length === 2)
+    expect(sessions.prompted).toHaveLength(2)
+  })
+
+  test('a turn that never ran costs nothing', async () => {
+    const ctx = new Context()
+    const sessions = new StubSessions(ctx, 0, 1)
+    const { portB } = await mounted(ctx, sessions, { budget: { capacity: 20 } })
+    await send(portB, 'evt-1', 'hello')
+    await waitFor(() => warnings.some((line) => line.includes('failed')))
+    await send(portB, 'evt-2', 'again')
+    await waitFor(() => sessions.prompted.length === 2)
+    expect(sessions.prompted).toHaveLength(2)
+  })
+
+  test('a refused message costs nothing, so a burst cannot exhaust the window', async () => {
+    const ctx = new Context()
+    const sessions = new StubSessions(ctx, 0)
+    const { portB } = await mounted(ctx, sessions, {
+      budget: { capacity: 20 },
+      denyWords: ['spam'],
+      allowPeers: ['inst-a'],
+    })
+    await send(portB, 'evt-1', 'spam')
+    await waitFor(() => warnings.some((line) => line.includes('pipeline-deny')))
+    await send(portB, 'evt-2', 'spam')
+    await send(portB, 'evt-3', 'hello')
+    await waitFor(() => sessions.prompted.length === 1)
+    expect(warnings.some((line) => line.includes('budget-hard'))).toBe(false)
   })
 })
