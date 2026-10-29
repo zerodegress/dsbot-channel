@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A p2p channel that runs end to end: an accepted message starts a turn with the host session controller, and the reply is sent back to the peer that sent it.
 - Adapters are declared as a list, each with its own listener settings and its own peer list.
 - Per-adapter `policy` rules that deny a message by word or regular expression, allow named peers through, and cap how many rounds one peer may hold, tuned with `relayLimit` and `relayResetMs`.
-- Per-adapter `policy.budget` with a required `capacity` in points and optional `softLimit` and `hardLimit` ratios; at the soft limit a turn only proceeds when a rule allows it, and at the hard limit it is refused.
+- Per-adapter `policy.budget` with a required `capacity` in points and an optional `hardLimit` ratio; once the window reaches the hard limit the next turn is refused.
 
 ### Changed
 
