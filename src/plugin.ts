@@ -20,6 +20,7 @@ import { TurnBilling } from './turn-billing.js'
 import type { Hold } from './budget-ledger.js'
 
 import { toP2PEvent } from './p2p-mapping.js'
+import { createWarn } from './warn.js'
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
@@ -190,12 +191,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   }
   const observe = (listener: (sessionId: string, event: SessionEventLike) => void): (() => void) =>
     ctx.on('session/event', (session: { id: string }, event: SessionEventLike) => listener(session.id, event))
-  const logger = ctx.get('logger') as { warn(message: string): void } | undefined
-  const warn = (message: string): void => {
-    void Promise.resolve()
-      .then(() => logger?.warn(message))
-      .catch(() => undefined)
-  }
+  const warn = createWarn(ctx)
   const started = await Promise.all(
     pairs.map(({ adapter, table }) => {
       const sessions = new PeerSessions({ controller, observe })
