@@ -15,7 +15,10 @@
   },
   "files": [
     "dist",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "README.md",
+    "README_ZH.md",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
