@@ -3,7 +3,7 @@ import { apply } from './plugin.js'
 /** Multi-channel ingress gateway for ds-bot. */
 export const name = 'dsbot-channel'
 
-export const inject = {}
+export const inject = ['credentials', 'sessionController'] as const
 
 export { Config } from './plugin.js'
 export { apply }

@@ -116,16 +116,14 @@ describe('plugin lifecycle', () => {
     await fork.dispose()
   })
 
-  test('starts idle when no adapter is declared', async () => {
-    const ctx = new Context()
-    const fork = await ctx.plugin(entry.default, { adapters: [] })
-    expect(ctx.get('dsbot-channel.peers')).toBeUndefined()
-    await fork.dispose()
+  test('declares the services it needs so the host can wait for them', () => {
+    expect(entry.inject).toEqual(['credentials', 'sessionController'])
   })
 
-  test('starts idle without the credentials service', async () => {
-    const ctx = new Context()
-    const fork = await ctx.plugin(entry.default, {})
+  test('starts idle when no adapter is declared', async () => {
+    const ctx = await contextWithCredentials()
+    const fork = await ctx.plugin(entry.default, { adapters: [] })
+    expect(ctx.get('dsbot-channel.peers')).toBeUndefined()
     await fork.dispose()
   })
 
@@ -137,10 +135,40 @@ describe('plugin lifecycle', () => {
 })
 
 describe('running peer messages', () => {
-  test('refuses to mount adapters without a session service', async () => {
+  test('activates once both services appear', async () => {
+    const ctx = new Context()
+    await ctx.plugin(entry.default, config())
+    expect(ctx.get('dsbot-channel.peers')).toBeUndefined()
+
+    await ctx.plugin(credentialsProvider)
+    await ctx.plugin({
+      name: 'stub-sessions',
+      apply(c: Context) {
+        c.provide('sessionController')
+        c.set('sessionController', sessionStub)
+      },
+    })
+
+    for (let attempt = 0; attempt < 100 && ctx.get('dsbot-channel.peers') === undefined; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+    expect(ctx.get('dsbot-channel.peers')).toHaveLength(1)
+  })
+
+  test('stays inactive while the session service is missing', async () => {
     const ctx = new Context()
     await ctx.plugin(credentialsProvider)
-    await expect(ctx.plugin(entry.default, config())).rejects.toThrow(/sessionController/)
+    let applies = 0
+    const spied = {
+      ...entry.default,
+      apply: (...args: Parameters<typeof entry.apply>) => {
+        applies += 1
+        return entry.apply(...args)
+      },
+    }
+    await ctx.plugin(spied, config())
+    expect(applies).toBe(0)
+    expect(ctx.get('dsbot-channel.peers')).toBeUndefined()
   })
 
   test('mounts adapters once the session service is present', async () => {
