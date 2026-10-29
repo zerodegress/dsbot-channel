@@ -265,7 +265,6 @@ async function pair(
     denyRegexes?: string[]
     allowPeers?: string[]
     unsupported?: string
-    budget?: { capacity: number; softLimit?: number; hardLimit?: number }
   } = {},
 ) {
   const [portA, portB] = [await freePort(), await freePort()]
@@ -433,15 +432,7 @@ describe('policy', () => {
 })
 
 describe('policy budget', () => {
-  test('a budget section is accepted and does not block an unspent adapter', async () => {
-    const { sessions, portB } = await pair({ budget: { capacity: 1000 } })
-    await send(portB, 'evt-1', 'hello')
-
-    await waitFor(() => sessions.prompted.length > 0)
-    expect(sessions.prompted[0]?.text.endsWith(' hello')).toBe(true)
-  })
-
-  test('a budget section without a capacity is refused', async () => {
+  test('a budget section is refused until something charges the ledger', async () => {
     const ctx = new Context()
     const sessions = new StubSessions(ctx, 1)
     await ctx.plugin({
@@ -463,10 +454,10 @@ describe('policy budget', () => {
           botName: 'bot-a',
           peers: [{ instance: 'inst-b', secret: REF }],
           listen: { host: '127.0.0.1', port: await freePort() },
-          policy: { budget: {} },
+          policy: { budget: { capacity: 1000 } },
         },
       ],
     }
-    await expect(ctx.plugin(entry, config)).rejects.toThrow(/capacity/)
+    await expect(ctx.plugin(entry, config)).rejects.toThrow(/unknown config fields: budget/)
   })
 })
