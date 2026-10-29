@@ -96,6 +96,7 @@ export const Config: any = Schema.object({
           host: Schema.string().default(DEFAULT_HOST),
           port: Schema.number().default(DEFAULT_PORT),
         }).default({}),
+        /** Loopback only; do not enable behind a proxy or serve, where every caller looks local. */
         status: Schema.boolean().default(false),
         dedupe: Schema.object({
           ttlMs: Schema.number().default(7 * 24 * 60 * 60 * 1000),
