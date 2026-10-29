@@ -4,8 +4,18 @@ import { ConfigError, assertBindHost, validateConfig } from './config.js'
 import { DedupeTable } from './p2p-dedupe.js'
 import { DEFAULT_HOST, DEFAULT_PORT, startListener } from './p2p-listener.js'
 import type { ListenerConfig } from './p2p-listener.js'
-import type { CredentialsLike } from './p2p-secrets.js'
+import type { CredentialsLike, PeerRef } from './p2p-secrets.js'
 import { assertPeersResolvable } from './p2p-secrets.js'
+import { PeerSessions } from './p2p-inbound.js'
+import type { InboundRequest, SessionControllerLike, SessionEventLike } from './p2p-inbound.js'
+import { sendToPeer } from './p2p-send.js'
+import type { PeerTarget } from './p2p-send.js'
+
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    'session/event': (session: { id: string }, event: SessionEventLike) => void
+  }
+}
 
 /** Turn ceiling a message may occupy before it is dropped. */
 export const MAX_TURN_MS = 120_000
@@ -13,6 +23,7 @@ export const MAX_TURN_MS = 120_000
 export interface AdapterConfig extends ListenerConfig {
   kind?: 'p2p'
   channel: string
+  instance: string
   dedupe?: { ttlMs?: number; limit?: number }
 }
 
@@ -27,11 +38,13 @@ export const Config: any = Schema.object({
       Schema.object({
         kind: Schema.const('p2p').default('p2p'),
         channel: Schema.string().required(),
+        instance: Schema.string().required(),
         botName: Schema.string().required(),
         peers: Schema.array(
           Schema.object({
             instance: Schema.string().required(),
             secret: Schema.string().required(),
+            url: Schema.string(),
           }),
         ).default([]),
         inflightTtlMs: Schema.number().default(300_000),
@@ -95,8 +108,65 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
     }
     await assertPeersResolvable(adapter.peers, credentials)
   }
+  const controller = ctx.get('sessionController') as SessionControllerLike | undefined
+  if (controller === undefined || typeof controller.create !== 'function' || typeof controller.prompt !== 'function') {
+    throw new ConfigError('the sessionController service is required to run peer messages', ['adapters'])
+  }
+  const observe = (listener: (sessionId: string, event: SessionEventLike) => void): (() => void) =>
+    ctx.on('session/event', (session: { id: string }, event: SessionEventLike) => listener(session.id, event))
+  const logger = ctx.get('logger') as { warn(message: string): void } | undefined
+  const warn = (message: string): void => {
+    void Promise.resolve()
+      .then(() => logger?.warn(message))
+      .catch(() => undefined)
+  }
   const started = await Promise.all(
-    pairs.map(({ adapter, table }) => startListener({ config: { ...adapter, credentials }, table })),
+    pairs.map(({ adapter, table }) => {
+      const sessions = new PeerSessions({ controller, observe })
+      const handOff = (request: InboundRequest): void => {
+        const reply = async (): Promise<void> => {
+          const turn = await sessions.runTurn({
+            peer: request.instance,
+            requestId: request.eventId,
+            text: request.body,
+          })
+          if (turn.text.length === 0) return
+          const configured = adapter.peers.find((candidate) => candidate.instance === request.instance)
+          if (configured === undefined) return
+          const url = (configured as PeerRef & { url?: string }).url
+          const peer: PeerTarget = {
+            instance: configured.instance,
+            secret: configured.secret,
+            ...(url === undefined ? {} : { url }),
+          }
+          const sent = await sendToPeer({
+            peer,
+            credentials,
+            to: request.sender,
+            body: turn.text,
+            eventId: `reply:${request.eventId}`,
+            sender: adapter.botName,
+            instance: adapter.instance,
+          })
+          if (!sent.ok) {
+            warn(
+              `dsbot-channel: reply to ${request.instance} was not delivered: ${sent.code} ${sent.reason}`,
+            )
+          }
+        }
+        void reply().catch((error: unknown) => {
+          warn(`dsbot-channel: peer turn for ${request.instance} failed: ${String(error)}`)
+        })
+      }
+      return startListener({
+        config: { ...adapter, credentials },
+        table,
+        onMessage: handOff,
+        onError: (error, request) => {
+          warn(`dsbot-channel: handing off ${request.eventId} from ${request.instance} failed: ${String(error)}`)
+        },
+      })
+    }),
   )
   ctx.provide('dsbot-channel.peers')
   ctx.set('dsbot-channel.peers', started)

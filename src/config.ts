@@ -1,5 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-type AnySchema = ((data?: any, options?: any) => any) & { dict?: Record<string, unknown> | undefined }
+type AnySchema = ((data?: any, options?: any) => any) & {
+  dict?: Record<string, AnySchema> | undefined
+  inner?: AnySchema | undefined
+  type?: string | undefined
+}
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 /** Raised when a config object fails validation. */
@@ -20,18 +24,27 @@ export class ConfigError extends Error {
   }
 }
 
-function unknownFieldError(fields: readonly string[]): ConfigError {
-  return new ConfigError(`unknown config fields: ${fields.join(', ')}`, [], fields)
+function unknownFieldError(fields: readonly string[], path: readonly (string | number)[]): ConfigError {
+  return new ConfigError(`unknown config fields: ${fields.join(', ')}`, path, fields)
 }
 
-function declaredKeys(schema: AnySchema): Set<string> {
-  return new Set(Object.keys(schema.dict ?? {}))
-}
-
-function assertKnown(schema: AnySchema, value: object): void {
-  const declared = declaredKeys(schema)
-  const unknown = Object.keys(value).filter((key) => !declared.has(key))
-  if (unknown.length > 0) throw unknownFieldError(unknown)
+/** Rejects unknown fields at every level, not only at the root. */
+function assertKnown(schema: AnySchema, value: unknown, path: readonly (string | number)[] = []): void {
+  if (value === null || typeof value !== 'object') return
+  if (schema.type === 'array') {
+    const inner = schema.inner
+    if (inner === undefined || !Array.isArray(value)) return
+    value.forEach((item, index) => assertKnown(inner, item, [...path, index]))
+    return
+  }
+  if (schema.type !== 'object' || Array.isArray(value) || schema.dict === undefined) return
+  const record = value as Record<string, unknown>
+  const declared = new Set(Object.keys(schema.dict))
+  const unknown = Object.keys(record).filter((key) => !declared.has(key))
+  if (unknown.length > 0) throw unknownFieldError(unknown, path)
+  for (const [key, child] of Object.entries(schema.dict)) {
+    if (key in record) assertKnown(child, record[key], [...path, key])
+  }
 }
 
 /** Addresses that expose a listener on every interface. */

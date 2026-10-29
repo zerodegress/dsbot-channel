@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, test } from 'vitest'
+import { createServer } from 'node:http'
+import type { Server } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { DedupeTable } from '../src/p2p-dedupe.js'
 import { startListener } from '../src/p2p-listener.js'
 import type { Listener } from '../src/p2p-listener.js'
@@ -10,9 +13,14 @@ const SECRET = 'shared-value'
 const credentials = staticCredentials({ [REF]: SECRET })
 
 const listeners: Listener[] = []
+const servers: Server[] = []
 
 afterEach(async () => {
   while (listeners.length) await listeners.pop()!.close()
+  while (servers.length) {
+    const server = servers.pop()!
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
 })
 
 async function peer(options: { peerInstance?: string; botName?: string; waitMs?: number } = {}): Promise<{ url: string }> {
@@ -113,30 +121,17 @@ describe('failures are told apart', () => {
     expect(result).toMatchObject({ ok: false, code: 'forbidden' })
   })
 
-  test('a peer still working on the same event is busy and retryable', async () => {
-    let release: () => void = () => {}
-    const blocked = new Promise<boolean>((resolve) => { release = () => resolve(true) })
-    const listener = await startListener({
-      table: new DedupeTable({ ttlMs: 604_800_000, limit: 100_000 }),
-      config: {
-        botName: 'remote-bot',
-        peers: [{ instance: 'sender-inst', secret: REF }],
-        credentials,
-        inflightTtlMs: 300_000,
-        maxBodyBytes: 64 * 1024,
-        waitMs: 50,
-        listen: { host: '127.0.0.1', port: 0 },
-      },
-      process: () => blocked,
+  test('a peer answering 503 is busy and retryable', async () => {
+    const server = createServer((request, response) => {
+      request.resume()
+      response.writeHead(503, { 'content-type': 'application/json' })
+      response.end(JSON.stringify({ error: 'the first delivery is still being processed' }))
     })
-    listeners.push(listener)
-    const url = `http://127.0.0.1:${listener.address().port}`
-    const first = sendToPeer({ ...base(url), timeoutMs: 5_000 })
-    await new Promise((resolve) => setImmediate(resolve))
-    const second = await sendToPeer(base(url))
-    release()
-    await first
-    expect(second).toMatchObject({ ok: false, code: 'busy', retryable: true })
+    servers.push(server)
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+    const address = server.address() as AddressInfo
+    const result = await sendToPeer(base(`http://127.0.0.1:${address.port}`))
+    expect(result).toMatchObject({ ok: false, code: 'busy', retryable: true })
   })
 
   test('a slow peer is reported as a timeout, and it is retryable', async () => {
