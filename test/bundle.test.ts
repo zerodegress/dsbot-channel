@@ -6,6 +6,7 @@ const root = join(__dirname, '..')
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
   name: string
   files: string[]
+  dependencies?: Record<string, string>
   dsh?: { bundle?: { patch?: string } }
 }
 
@@ -28,5 +29,21 @@ describe('bundle manifest', () => {
   test('ships no secret value', () => {
     const patch = readFileSync(join(root, 'cordis.patch.yml'), 'utf8')
     expect(patch).not.toMatch(/secret:\s*\S+/)
+  })
+})
+
+describe('runtime dependencies', () => {
+  const config = readFileSync(join(root, 'rolldown.config.ts'), 'utf8')
+
+  test('the tool helper is installed, because the bundle imports it at runtime', () => {
+    expect(pkg.dependencies?.['@deepseek-ai/dsh-tools']).toBeDefined()
+  })
+
+  test('the tool helper stays external, or the harness would be copied into the bundle', () => {
+    expect(config).toContain(`'@deepseek-ai/dsh-tools'`)
+  })
+
+  test('the schema library is installed for the same reason', () => {
+    expect(pkg.dependencies?.['@deepseek-ai/schemastery']).toBeDefined()
   })
 })
