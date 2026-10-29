@@ -31,10 +31,13 @@ interface Prompted {
 
 const warnings: string[] = []
 
-const loggerStub = {
-  warn(message: string) {
-    warnings.push(message)
-  },
+function captureWarnings(ctx: Context): void {
+  ctx.logger.exporter({
+    levels: { default: 3 },
+    export(message: { args: unknown[] }) {
+      warnings.push(message.args.map((arg) => String(arg)).join(' '))
+    },
+  })
 }
 
 class StubSessions {
@@ -100,6 +103,7 @@ describe('two adapters in one process', () => {
   test('a message runs a turn and the reply comes back to the sender', async () => {
     const [portA, portB] = [await freePort(), await freePort()]
     const ctx = new Context()
+    captureWarnings(ctx)
     const sessions = new StubSessions(ctx)
     await ctx.plugin({
       name: 'probe-services',
@@ -108,8 +112,6 @@ describe('two adapters in one process', () => {
         scope.set('credentials', credentials)
         scope.provide('sessionController')
         scope.set('sessionController', sessions)
-        scope.provide('logger')
-        scope.set('logger', loggerStub)
       },
     })
     const adapter = (channel: string, instance: string, botName: string, peerInstance: string, port: number, peerPort: number) => ({
@@ -158,6 +160,7 @@ describe('two adapters in one process', () => {
   test('a peer without a url comes back as no_url instead of silence', async () => {
     const [portA, portB] = [await freePort(), await freePort()]
     const ctx = new Context()
+    captureWarnings(ctx)
     const sessions = new StubSessions(ctx, 2)
     await ctx.plugin({
       name: 'probe-services',
@@ -166,8 +169,6 @@ describe('two adapters in one process', () => {
         scope.set('credentials', credentials)
         scope.provide('sessionController')
         scope.set('sessionController', sessions)
-        scope.provide('logger')
-        scope.set('logger', loggerStub)
       },
     })
     const fork = await ctx.plugin(entry, {
@@ -211,9 +212,16 @@ describe('two adapters in one process', () => {
 })
 
 describe('reporting failures', () => {
-  test('a logger that throws does not become an unhandled rejection', async () => {
+  test('a log sink that throws does not break the round trip', async () => {
     const [portA, portB] = [await freePort(), await freePort()]
     const ctx = new Context()
+    ctx.logger.exporter({
+      levels: { default: 3 },
+      export() {
+        attempts += 1
+        throw new Error('the sink failed')
+      },
+    })
     const sessions = new StubSessions(ctx, 2)
     let attempts = 0
     await ctx.plugin({
@@ -223,13 +231,6 @@ describe('reporting failures', () => {
         scope.set('credentials', credentials)
         scope.provide('sessionController')
         scope.set('sessionController', sessions)
-        scope.provide('logger')
-        scope.set('logger', {
-          warn() {
-            attempts += 1
-            throw new Error('logger failed')
-          },
-        })
       },
     })
     const fork = await ctx.plugin(entry, {
@@ -281,6 +282,7 @@ async function pair(
 ) {
   const [portA, portB] = [await freePort(), await freePort()]
   const ctx = new Context()
+  captureWarnings(ctx)
   const sessions = new StubSessions(ctx, 99)
   await ctx.plugin({
     name: 'probe-services',
@@ -289,8 +291,6 @@ async function pair(
       scope.set('credentials', credentials)
       scope.provide('sessionController')
       scope.set('sessionController', sessions)
-      scope.provide('logger')
-      scope.set('logger', loggerStub)
     },
   })
   const adapter = (channel: string, instance: string, botName: string, peerInstance: string, port: number, peerPort: number) => ({
@@ -457,6 +457,7 @@ describe('the reply ceiling', () => {
   test('relayLimit below one is refused at mount time', async () => {
     const [portA, portB] = [await freePort(), await freePort()]
     const ctx = new Context()
+    captureWarnings(ctx)
     const sessions = new StubSessions(ctx, 99)
     await ctx.plugin({
       name: 'probe-services',
@@ -465,8 +466,6 @@ describe('the reply ceiling', () => {
         scope.set('credentials', credentials)
         scope.provide('sessionController')
         scope.set('sessionController', sessions)
-        scope.provide('logger')
-        scope.set('logger', loggerStub)
       },
     })
     const config = {
@@ -539,6 +538,7 @@ describe('policy', () => {
 describe('policy budget', () => {
   async function mountWith(policy: Record<string, unknown>): Promise<Context> {
     const ctx = new Context()
+    captureWarnings(ctx)
     const sessions = new StubSessions(ctx, 1)
     await ctx.plugin({
       name: 'probe-services',
@@ -547,8 +547,6 @@ describe('policy budget', () => {
         scope.set('credentials', credentials)
         scope.provide('sessionController')
         scope.set('sessionController', sessions)
-        scope.provide('logger')
-        scope.set('logger', loggerStub)
       },
     })
     const config = {
@@ -604,6 +602,7 @@ describe('policy budget', () => {
   test('a turn whose reply cannot be sent costs the refused price, not the reserved one', async () => {
     const port = await freePort()
     const ctx = new Context()
+    captureWarnings(ctx)
     const sessions = new StubSessions(ctx, 99)
     await ctx.plugin({
       name: 'probe-services',
@@ -612,8 +611,6 @@ describe('policy budget', () => {
         scope.set('credentials', credentials)
         scope.provide('sessionController')
         scope.set('sessionController', sessions)
-        scope.provide('logger')
-        scope.set('logger', loggerStub)
       },
     })
     const fork = await ctx.plugin(entry, {
@@ -664,8 +661,6 @@ async function mounted(
       scope.set('credentials', credentials)
       scope.provide('sessionController')
       scope.set('sessionController', sessions)
-      scope.provide('logger')
-      scope.set('logger', loggerStub)
     },
   })
   const adapter = (channel: string, instance: string, botName: string, peerInstance: string, port: number, peerPort: number) => ({
@@ -693,6 +688,7 @@ async function mounted(
 describe('what the wiring charges', () => {
   test('an empty turn costs the refused price, not the reserved one', async () => {
     const ctx = new Context()
+    captureWarnings(ctx)
     const sessions = new StubSessions(ctx, 0)
     const { portB } = await mounted(ctx, sessions, { budget: { capacity: 20 } })
     await send(portB, 'evt-1', 'hello')
@@ -704,6 +700,7 @@ describe('what the wiring charges', () => {
 
   test('a turn that never ran costs nothing', async () => {
     const ctx = new Context()
+    captureWarnings(ctx)
     const sessions = new StubSessions(ctx, 0, 1)
     const { portB } = await mounted(ctx, sessions, { budget: { capacity: 20 } })
     await send(portB, 'evt-1', 'hello')
@@ -715,6 +712,7 @@ describe('what the wiring charges', () => {
 
   test('a refused message costs nothing, so a burst cannot exhaust the window', async () => {
     const ctx = new Context()
+    captureWarnings(ctx)
     const sessions = new StubSessions(ctx, 0)
     const { portB } = await mounted(ctx, sessions, {
       budget: { capacity: 20 },
