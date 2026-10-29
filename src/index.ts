@@ -110,3 +110,5 @@ export { SecretRefError, assertPeersResolvable, resolvePeers, staticCredentials 
 export type { CredentialsLike, PeerRef, ResolvedSecret } from './p2p-secrets.js'
 export { BuildError, buildPipeline } from './build-pipeline.js'
 export type { BudgetVerdict, JudgeVerdict, MatchRule, PipelineDeps } from './build-pipeline.js'
+export { DEFAULT_SEND_TIMEOUT_MS, sendToPeer } from './p2p-send.js'
+export type { PeerTarget, SendFailure, SendFailureCode, SendInput, SendResult, SendSuccess } from './p2p-send.js'
