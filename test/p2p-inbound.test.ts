@@ -6,7 +6,7 @@ type Observer = (sessionId: string, event: SessionEventLike) => void
 
 interface Recorded {
   request: PromptRequest
-  source: unknown
+  signal: AbortSignal
 }
 
 class FakeController implements SessionControllerLike {
@@ -24,8 +24,9 @@ class FakeController implements SessionControllerLike {
     return Promise.resolve({ sessionId: `session-${this.#count}` })
   }
 
-  prompt(request: PromptRequest, source: { kind: 'user' }): Promise<{ accepted: boolean }> {
-    this.prompts.push({ request, source })
+  prompt(request: PromptRequest, signal: AbortSignal): Promise<{ accepted: boolean }> {
+    signal.throwIfAborted()
+    this.prompts.push({ request, signal })
     if (this.failPrompt) return Promise.reject(this.failPrompt)
     this.onPrompt?.(request)
     return Promise.resolve({ accepted: true })
@@ -109,7 +110,7 @@ describe('peer sessions', () => {
     expect(controller.creates[0]).toEqual({ cwd: '/tmp/sandbox', agentPreset: 'peer' })
   })
 
-  test('sends the inbound event id as the request id and a plain user source', async () => {
+  test('sends the inbound event id as the request id and a live cancellation signal', async () => {
     const { controller, events, bridge } = harness()
     controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['ok'])
 
@@ -119,7 +120,9 @@ describe('peer sessions', () => {
     expect(recorded?.request.requestId).toBe('evt-42')
     expect(recorded?.request.mode).toBe('queue')
     expect(recorded?.request.sessionId).toBe('session-1')
-    expect(recorded?.source).toEqual({ kind: 'user' })
+    expect(recorded?.signal).toBeInstanceOf(AbortSignal)
+    expect(typeof recorded?.signal.throwIfAborted).toBe('function')
+    expect(recorded?.signal.aborted).toBe(false)
   })
 
   test('prompts the text exactly as received so the prefix is not doubled', async () => {
@@ -199,6 +202,16 @@ describe('peer sessions', () => {
       TurnTimeoutError,
     )
     expect(events.size).toBe(0)
+  })
+
+  test('cancels the signal it handed the controller when the turn runs out', async () => {
+    const { controller, events, bridge } = harness({ timeoutMs: 20 })
+    controller.onPrompt = (request) => events.emit(request.sessionId, { type: 'turn/start' })
+
+    await expect(bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })).rejects.toBeInstanceOf(
+      TurnTimeoutError,
+    )
+    expect(controller.prompts[0]?.signal.aborted).toBe(true)
   })
 
   test('keeps one turn in flight per peer', async () => {
