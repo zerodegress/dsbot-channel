@@ -1,7 +1,6 @@
-# Ships disabled with no adapters: the base starts idle and the profile declares its own.
+# Ships enabled with no adapters: the base starts idle until a profile declares its own.
 - insert:
     - id: dsbot-channel
       name: dsbot-channel
-      disabled: true
       config:
         adapters: []
