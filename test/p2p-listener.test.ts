@@ -265,6 +265,79 @@ describe('listener', () => {
     expect(reply).toEqual({ status: 200, body: { allowed: true } })
   })
 
+  test('a status read that a forwarder rewrote is refused, even from loopback', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({
+      config: baseConfig(),
+      table: table(),
+      stats: channel,
+      status: { report: () => ({ allowed: true }) },
+    })
+    open.push(listener)
+    const sent: number[] = []
+    const fakeRequest = {
+      method: 'GET',
+      url: '/p2p/v1/status',
+      headers: { 'x-forwarded-for': '100.64.0.7', 'x-forwarded-host': 'orca-gw' },
+      socket: { remoteAddress: '127.0.0.1' },
+    } as unknown as Parameters<typeof listener.handle>[0]
+    const fakeResponse = {
+      writeHead: (status: number) => {
+        sent.push(status)
+      },
+      end: () => undefined,
+    } as unknown as Parameters<typeof listener.handle>[1]
+    await listener.handle(fakeRequest, fakeResponse)
+    expect(sent[0]).toBe(404)
+    expect(channel.snapshot()).toMatchObject({ unknownPaths: 1, lastFailure: null })
+  })
+
+  test('an adapter that never asked for the route answers nothing at all', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
+    open.push(listener)
+    const sent: number[] = []
+    const fakeRequest = {
+      method: 'GET',
+      url: '/p2p/v1/status',
+      headers: {},
+      socket: { remoteAddress: '127.0.0.1' },
+    } as unknown as Parameters<typeof listener.handle>[0]
+    const fakeResponse = {
+      writeHead: (status: number) => {
+        sent.push(status)
+      },
+      end: () => undefined,
+    } as unknown as Parameters<typeof listener.handle>[1]
+    await listener.handle(fakeRequest, fakeResponse)
+    expect(sent[0]).toBe(404)
+    expect(channel.snapshot().unknownPaths).toBe(1)
+  })
+
+  test('a plain loopback read without forwarding headers still answers', async () => {
+    const listener = await startListener({
+      config: baseConfig(),
+      table: table(),
+      status: { report: () => ({ allowed: true }) },
+    })
+    open.push(listener)
+    const sent: number[] = []
+    const fakeRequest = {
+      method: 'GET',
+      url: '/p2p/v1/status',
+      headers: {},
+      socket: { remoteAddress: '127.0.0.1' },
+    } as unknown as Parameters<typeof listener.handle>[0]
+    const fakeResponse = {
+      writeHead: (status: number) => {
+        sent.push(status)
+      },
+      end: () => undefined,
+    } as unknown as Parameters<typeof listener.handle>[1]
+    await listener.handle(fakeRequest, fakeResponse)
+    expect(sent[0]).toBe(200)
+  })
+
   test('a status read from anywhere but loopback is refused', async () => {
     const channel = new ChannelStats()
     const listener = await startListener({
