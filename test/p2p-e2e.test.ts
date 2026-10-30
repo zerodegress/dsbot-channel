@@ -797,7 +797,10 @@ describe('a turn that already pushed with send_text', () => {
     body?: string
   }
 
-  async function mount(mode: 'body' | 'tool' | 'both'): Promise<{ posted: Posted[]; port: number; close: () => void }> {
+  async function mount(
+    mode: 'body' | 'tool' | 'both',
+    failPush = false,
+  ): Promise<{ posted: Posted[]; port: number; close: () => void }> {
     const posted: Posted[] = []
     const capture = createServer((request, response) => {
       let raw = ''
@@ -805,7 +808,13 @@ describe('a turn that already pushed with send_text', () => {
         raw += chunk
       })
       request.on('end', () => {
-        posted.push(JSON.parse(raw) as Posted)
+        const body = JSON.parse(raw) as Posted
+        posted.push(body)
+        if (failPush && (body.body ?? '').includes('pushed')) {
+          response.writeHead(500, { 'content-type': 'application/json' })
+          response.end(JSON.stringify({ error: 'the peer could not take it' }))
+          return
+        }
         response.writeHead(200, { 'content-type': 'application/json' })
         response.end(JSON.stringify({ duplicate: false, messageId: 'p2p-ok' }))
       })
@@ -893,6 +902,20 @@ describe('a turn that already pushed with send_text', () => {
       await new Promise((resolve) => setTimeout(resolve, 60))
       expect(mounted.posted).toHaveLength(1)
       expect(mounted.posted[0]?.eventId?.startsWith('push:')).toBe(true)
+    } finally {
+      mounted.close()
+    }
+  })
+
+  test('a push that fails still leaves the written reply to go out', async () => {
+    const mounted = await mount('both', true)
+    try {
+      await send(mounted.port, 'evt-1', 'hello')
+      await waitFor(() => mounted.posted.some((entry) => entry.eventId?.startsWith('reply:')))
+      await new Promise((resolve) => setTimeout(resolve, 60))
+      const replies = mounted.posted.filter((entry) => entry.eventId?.startsWith('reply:'))
+      expect(replies).toHaveLength(1)
+      expect(replies[0]?.body).toContain('a written reply')
     } finally {
       mounted.close()
     }
