@@ -791,6 +791,127 @@ describe('an active push to a peer behind a name router', () => {
   })
 })
 
+describe('a turn that already pushed with send_text', () => {
+  interface Posted {
+    eventId?: string
+    body?: string
+  }
+
+  async function mount(mode: 'body' | 'tool' | 'both'): Promise<{ posted: Posted[]; port: number; close: () => void }> {
+    const posted: Posted[] = []
+    const capture = createServer((request, response) => {
+      let raw = ''
+      request.on('data', (chunk: string) => {
+        raw += chunk
+      })
+      request.on('end', () => {
+        posted.push(JSON.parse(raw) as Posted)
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({ duplicate: false, messageId: 'p2p-ok' }))
+      })
+    })
+    await new Promise<void>((resolve) => capture.listen(0, '127.0.0.1', resolve))
+    const capturePort = (capture.address() as AddressInfo).port
+
+    const port = await freePort()
+    const ctx = new Context()
+    captureWarnings(ctx)
+    const tools: { name: string; execute: (args: unknown, exec: unknown) => Promise<string> }[] = []
+    const controller = {
+      create(): Promise<{ sessionId: string }> {
+        return Promise.resolve({ sessionId: 'session-main' })
+      },
+      async prompt(request: { sessionId: string; requestId: string; content: readonly { type: string; text?: string }[] }): Promise<{ accepted: boolean }> {
+        const emit = (event: unknown): void => {
+          ctx.emit('session/event', { id: request.sessionId } as never, event as never)
+        }
+        emit({ type: 'turn/start' })
+        if (mode !== 'body') {
+          const push = tools.find((tool) => tool.name === 'send_text')
+          await push?.execute(
+            { text: 'pushed', channel: 'p2p:b', target: 'inst-a' },
+            { agent: { id: request.sessionId } } as never,
+          )
+        }
+        if (mode !== 'tool') {
+          emit({ type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'a written reply' }] } } })
+        }
+        emit({ type: 'turn/end' })
+        return { accepted: true }
+      },
+    }
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', controller)
+        scope.provide('tools')
+        scope.set('tools', {
+          register(definition: { name: string; execute: (args: unknown, exec: unknown) => Promise<string> }) {
+            tools.push(definition)
+            return () => undefined
+          },
+        })
+      },
+    })
+    const fork = await ctx.plugin(entry, {
+      adapters: [
+        {
+          channel: 'p2p:b',
+          instance: 'inst-b',
+          botName: 'bot-b',
+          peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}`, botName: 'bot-a' }],
+          listen: { host: '127.0.0.1', port },
+        },
+      ],
+    })
+    forks.push(fork)
+    return { posted, port, close: () => capture.close() }
+  }
+
+  test('a written reply with no push still goes out', async () => {
+    const mounted = await mount('body')
+    try {
+      await send(mounted.port, 'evt-1', 'hello')
+      await waitFor(() => mounted.posted.length === 1)
+      await new Promise((resolve) => setTimeout(resolve, 60))
+      expect(mounted.posted).toHaveLength(1)
+      expect(mounted.posted[0]?.eventId).toBe('reply:evt-1')
+      expect(mounted.posted[0]?.body).toContain('a written reply')
+    } finally {
+      mounted.close()
+    }
+  })
+
+  test('a push with no written reply leaves one message, not two', async () => {
+    const mounted = await mount('tool')
+    try {
+      await send(mounted.port, 'evt-1', 'hello')
+      await waitFor(() => mounted.posted.length === 1)
+      await new Promise((resolve) => setTimeout(resolve, 60))
+      expect(mounted.posted).toHaveLength(1)
+      expect(mounted.posted[0]?.eventId?.startsWith('push:')).toBe(true)
+    } finally {
+      mounted.close()
+    }
+  })
+
+  test('a push and a written reply send the push alone', async () => {
+    const mounted = await mount('both')
+    try {
+      await send(mounted.port, 'evt-1', 'hello')
+      await waitFor(() => mounted.posted.length === 1)
+      await new Promise((resolve) => setTimeout(resolve, 60))
+      expect(mounted.posted).toHaveLength(1)
+      expect(mounted.posted[0]?.eventId?.startsWith('push:')).toBe(true)
+    } finally {
+      mounted.close()
+    }
+  })
+})
+
 describe('a reply goes back to the sender of the inbound message', () => {
   async function mountWithCapture(): Promise<{
     captured: () => Record<string, unknown> | undefined

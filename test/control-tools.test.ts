@@ -6,7 +6,7 @@ function harness(options: { declined?: { ok: boolean; code?: string; reason?: st
   const closed: string[] = []
   const declined: { turn: PeerTurnRef; reason: string | undefined }[] = []
   const concluded: number[] = []
-  const turn: PeerTurnRef = { eventId: 'probe-1', channel: 'p2p:orca', peer: 'seal', sender: 'seal', suppressed: false }
+  const turn: PeerTurnRef = { eventId: 'probe-1', channel: 'p2p:orca', peer: 'seal', sender: 'seal', suppressed: false, pushed: false }
   const closedNow = new Set<string>()
   const ports: ControlPorts = {
     turnOf: (sessionId) => (sessionId === 'session-1' ? turn : undefined),
