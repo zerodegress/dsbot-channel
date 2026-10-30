@@ -11,6 +11,24 @@ function stats(start = 1_000): { stats: ChannelStats; clock: (value: number) => 
   }
 }
 
+describe('the health a channel keeps', () => {
+  test('counts an empty turn', () => {
+    const { stats: channel } = stats()
+    channel.emptyTurn()
+
+    expect(channel.snapshot().health.emptyTurns).toBe(1)
+  })
+
+  test('counts outbound failures by the code it was given', () => {
+    const { stats: channel } = stats()
+    channel.sendFailed('timeout')
+    channel.sendFailed('timeout')
+    channel.sendFailed('forbidden')
+
+    expect(channel.snapshot().health.sendFailures).toEqual({ timeout: 2, forbidden: 1 })
+  })
+})
+
 describe('a channel reports its own state', () => {
   test('it starts as starting and knows nothing yet', () => {
     expect(stats().stats.snapshot()).toEqual({
@@ -21,6 +39,7 @@ describe('a channel reports its own state', () => {
       inFlight: 0,
       underruns: 0,
       unknownPaths: 0,
+      health: { emptyTurns: 0, sendFailures: {} },
       sampledAt: 1_000,
     })
   })
