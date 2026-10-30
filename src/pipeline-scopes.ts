@@ -1,4 +1,4 @@
-import type { CheckReport, PipelineNodeSpec } from './pipeline-config.js'
+import type { PipelineNodeSpec } from './pipeline-config.js'
 import { checkPipeline } from './pipeline-config.js'
 
 export const SCOPE_LEVELS = ['global', 'bot', 'session'] as const
@@ -30,7 +30,15 @@ export interface ScopeMerge {
   fatal: string[]
 }
 
-export interface ScopeCheck extends ScopeMerge, CheckReport {}
+export const OVERRIDABLE = ['type', 'restrictSkip', 'mayRestrict'] as const
+
+export interface ScopeCheck {
+  nodes: PipelineNodeSpec[]
+  /** What the layers asked for and could not be applied: a configuration mistake. */
+  layer: { fatal: string[]; warnings: string[] }
+  /** What the resulting pipeline does wrong on its own: a design problem. */
+  pipeline: { fatal: string[]; warnings: string[] }
+}
 
 function applyLayer(
   base: readonly PipelineNodeSpec[],
@@ -77,6 +85,11 @@ function applyLayer(
       fatal.push(`${level}: override names a node that does not exist: "${id}"`)
       continue
     }
+    const unknown = Object.keys(patch).filter((key) => !(OVERRIDABLE as readonly string[]).includes(key))
+    if (unknown.length > 0) {
+      fatal.push(`${level}: override "${id}" names a field a node does not have: "${unknown.join('", "')}"`)
+      continue
+    }
     Object.assign(node, patch, { id })
   }
 
@@ -121,11 +134,14 @@ export function checkByLayer(scopes: PipelineScopes): { fatal: string[]; warning
   return { fatal, warnings }
 }
 
-/** Resolves the layers and checks each one, so a merged node is checked and the report says where it came from. */
+/** Resolves the layers and checks each one, keeping a written mistake apart from a bad design. */
 export function resolveAndCheck(scopes: PipelineScopes): ScopeCheck {
   const merged = resolvePipeline(scopes)
-  const checked = checkByLayer(scopes)
-  return { nodes: merged.nodes, fatal: [...merged.fatal, ...checked.fatal], warnings: checked.warnings }
+  return {
+    nodes: merged.nodes,
+    layer: { fatal: merged.fatal, warnings: [] },
+    pipeline: checkByLayer(scopes),
+  }
 }
 
 /** Resolves the three layers into the pipeline a session actually runs. */
