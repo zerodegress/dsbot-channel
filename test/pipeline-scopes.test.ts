@@ -98,7 +98,8 @@ describe('the merged pipeline is checked, and the report names the layer', () =>
       bot: { insert: [{ id: 'topic', type: 'nonsense', after: 'score' }] },
     })
 
-    expect(checked.fatal).toEqual(['bot: node "topic": unknown type "nonsense"'])
+    expect(checked.pipeline.fatal).toEqual(['bot: node "topic": unknown type "nonsense"'])
+    expect(checked.layer.fatal).toEqual([])
   })
 
   test('an order the bot layer introduced is reported against the bot layer', () => {
@@ -107,8 +108,8 @@ describe('the merged pipeline is checked, and the report names the layer', () =>
       bot: { insert: [{ id: 'early-allow', type: 'allow', before: 'budget' }] },
     })
 
-    expect(checked.fatal).toEqual([])
-    expect(checked.warnings).toContain('bot: allow runs before budget')
+    expect(checked.pipeline.fatal).toEqual([])
+    expect(checked.pipeline.warnings).toContain('bot: allow runs before budget')
   })
 
   test('an order the session layer introduced is reported against the session layer', () => {
@@ -117,8 +118,8 @@ describe('the merged pipeline is checked, and the report names the layer', () =>
       session: { insert: [{ id: 'early-allow', type: 'allow', before: 'budget' }] },
     })
 
-    expect(checked.warnings).toContain('session: allow runs before budget')
-    expect(checked.warnings.some((line) => line.startsWith('bot: '))).toBe(false)
+    expect(checked.pipeline.warnings).toContain('session: allow runs before budget')
+    expect(checked.pipeline.warnings.some((line) => line.startsWith('bot: '))).toBe(false)
   })
 
   test('a problem the global layer already had is reported once, against global', () => {
@@ -127,7 +128,7 @@ describe('the merged pipeline is checked, and the report names the layer', () =>
 
     const checked = resolveAndCheck({ global: broken, bot: { remove: ['noise'] } })
 
-    const hits = checked.warnings.filter((line) => line.endsWith('allow runs before budget'))
+    const hits = checked.pipeline.warnings.filter((line) => line.endsWith('allow runs before budget'))
     expect(hits).toEqual(['global: allow runs before budget'])
   })
 })
@@ -176,6 +177,26 @@ describe('a difference that cannot be applied refuses the load', () => {
     })
 
     expect(merged.fatal).toEqual(['bot: insert "topic" must name exactly one of after or before'])
+  })
+
+  test('override must not name a field a node does not have', () => {
+    const checked = resolveAndCheck({
+      global: defaultPipelineNodes(),
+      bot: { override: { budget: { softlimit: 0.7 } as never } },
+    })
+
+    expect(checked.layer.fatal).toEqual(['bot: override "budget" names a field a node does not have: "softlimit"'])
+    expect(checked.pipeline.fatal).toEqual([])
+  })
+
+  test('a written mistake and a bad design are reported apart', () => {
+    const checked = resolveAndCheck({
+      global: defaultPipelineNodes(),
+      bot: { remove: ['ghost'], insert: [{ id: 'topic', type: 'nonsense', after: 'score' }] },
+    })
+
+    expect(checked.layer.fatal).toEqual(['bot: remove names a node that does not exist: "ghost"'])
+    expect(checked.pipeline.fatal).toEqual(['bot: node "topic": unknown type "nonsense"'])
   })
 
   test('the session layer is checked by the same rules', () => {
