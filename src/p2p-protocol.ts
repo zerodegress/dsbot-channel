@@ -48,6 +48,8 @@ export interface ParsedMessage {
   status?: typeof DECLINED
   reason?: string
   final?: boolean
+  inReplyTo?: string
+  inReplyToExcerpt?: string
 }
 
 export type Parsed = { ok: true; value: ParsedMessage } | { ok: false; status: 400 | 413; reason: string }
@@ -68,6 +70,14 @@ export function parseRequest(payload: P2PPayload, maxBodyBytes = MAX_BODY_BYTES)
   if (reason !== undefined && typeof reason !== 'string') return { ok: false, status: 400, reason: 'reason must be a string' }
   const final = payload.final
   if (final !== undefined && typeof final !== 'boolean') return { ok: false, status: 400, reason: 'final must be a boolean' }
+  const inReplyTo = payload.inReplyTo
+  if (inReplyTo !== undefined && (typeof inReplyTo !== 'string' || inReplyTo.length === 0)) {
+    return { ok: false, status: 400, reason: 'inReplyTo must be a non-empty string' }
+  }
+  const inReplyToExcerpt = payload.inReplyToExcerpt
+  if (inReplyToExcerpt !== undefined && typeof inReplyToExcerpt !== 'string') {
+    return { ok: false, status: 400, reason: 'inReplyToExcerpt must be a string' }
+  }
   return {
     ok: true,
     value: {
@@ -80,6 +90,8 @@ export function parseRequest(payload: P2PPayload, maxBodyBytes = MAX_BODY_BYTES)
       ...(status === undefined ? {} : { status }),
       ...(reason === undefined ? {} : { reason }),
       ...(final === undefined ? {} : { final }),
+      ...(inReplyTo === undefined ? {} : { inReplyTo }),
+      ...(inReplyToExcerpt === undefined ? {} : { inReplyToExcerpt }),
     },
   }
 }

@@ -23,6 +23,8 @@ export interface Envelope {
   status?: string | undefined
   reason?: string | undefined
   final?: boolean | undefined
+  inReplyTo?: string | undefined
+  inReplyToExcerpt?: string | undefined
 }
 
 export interface AuthInput {
@@ -54,6 +56,8 @@ export function canonicalEnvelope(envelope: Envelope): string {
     ...(envelope.status === undefined ? {} : { status: envelope.status }),
     ...(envelope.reason === undefined ? {} : { reason: envelope.reason }),
     ...(envelope.final === undefined ? {} : { final: envelope.final }),
+    ...(envelope.inReplyTo === undefined ? {} : { inReplyTo: envelope.inReplyTo }),
+    ...(envelope.inReplyToExcerpt === undefined ? {} : { inReplyToExcerpt: envelope.inReplyToExcerpt }),
   })
 }
 

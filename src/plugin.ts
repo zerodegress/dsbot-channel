@@ -31,6 +31,9 @@ import { InjectionLedger, guidanceFor } from './inbound-guidance.js'
 import { createDeclineTool, createEndTool } from './control-tools.js'
 import type { ControlPorts, PeerTurnRef } from './control-tools.js'
 
+/** How much of the message being answered travels back with the reply. */
+export const EXCERPT_CHARS = 200
+
 /** Turn ceiling a message may occupy before it is dropped. */
 export const MAX_TURN_MS = 120_000
 
@@ -323,6 +326,8 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
             eventId: `reply:${request.eventId}`,
             sender: adapter.botName,
             instance: adapter.instance,
+            inReplyTo: request.eventId,
+            inReplyToExcerpt: request.body.slice(0, EXCERPT_CHARS),
           })
           if (sent.ok) {
             gate.recordReply(adapter.botName, request.instance)

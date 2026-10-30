@@ -7,12 +7,19 @@ export interface P2PInbound {
   messageId: string
   body: string
   sentAt: number
+  inReplyTo?: string
+  inReplyToExcerpt?: string
 }
 
 /** Maps a peer message onto the event model with the peer identity as the source. */
 export function toP2PEvent(inbound: P2PInbound): Event {
   const prefix = `[p2p from ${inbound.instance} · ${inbound.sender} · ${inbound.messageId}]`
-  const text = inbound.body.length ? `${prefix} ${inbound.body}` : prefix
+  const reference =
+    inbound.inReplyTo === undefined
+      ? ''
+      : ` (in reply to ${inbound.inReplyTo}${inbound.inReplyToExcerpt === undefined ? '' : `: "${inbound.inReplyToExcerpt}"`})`
+  const head = `${prefix}${reference}`
+  const text = inbound.body.length ? `${head} ${inbound.body}` : head
   return buildEvent({
     source: { kind: 'p2p', instance: inbound.instance, peer: inbound.instance, scope: 'p2p' },
     author: { senderId: inbound.sender, kind: 'bot', personId: null },
