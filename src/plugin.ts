@@ -14,6 +14,7 @@ import type { PeerTarget } from './p2p-send.js'
 import { DEFAULT_LOOP_IDLE_RESET_MS, DEFAULT_LOOP_MAX_TURNS, InboundGate } from './inbound-gate.js'
 import type { PolicyConfig } from './policy-config.js'
 import type { PipelineNodeSpec } from './pipeline-config.js'
+import { defaultPipelineNodes } from './pipeline-config.js'
 import type { PipelineLayer, PipelineScopes } from './pipeline-scopes.js'
 import { resolveAndCheck, resolvePipeline } from './pipeline-scopes.js'
 import { compilePolicy } from './policy-config.js'
@@ -27,6 +28,8 @@ import { cleanExcerpt, toP2PEvent } from './p2p-mapping.js'
 import { createWarn } from './warn.js'
 import { ChannelStats } from './channel-stats.js'
 import { StatusRegistry } from './p2p-status.js'
+import { unboundReason } from './pipeline-bindable.js'
+import { SessionPipelines } from './session-pipeline.js'
 import { PushRouter, createSendText } from './push-tool.js'
 import type { PushSource, SendTextTool } from './push-tool.js'
 import { ClosedChains } from './chain-closer.js'
@@ -229,14 +232,6 @@ function stable(value: unknown): string {
   return JSON.stringify(value) ?? 'undefined'
 }
 
-const UNBOUND_REASON: Record<string, string> = {
-  budget:
-    'a budget node needs a session-scoped verdict, which the pipeline dependency cannot carry yet; the gate already refuses a hard window',
-  score: 'a score node needs a scoring function this version does not supply',
-  judge: 'a judge node needs a model call this version does not supply',
-  prepare: 'a prepare node needs a hook this version does not supply',
-}
-
 /** The nodes a profile declares, or undefined when it declares no layer at all. */
 function declaredNodes(config: ChannelConfig, adapter: AdapterConfig): PipelineNodeSpec[] | undefined {
   if (config.pipeline.global.length === 0 && adapter.pipeline === undefined) return undefined
@@ -278,7 +273,7 @@ export function checkPipelineScopes(config: ChannelConfig, warn: (message: strin
   }
   for (const one of scopes) {
     for (const node of resolvePipeline(one).nodes) {
-      const reason = UNBOUND_REASON[node.type]
+      const reason = unboundReason(node)
       if (reason !== undefined) fatal.push(`node "${node.id}": ${reason}`)
     }
   }
@@ -311,6 +306,21 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const config = validateConfig<ChannelConfig>(Config, raw)
   const warn = createWarn(ctx)
   checkPipelineScopes(config, warn)
+  const botLayers = new Map<string, PipelineLayer>()
+  for (const adapter of config.adapters) {
+    if (adapter.pipeline !== undefined && adapter.botName) botLayers.set(adapter.botName, adapter.pipeline)
+  }
+  for (const adapter of config.adapters) {
+    if (adapter.botName && !botLayers.has(adapter.botName)) botLayers.set(adapter.botName, {})
+  }
+  const base = config.pipeline.global.length > 0 ? config.pipeline.global : defaultPipelineNodes()
+  const sessions = new SessionPipelines({ global: base, botLayers })
+  ctx.provide('dsbot-channel.pipeline')
+  ctx.set('dsbot-channel.pipeline', {
+    forSession: (botName: string, key: string, layer: PipelineLayer) => sessions.forSession(botName, key, layer),
+    forgetSession: (botName: string, key: string) => sessions.forgetSession(botName, key),
+    pipelineFor: (botName: string, key?: string) => sessions.pipelineFor(botName, key),
+  })
   if (config.adapters.length === 0) return
   const credentials = ctx.get('credentials') as CredentialsLike | undefined
   if (!credentials?.resolve) {
