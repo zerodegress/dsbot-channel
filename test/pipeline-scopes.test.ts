@@ -179,14 +179,27 @@ describe('a difference that cannot be applied refuses the load', () => {
     expect(merged.fatal).toEqual(['bot: insert "topic" must name exactly one of after or before'])
   })
 
-  test('override may set a field the node type owns', () => {
+  test('a soft limit is refused until something acts on it', () => {
     const checked = resolveAndCheck({
       global: defaultPipelineNodes(),
       bot: { override: { budget: { softLimit: 0.7 } } },
     })
 
     expect(checked.layer.fatal).toEqual([])
-    expect(checked.nodes.find((node) => node.id === 'budget')?.softLimit).toBe(0.7)
+    expect(checked.pipeline.fatal).toEqual([
+      'bot: node "budget": softLimit is not supported in this version: a soft limit is computed but nothing acts on it yet',
+    ])
+  })
+
+  test('a soft limit written into the global layer is refused there too', () => {
+    const nodes = defaultPipelineNodes()
+    nodes[1] = { ...nodes[1]!, softLimit: 0.7 }
+
+    const checked = resolveAndCheck({ global: nodes })
+
+    expect(checked.pipeline.fatal).toEqual([
+      'global: node "budget": softLimit is not supported in this version: a soft limit is computed but nothing acts on it yet',
+    ])
   })
 
   test('a field another node type owns is still a mistake here', () => {
