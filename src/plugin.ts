@@ -260,6 +260,12 @@ export function checkPipelineScopes(config: ChannelConfig, warn: (message: strin
   }
   if (fatal.length > 0) throw new ConfigError(`the pipeline cannot load: ${fatal.join('; ')}`, ['pipeline'])
   for (const warning of warnings) warn(`dsbot-channel: pipeline warning: ${warning}`)
+  const declared = config.pipeline.global.length > 0 || layers.size > 0
+  if (declared) {
+    warn(
+      'dsbot-channel: pipeline layers are validated but not enforced in this version: no node is bound to a rule yet',
+    )
+  }
 }
 
 /** Starts only the adapters the profile declares; an empty list starts nothing. */

@@ -73,7 +73,7 @@ describe('the pipeline a profile declares', () => {
     } as unknown as Parameters<typeof checkPipelineScopes>[0]
     checkPipelineScopes(config, (message) => said.push(message))
     expect(said.some((line) => line.includes('judge runs before budget'))).toBe(true)
-    expect(said.every((line) => line.includes('pipeline warning:'))).toBe(true)
+    expect(said.filter((line) => line.includes('pipeline warning:')).length).toBeGreaterThan(0)
   })
 
   test('a fatal layer stops before anything is reported as a warning', () => {
@@ -126,5 +126,24 @@ describe('the pipeline a profile declares', () => {
         pipeline: { global: [node('deny', 'deny')] },
       }),
     ).rejects.toThrow(ConfigError)
+  })
+
+  test('says plainly that a declared layer is not enforced yet', () => {
+    const said: string[] = []
+    const config = {
+      adapters: [],
+      pipeline: { global: [node('allow', 'allow')] },
+    } as unknown as Parameters<typeof checkPipelineScopes>[0]
+    checkPipelineScopes(config, (message) => said.push(message))
+    expect(said.some((line) => line.includes('not enforced in this version'))).toBe(true)
+  })
+
+  test('says nothing about enforcement when no layer is declared', () => {
+    const said: string[] = []
+    const config = { adapters: [], pipeline: { global: [] } } as unknown as Parameters<
+      typeof checkPipelineScopes
+    >[0]
+    checkPipelineScopes(config, (message) => said.push(message))
+    expect(said).toHaveLength(0)
   })
 })
