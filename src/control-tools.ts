@@ -32,10 +32,11 @@ const output = {
 }
 
 /** Closes the conversation without a byte leaving this instance. */
-export function createEndTool(ports: ControlPorts) {
+export function createNoReplyTool(ports: ControlPorts) {
   return defineTool({
-    name: 'end',
-    description: 'End this peer conversation without sending anything back. Use it when the message needs no answer.',
+    name: 'no_reply',
+    description:
+      'Close this peer conversation without sending anything back. Use it when the message needs no answer.',
     parameters: {},
     output,
     async execute(_args: unknown, exec: { agent?: { id?: string }; concludeTurn: () => void }): Promise<string> {
