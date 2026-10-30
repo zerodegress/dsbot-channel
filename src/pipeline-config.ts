@@ -54,6 +54,11 @@ export function checkPipeline(nodes: readonly PipelineNodeSpec[]): CheckReport {
       }
       if (node.type !== 'budget') fatal.push(`node "${node.id}": only a budget node may declare restrict`)
     }
+    if (node.softLimit !== undefined) {
+      fatal.push(
+        `node "${node.id}": softLimit is not supported in this version: a soft limit is computed but nothing acts on it yet`,
+      )
+    }
     if (node.mayRestrict && node.type !== 'budget') {
       fatal.push(`node "${node.id}": only a budget node may return restrict`)
     }
