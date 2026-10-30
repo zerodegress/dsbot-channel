@@ -287,6 +287,7 @@ async function pair(
     allowPeers?: string[]
     budget?: { capacity: number }
     unsupported?: string
+    global?: unknown[]
   } = {},
 ) {
   const [portA, portB] = [await freePort(), await freePort()]
@@ -319,6 +320,7 @@ async function pair(
     },
   })
   const fork = await ctx.plugin(entry, {
+    ...(options.global === undefined ? {} : { pipeline: { global: options.global } }),
     adapters: [
       adapter('p2p:a', 'inst-a', 'bot-a', 'inst-b', portA, portB),
       adapter('p2p:b', 'inst-b', 'bot-b', 'inst-a', portB, portA),
@@ -1841,5 +1843,30 @@ describe('a message that arrives while the session is busy', () => {
     } finally {
       capture.close()
     }
+  })
+})
+
+describe('the shape a profile declares', () => {
+  test('runs the nodes in the declared order, not the policy default', async () => {
+    const { sessions, portB } = await pair({
+      denyWords: ['spam'],
+      allowPeers: ['inst-a'],
+      global: [
+        { id: 'allow', type: 'allow' },
+        { id: 'deny', type: 'deny' },
+      ],
+    })
+    await send(portB, 'evt-1', 'free spam here')
+
+    await waitFor(() => sessions.prompted.length > 0)
+    expect(sessions.prompted[0]?.text.endsWith(' free spam here')).toBe(true)
+  })
+
+  test('the same policy with the default order refuses that word', async () => {
+    const { sessions, portB } = await pair({ denyWords: ['spam'], allowPeers: ['inst-a'] })
+    await send(portB, 'evt-1', 'free spam here')
+
+    await waitFor(() => warnings.some((line) => line.includes('pipeline-deny')))
+    expect(sessions.prompted).toHaveLength(0)
   })
 })

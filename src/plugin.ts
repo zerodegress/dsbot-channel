@@ -15,7 +15,7 @@ import { DEFAULT_LOOP_IDLE_RESET_MS, DEFAULT_LOOP_MAX_TURNS, InboundGate } from 
 import type { PolicyConfig } from './policy-config.js'
 import type { PipelineNodeSpec } from './pipeline-config.js'
 import type { PipelineLayer, PipelineScopes } from './pipeline-scopes.js'
-import { resolveAndCheck } from './pipeline-scopes.js'
+import { resolveAndCheck, resolvePipeline } from './pipeline-scopes.js'
 import { compilePolicy } from './policy-config.js'
 import { buildPipeline } from './build-pipeline.js'
 import { createLedger } from './budget-config.js'
@@ -229,6 +229,24 @@ function stable(value: unknown): string {
   return JSON.stringify(value) ?? 'undefined'
 }
 
+const UNBOUND_REASON: Record<string, string> = {
+  budget:
+    'a budget node needs a session-scoped verdict, which the pipeline dependency cannot carry yet; the gate already refuses a hard window',
+  score: 'a score node needs a scoring function this version does not supply',
+  judge: 'a judge node needs a model call this version does not supply',
+  prepare: 'a prepare node needs a hook this version does not supply',
+}
+
+/** The nodes a profile declares, or undefined when it declares no layer at all. */
+function declaredNodes(config: ChannelConfig, adapter: AdapterConfig): PipelineNodeSpec[] | undefined {
+  if (config.pipeline.global.length === 0 && adapter.pipeline === undefined) return undefined
+  const scopes: PipelineScopes = {
+    global: config.pipeline.global,
+    ...(adapter.pipeline === undefined ? {} : { bot: adapter.pipeline }),
+  }
+  return resolvePipeline(scopes).nodes
+}
+
 /** Refuses a pipeline that cannot load, and reports the ones that only look wrong. */
 export function checkPipelineScopes(config: ChannelConfig, warn: (message: string) => void): void {
   const layers = new Map<string, PipelineLayer>()
@@ -258,14 +276,24 @@ export function checkPipelineScopes(config: ChannelConfig, warn: (message: strin
     fatal.push(...report.layer.fatal, ...report.pipeline.fatal)
     for (const warning of [...report.layer.warnings, ...report.pipeline.warnings]) warnings.add(warning)
   }
+  for (const adapter of config.adapters) {
+    const nodes = declaredNodes(config, adapter)
+    if (nodes === undefined) continue
+    const compiled = compilePolicy(adapter.policy)
+    const kinds = new Set(nodes.map((node) => node.type))
+    for (const node of nodes) {
+      const reason = UNBOUND_REASON[node.type]
+      if (reason !== undefined) fatal.push(`node "${node.id}": ${reason}`)
+    }
+    if (kinds.has('deny') && (compiled.deps.denyRules ?? []).length === 0) {
+      fatal.push('a deny node has no rule to match: add policy.deny words or regexes')
+    }
+    if (kinds.has('allow') && (compiled.deps.allowRules ?? []).length === 0) {
+      fatal.push('an allow node has no rule to match: add policy.allow peers')
+    }
+  }
   if (fatal.length > 0) throw new ConfigError(`the pipeline cannot load: ${fatal.join('; ')}`, ['pipeline'])
   for (const warning of warnings) warn(`dsbot-channel: pipeline warning: ${warning}`)
-  const declared = config.pipeline.global.length > 0 || layers.size > 0
-  if (declared) {
-    warn(
-      'dsbot-channel: pipeline layers are validated but not enforced in this version: no node is bound to a rule yet',
-    )
-  }
 }
 
 /** Starts only the adapters the profile declares; an empty list starts nothing. */
@@ -325,7 +353,8 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         snapshot: stats.snapshot(),
       }))
       const compiled = compilePolicy(adapter.policy)
-      const pipeline = compiled.specs.length > 0 ? buildPipeline(compiled.specs, compiled.deps) : undefined
+      const specs = declaredNodes(config, adapter) ?? compiled.specs
+      const pipeline = specs.length > 0 ? buildPipeline(specs, compiled.deps) : undefined
       const budget = adapter.policy.budget
       const ledger = budget === undefined ? undefined : createLedger(budget)
       const billing = new TurnBilling({ ledger })
