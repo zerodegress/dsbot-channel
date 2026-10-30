@@ -17,8 +17,8 @@ function flatten(text: string): string {
 }
 
 /** A peer's own words for a line of ours: one line, bounded, nothing that breaks the line. */
-export function oneLine(text: string, limit = PEER_TEXT_MAX): string {
-  const flat = flatten(text).replace(/\s+/g, ' ').trim()
+export function oneLine(text: unknown, limit = PEER_TEXT_MAX): string {
+  const flat = flatten(typeof text === 'string' ? text : String(text ?? '')).replace(/\s+/g, ' ').trim()
   return Array.from(flat).slice(0, limit).join('').trim()
 }
 
