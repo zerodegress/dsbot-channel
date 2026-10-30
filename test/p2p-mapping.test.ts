@@ -15,6 +15,13 @@ describe('an excerpt kept to one line', () => {
     expect(cleanExcerpt(padded)).toBe('visible')
   })
 
+  test('never splits a character in half', () => {
+    const cut = cleanExcerpt(`${'x'.repeat(EXCERPT_CHARS - 1)}\u{1f600}tail`)
+
+    expect(Array.from(cut)).toHaveLength(EXCERPT_CHARS)
+    expect(cut.endsWith('\u{1f600}')).toBe(true)
+  })
+
   test('truncates after cleaning, so the limit counts real characters', () => {
     const long = `${'x'.repeat(EXCERPT_CHARS)}\n${'y'.repeat(50)}`
 
