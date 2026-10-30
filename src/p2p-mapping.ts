@@ -1,6 +1,27 @@
 import { buildEvent } from './event-build.js'
 import type { Event } from './event-types.js'
 
+/** How much of the message being answered travels back with the reply. */
+export const EXCERPT_CHARS = 200
+
+function flatten(text: string): string {
+  let out = ''
+  for (const char of text) {
+    const code = char.codePointAt(0) ?? 0
+    out += code < 0x20 || code === 0x7f ? ' ' : char
+  }
+  return out
+}
+
+/** Keeps a peer from shaping the header: no control characters, one line, no quotes. */
+export function cleanExcerpt(text: string, limit = EXCERPT_CHARS): string {
+  const flat = flatten(text)
+    .replace(/["'`]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return flat.slice(0, limit).trim()
+}
+
 export interface P2PInbound {
   instance: string
   sender: string
@@ -17,7 +38,7 @@ export function toP2PEvent(inbound: P2PInbound): Event {
   const reference =
     inbound.inReplyTo === undefined
       ? ''
-      : ` (in reply to ${inbound.inReplyTo}${inbound.inReplyToExcerpt === undefined ? '' : `: "${inbound.inReplyToExcerpt}"`})`
+      : ` (in reply to ${inbound.inReplyTo}${inbound.inReplyToExcerpt === undefined ? '' : `: "${cleanExcerpt(inbound.inReplyToExcerpt)}"`})`
   const head = `${prefix}${reference}`
   const text = inbound.body.length ? `${head} ${inbound.body}` : head
   return buildEvent({
