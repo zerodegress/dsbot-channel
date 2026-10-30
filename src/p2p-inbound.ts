@@ -18,7 +18,12 @@ export interface SessionMessagePart {
 
 export interface SessionEventLike {
   type: string
-  data?: { message?: { content?: readonly SessionMessagePart[] } }
+  data?: {
+    message?: {
+      content?: readonly SessionMessagePart[]
+      source?: { rpcId?: string }
+    }
+  }
 }
 
 export interface PromptRequest {
@@ -150,6 +155,14 @@ export class PeerSessions {
     })
     const stop = this.#observe((observed, event) => {
       if (observed !== sessionId) return
+      if (event.type === 'user/message') {
+        const rpcId = event.data?.message?.source?.rpcId
+        if (rpcId === undefined) return
+        if (rpcId !== input.requestId) return
+        started = true
+        texts.length = 0
+        return
+      }
       if (event.type === 'turn/start') {
         started = true
         return
