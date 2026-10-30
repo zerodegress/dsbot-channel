@@ -179,7 +179,26 @@ describe('a difference that cannot be applied refuses the load', () => {
     expect(merged.fatal).toEqual(['bot: insert "topic" must name exactly one of after or before'])
   })
 
-  test('override must not name a field a node does not have', () => {
+  test('override may set a field the node type owns', () => {
+    const checked = resolveAndCheck({
+      global: defaultPipelineNodes(),
+      bot: { override: { budget: { softLimit: 0.7 } } },
+    })
+
+    expect(checked.layer.fatal).toEqual([])
+    expect(checked.nodes.find((node) => node.id === 'budget')?.softLimit).toBe(0.7)
+  })
+
+  test('a field another node type owns is still a mistake here', () => {
+    const checked = resolveAndCheck({
+      global: defaultPipelineNodes(),
+      bot: { override: { deny: { softLimit: 0.7 } } },
+    })
+
+    expect(checked.layer.fatal).toEqual(['bot: override "deny" names a field a node does not have: "softLimit"'])
+  })
+
+  test('override must not name a field no node type has', () => {
     const checked = resolveAndCheck({
       global: defaultPipelineNodes(),
       bot: { override: { budget: { softlimit: 0.7 } as never } },
