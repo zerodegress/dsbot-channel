@@ -1,0 +1,149 @@
+import { describe, expect, test } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import entry from '../src/index.js'
+import { checkPipelineScopes } from '../src/plugin.js'
+import { ConfigError } from '../src/config.js'
+import { staticCredentials } from '../src/p2p-secrets.js'
+
+const REF = '{{SECRET_pq7x2m4a}}'
+
+const sessionStub = {
+  create: () => Promise.resolve({ sessionId: 'session-1' }),
+  prompt: () => Promise.resolve({ accepted: true }),
+}
+
+async function mount(config: Record<string, unknown>): Promise<Context> {
+  const ctx = new Context()
+  await ctx.plugin({
+    name: 'probe-services',
+    apply(scope: Context) {
+      scope.provide('credentials')
+      scope.set('credentials', staticCredentials({ [REF]: 'shared-value' }))
+      scope.provide('sessionController')
+      scope.set('sessionController', sessionStub)
+
+    },
+  })
+  await ctx.plugin(entry, config)
+  return ctx
+}
+
+const adapter = (overrides: Record<string, unknown> = {}) => ({
+  channel: 'p2p:self',
+  instance: 'inst-a',
+  botName: 'bot-a',
+  peers: [{ instance: 'inst-b', secret: REF }],
+  listen: { host: '127.0.0.1', port: 0 },
+  ...overrides,
+})
+
+const node = (id: string, type: string) => ({ id, type })
+
+describe('the pipeline a profile declares', () => {
+  test('refuses a global pipeline that cannot load, and names the layer', async () => {
+    await expect(
+      mount({ adapters: [], pipeline: { global: [{ id: 'budget', type: 'budget', softLimit: 0.7 }] } }),
+    ).rejects.toThrow(/the pipeline cannot load: global: node "budget"/)
+  })
+
+  test('refuses a bot layer that writes a node the chain cannot hold', async () => {
+    await expect(
+      mount({
+        adapters: [
+          adapter({ pipeline: { insert: [{ id: 'late', type: 'prepare', after: 'allow', before: 'deny' }] } }),
+        ],
+        pipeline: { global: [node('deny', 'deny'), node('allow', 'allow')] },
+      }),
+    ).rejects.toThrow(/bot: insert "late" must name exactly one of after or before/)
+  })
+
+  test('mounts a pipeline that only looks wrong', async () => {
+    const ctx = await mount({
+      adapters: [],
+      pipeline: { global: [node('judge', 'judge'), node('budget', 'budget')] },
+    })
+    expect(ctx.get('dsbot-channel.peers')).toBeUndefined()
+  })
+
+  test('hands a warning to the reporter and keeps the mount alive', () => {
+    const said: string[] = []
+    const config = {
+      adapters: [],
+      pipeline: { global: [node('judge', 'judge'), node('budget', 'budget')] },
+    } as unknown as Parameters<typeof checkPipelineScopes>[0]
+    checkPipelineScopes(config, (message) => said.push(message))
+    expect(said.some((line) => line.includes('judge runs before budget'))).toBe(true)
+    expect(said.filter((line) => line.includes('pipeline warning:')).length).toBeGreaterThan(0)
+  })
+
+  test('a fatal layer stops before anything is reported as a warning', () => {
+    const said: string[] = []
+    const config = {
+      adapters: [],
+      pipeline: { global: [{ id: 'budget', type: 'budget', softLimit: 0.7 }] },
+    } as unknown as Parameters<typeof checkPipelineScopes>[0]
+    expect(() => checkPipelineScopes(config, (message) => said.push(message))).toThrow(/cannot load/)
+    expect(said).toHaveLength(0)
+  })
+
+  test('refuses two adapters that answer for one bot with different layers', async () => {
+    await expect(
+      mount({
+        adapters: [
+          adapter({ channel: 'p2p:one', pipeline: { insert: [{ id: 'score', type: 'score', after: 'allow' }] } }),
+          adapter({ channel: 'p2p:two', pipeline: { insert: [{ id: 'deny2', type: 'deny', after: 'allow' }] } }),
+        ],
+        pipeline: { global: [node('allow', 'allow')] },
+      }),
+    ).rejects.toThrow(/one bot runs one pipeline/)
+  })
+
+  test('accepts two adapters that answer for one bot with the same layer', async () => {
+    const layer = { insert: [{ id: 'score', type: 'score', after: 'allow' }] }
+    const ctx = await mount({
+      adapters: [
+        adapter({ channel: 'p2p:one', pipeline: layer }),
+        adapter({ channel: 'p2p:two', pipeline: layer }),
+      ],
+      pipeline: { global: [node('allow', 'allow')] },
+    })
+    expect(ctx.get('dsbot-channel.peers')).toHaveLength(2)
+  })
+
+  test('a pipeline is optional, and an empty one is not an error', async () => {
+    const ctx = await mount({ adapters: [] })
+    expect(ctx.get('dsbot-channel.peers')).toBeUndefined()
+  })
+
+  test('refuses a layer field the node type does not own', async () => {
+    await expect(
+      mount({
+        adapters: [
+          adapter({
+            pipeline: { override: { deny: { restrictSkip: ['scoring'] } } },
+          }),
+        ],
+        pipeline: { global: [node('deny', 'deny')] },
+      }),
+    ).rejects.toThrow(ConfigError)
+  })
+
+  test('says plainly that a declared layer is not enforced yet', () => {
+    const said: string[] = []
+    const config = {
+      adapters: [],
+      pipeline: { global: [node('allow', 'allow')] },
+    } as unknown as Parameters<typeof checkPipelineScopes>[0]
+    checkPipelineScopes(config, (message) => said.push(message))
+    expect(said.some((line) => line.includes('not enforced in this version'))).toBe(true)
+  })
+
+  test('says nothing about enforcement when no layer is declared', () => {
+    const said: string[] = []
+    const config = { adapters: [], pipeline: { global: [] } } as unknown as Parameters<
+      typeof checkPipelineScopes
+    >[0]
+    checkPipelineScopes(config, (message) => said.push(message))
+    expect(said).toHaveLength(0)
+  })
+})
