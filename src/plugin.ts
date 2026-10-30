@@ -293,11 +293,12 @@ export function checkPipelineScopes(config: ChannelConfig, warn: (message: strin
     if (nodes === undefined) continue
     const rules = adapter === undefined ? undefined : compilePolicy(adapter.policy).deps
     const kinds = new Set(nodes.map((node) => node.type))
+    const whose = adapter?.botName ? `bot "${adapter.botName}": ` : ''
     if (kinds.has('deny') && (rules?.denyRules ?? []).length === 0) {
-      fatal.push('a deny node has no rule to match: add policy.deny words or regexes')
+      fatal.push(`${whose}a deny node has no rule to match: add policy.deny words or regexes`)
     }
     if (kinds.has('allow') && (rules?.allowRules ?? []).length === 0) {
-      fatal.push('an allow node has no rule to match: add policy.allow peers')
+      fatal.push(`${whose}an allow node has no rule to match: add policy.allow peers`)
     }
   }
   const problems = [...new Set(fatal)]

@@ -179,6 +179,41 @@ describe('the pipeline a profile declares', () => {
     expect(() => checkPipelineScopes(config, () => undefined)).toThrow(/a deny node has no rule to match/)
   })
 
+  test('names the bot whose policy cannot bind the rule', () => {
+    const config = parsed({
+      adapters: [
+        adapter({ channel: 'p2p:one', botName: 'bot-a', policy: { deny: { words: ['spam'] } } }),
+        adapter({ channel: 'p2p:two', botName: 'bot-b' }),
+      ],
+      pipeline: { global: [node('deny', 'deny')] },
+    })
+    expect(() => checkPipelineScopes(config, () => undefined)).toThrow(/bot "bot-b": a deny node has no rule to match/)
+  })
+
+  test('names no bot when no adapter could bind the rule', () => {
+    const config = parsed({ adapters: [], pipeline: { global: [node('allow', 'allow')] } })
+    let message = ''
+    try {
+      checkPipelineScopes(config, () => undefined)
+    } catch (error) {
+      message = (error as Error).message
+    }
+    expect(message).toMatch(/an allow node has no rule to match/)
+    expect(message).not.toMatch(/bot "/)
+  })
+
+  test('names no bot when the adapter has no botName to name', () => {
+    const config = parsed({ adapters: [adapter({ botName: '' })], pipeline: { global: [node('deny', 'deny')] } })
+    let message = ''
+    try {
+      checkPipelineScopes(config, () => undefined)
+    } catch (error) {
+      message = (error as Error).message
+    }
+    expect(message).toMatch(/a deny node has no rule to match/)
+    expect(message).not.toMatch(/bot "/)
+  })
+
   test('says nothing about enforcement when no layer is declared', () => {
     const said: string[] = []
     const config = { adapters: [], pipeline: { global: [] } } as unknown as Parameters<
