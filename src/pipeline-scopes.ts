@@ -89,10 +89,42 @@ function checkInherit(layer: PipelineLayer, level: ScopeLevel, allowed: readonly
   return [`${level}: inherit must be one of ${allowed.join(', ')}, not "${layer.inherit}"`]
 }
 
-/** Resolves the layers and runs the pipeline checks on what came out, so a merged node is checked too. */
+/** Runs the checks on each cumulative layer, so a report names the layer that introduced the problem. */
+export function checkByLayer(scopes: PipelineScopes): { fatal: string[]; warnings: string[] } {
+  const stages: { level: ScopeLevel; nodes: PipelineNodeSpec[] }[] = [
+    { level: 'global', nodes: scopes.global.map((node) => ({ ...node })) },
+  ]
+  if (scopes.bot !== undefined) {
+    stages.push({ level: 'bot', nodes: resolvePipeline({ global: scopes.global, bot: scopes.bot }).nodes })
+  }
+  if (scopes.session !== undefined) {
+    stages.push({ level: 'session', nodes: resolvePipeline(scopes).nodes })
+  }
+
+  const fatal: string[] = []
+  const warnings: string[] = []
+  const seenFatal = new Set<string>()
+  const seenWarnings = new Set<string>()
+  for (const stage of stages) {
+    const report = checkPipeline(stage.nodes)
+    for (const item of report.fatal) {
+      if (seenFatal.has(item)) continue
+      seenFatal.add(item)
+      fatal.push(`${stage.level}: ${item}`)
+    }
+    for (const item of report.warnings) {
+      if (seenWarnings.has(item)) continue
+      seenWarnings.add(item)
+      warnings.push(`${stage.level}: ${item}`)
+    }
+  }
+  return { fatal, warnings }
+}
+
+/** Resolves the layers and checks each one, so a merged node is checked and the report says where it came from. */
 export function resolveAndCheck(scopes: PipelineScopes): ScopeCheck {
   const merged = resolvePipeline(scopes)
-  const checked = checkPipeline(merged.nodes)
+  const checked = checkByLayer(scopes)
   return { nodes: merged.nodes, fatal: [...merged.fatal, ...checked.fatal], warnings: checked.warnings }
 }
 
