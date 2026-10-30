@@ -233,6 +233,7 @@ export class BudgetLedger {
 
   /** Drops the records past the replay window, then the oldest while the table is still full. */
   private remember(chargeId: string, at: number): void {
+    this.charged.delete(chargeId)
     this.charged.set(chargeId, at)
     for (const [id, seen] of this.charged) {
       if (at - seen <= this.charges.ttlMs) break

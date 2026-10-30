@@ -55,6 +55,20 @@ describe('a charge key is recorded once', () => {
     expect(ledger.reserve('bot-a', 'p2p:b', 'bot', 20, KEY).duplicate).toBe(false)
   })
 
+  test('a refreshed record moves to the tail, so stale ones are dropped first', () => {
+    let now = 0
+    const ledger = new BudgetLedger(limits, DEFAULT_BUDGET, () => now, { ttlMs: 100, limit: 2 })
+    ledger.reserve('bot-a', 'p2p:b', 'bot', 20, 'a')
+    now = 10
+    ledger.reserve('bot-a', 'p2p:b', 'bot', 20, 'b')
+    now = 110
+    expect(ledger.reserve('bot-a', 'p2p:b', 'bot', 20, 'a').duplicate).toBe(false)
+
+    now = 120
+    ledger.reserve('bot-a', 'p2p:b', 'bot', 20, 'c')
+    expect(ledger.reserve('bot-a', 'p2p:b', 'bot', 20, 'a').duplicate).toBe(true)
+  })
+
   test('a full table drops the oldest record instead of refusing a live turn', () => {
     const ledger = new BudgetLedger(limits, DEFAULT_BUDGET, () => 1_000_000, { ttlMs: 60_000, limit: 2 })
     for (const key of ['a', 'b']) ledger.reserve('bot-a', 'p2p:b', 'bot', 20, key)
