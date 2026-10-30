@@ -3,12 +3,24 @@ import type { CredentialsLike, PeerRef } from './p2p-secrets.js'
 import { SecretRefError, resolvePeers } from './p2p-secrets.js'
 import type { DedupeTable } from './p2p-dedupe.js'
 import type { ChannelStats } from './channel-stats.js'
+import { EXCERPT_CHARS } from './p2p-mapping.js'
 
 export const P2P_ROUTE = '/p2p/v1/message'
 
 export const MAX_BODY_BYTES = 64 * 1024
 
 export const DEFAULT_SENT_AT_WINDOW_MS = 300_000
+
+/** The reference is a token, not free text: it lands in a header line. */
+export const IN_REPLY_TO_MAX = 128
+
+function isToken(text: string): boolean {
+  for (const char of text) {
+    const code = char.codePointAt(0) ?? 0
+    if (code < 0x21 || code > 0x7e) return false
+  }
+  return true
+}
 
 export interface P2PConfig {
   botName: string
@@ -48,6 +60,8 @@ export interface ParsedMessage {
   status?: typeof DECLINED
   reason?: string
   final?: boolean
+  inReplyTo?: string
+  inReplyToExcerpt?: string
 }
 
 export type Parsed = { ok: true; value: ParsedMessage } | { ok: false; status: 400 | 413; reason: string }
@@ -68,6 +82,18 @@ export function parseRequest(payload: P2PPayload, maxBodyBytes = MAX_BODY_BYTES)
   if (reason !== undefined && typeof reason !== 'string') return { ok: false, status: 400, reason: 'reason must be a string' }
   const final = payload.final
   if (final !== undefined && typeof final !== 'boolean') return { ok: false, status: 400, reason: 'final must be a boolean' }
+  const inReplyTo = payload.inReplyTo
+  if (inReplyTo !== undefined) {
+    if (typeof inReplyTo !== 'string' || inReplyTo.length === 0 || inReplyTo.length > IN_REPLY_TO_MAX || !isToken(inReplyTo)) {
+      return { ok: false, status: 400, reason: `inReplyTo must be a token of at most ${IN_REPLY_TO_MAX} characters` }
+    }
+  }
+  const rawExcerpt = payload.inReplyToExcerpt
+  if (rawExcerpt !== undefined && typeof rawExcerpt !== 'string') {
+    return { ok: false, status: 400, reason: 'inReplyToExcerpt must be a string' }
+  }
+  const inReplyToExcerpt =
+    rawExcerpt === undefined ? undefined : Array.from(rawExcerpt).slice(0, EXCERPT_CHARS).join('')
   return {
     ok: true,
     value: {
@@ -80,6 +106,8 @@ export function parseRequest(payload: P2PPayload, maxBodyBytes = MAX_BODY_BYTES)
       ...(status === undefined ? {} : { status }),
       ...(reason === undefined ? {} : { reason }),
       ...(final === undefined ? {} : { final }),
+      ...(inReplyTo === undefined ? {} : { inReplyTo }),
+      ...(inReplyToExcerpt === undefined ? {} : { inReplyToExcerpt }),
     },
   }
 }

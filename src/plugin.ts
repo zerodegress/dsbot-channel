@@ -20,7 +20,7 @@ import type { BudgetConfig } from './budget-config.js'
 import { TurnBilling } from './turn-billing.js'
 import type { Hold } from './budget-ledger.js'
 
-import { toP2PEvent } from './p2p-mapping.js'
+import { cleanExcerpt, toP2PEvent } from './p2p-mapping.js'
 import { createWarn } from './warn.js'
 import { ChannelStats } from './channel-stats.js'
 import { StatusRegistry } from './p2p-status.js'
@@ -323,6 +323,8 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
             eventId: `reply:${request.eventId}`,
             sender: adapter.botName,
             instance: adapter.instance,
+            inReplyTo: request.eventId,
+            inReplyToExcerpt: cleanExcerpt(request.body),
           })
           if (sent.ok) {
             gate.recordReply(adapter.botName, request.instance)

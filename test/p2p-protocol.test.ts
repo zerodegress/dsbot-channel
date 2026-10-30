@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { DedupeTable } from '../src/p2p-dedupe.js'
+import { IN_REPLY_TO_MAX } from '../src/p2p-protocol.js'
+import { EXCERPT_CHARS } from '../src/p2p-mapping.js'
 import { ChannelStats } from '../src/channel-stats.js'
 import { P2P_ROUTE, handleMessage, parseRequest } from '../src/p2p-protocol.js'
 import { signEnvelope } from '../src/p2p-auth.js'
@@ -276,6 +278,36 @@ describe('inflight TTL', () => {
 
   test('the default 5 minutes clears a 120 second turn', () => {
     expect(() => new DedupeTable({ ttlMs: 1000, limit: 10, inflightTtlMs: 300_000, maxTurnMs: 120_000 })).not.toThrow()
+  })
+})
+
+describe('the reference a reply carries', () => {
+  const base = { eventId: 'e1', to: 'bot-b', sender: 'bot-a', instance: 'peer-a', body: 'hi', sentAt: 1_700_000_000_000 }
+
+  test('accepts a plain token', () => {
+    const parsed = parseRequest({ ...base, inReplyTo: 'evt-42' })
+    expect(parsed).toMatchObject({ ok: true, value: { inReplyTo: 'evt-42' } })
+  })
+
+  test('refuses a reference that could start its own header line', () => {
+    for (const bad of ['a\nb', 'a b', 'a\u0007b', '']) {
+      expect(parseRequest({ ...base, inReplyTo: bad })).toMatchObject({ ok: false, status: 400 })
+    }
+  })
+
+  test('refuses a reference longer than a token', () => {
+    expect(parseRequest({ ...base, inReplyTo: 'x'.repeat(IN_REPLY_TO_MAX + 1) })).toMatchObject({
+      ok: false,
+      status: 400,
+    })
+    expect(parseRequest({ ...base, inReplyTo: 'x'.repeat(IN_REPLY_TO_MAX) }).ok).toBe(true)
+  })
+
+  test('cuts an excerpt the peer sent too long', () => {
+    const parsed = parseRequest({ ...base, inReplyTo: 'e0', inReplyToExcerpt: 'y'.repeat(10_000) })
+
+    expect(parsed.ok).toBe(true)
+    expect((parsed as { value: { inReplyToExcerpt: string } }).value.inReplyToExcerpt).toHaveLength(EXCERPT_CHARS)
   })
 })
 

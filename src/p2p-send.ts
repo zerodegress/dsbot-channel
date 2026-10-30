@@ -32,6 +32,9 @@ export interface SendInput {
   status?: 'declined'
   reason?: string
   final?: boolean
+  /** The event this message answers, so the peer knows what it refers to. */
+  inReplyTo?: string
+  inReplyToExcerpt?: string
 }
 
 export interface SendSuccess {
@@ -136,6 +139,8 @@ export async function sendToPeer(input: SendInput): Promise<SendResult> {
     ...(input.status === undefined ? {} : { status: input.status }),
     ...(input.reason === undefined ? {} : { reason: input.reason }),
     ...(input.final === undefined ? {} : { final: input.final }),
+    ...(input.inReplyTo === undefined ? {} : { inReplyTo: input.inReplyTo }),
+    ...(input.inReplyToExcerpt === undefined ? {} : { inReplyToExcerpt: input.inReplyToExcerpt }),
   }
   const signature = signEnvelope(secret, envelope)
   const payload = canonicalEnvelope(envelope)

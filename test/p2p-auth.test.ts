@@ -106,9 +106,23 @@ describe('signature mode', () => {
       envelope({ status: 'declined' }),
       envelope({ reason: 'why' }),
       envelope({ final: true }),
+      envelope({ inReplyTo: 'e0' }),
+      envelope({ inReplyToExcerpt: 'what did you mean' }),
     ]
 
     for (const candidate of changed) expect(signEnvelope(secret, candidate)).not.toBe(signature)
+  })
+
+  test('rejects a rewritten reference to the message being answered', () => {
+    const signature = signEnvelope(secret, envelope({ inReplyTo: 'e0', inReplyToExcerpt: 'ask about the port' }))
+    const result = verifyRequest({
+      peers,
+      signature,
+      envelope: envelope({ inReplyTo: 'e0', inReplyToExcerpt: 'ask about something else' }),
+      claimedInstance: 'peer-a',
+    })
+    expect(result.ok).toBe(false)
+    expect(result.status).toBe(401)
   })
 
   test('a signature over a body digest alone no longer passes', () => {

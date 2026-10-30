@@ -9,6 +9,8 @@ export interface InboundRequest {
   status?: 'declined'
   reason?: string
   final?: boolean
+  inReplyTo?: string
+  inReplyToExcerpt?: string
 }
 
 export interface SessionMessagePart {
