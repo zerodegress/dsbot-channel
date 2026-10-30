@@ -28,7 +28,8 @@ import { cleanExcerpt, toP2PEvent } from './p2p-mapping.js'
 import { createWarn } from './warn.js'
 import { ChannelStats } from './channel-stats.js'
 import { StatusRegistry } from './p2p-status.js'
-import { unboundReason } from './pipeline-bindable.js'
+import { unboundReason, unboundRuleReason } from './pipeline-bindable.js'
+import type { BotScope } from './session-pipeline.js'
 import { SessionPipelines } from './session-pipeline.js'
 import { PushRouter, createSendText } from './push-tool.js'
 import type { PushSource, SendTextTool } from './push-tool.js'
@@ -287,13 +288,14 @@ export function checkPipelineScopes(config: ChannelConfig, warn: (message: strin
         : declaredNodes(config, adapter)
     if (nodes === undefined) continue
     const rules = adapter === undefined ? undefined : compilePolicy(adapter.policy).deps
-    const kinds = new Set(nodes.map((node) => node.type))
     const whose = adapter?.botName ? `bot "${adapter.botName}": ` : ''
-    if (kinds.has('deny') && (rules?.denyRules ?? []).length === 0) {
-      fatal.push(`${whose}a deny node has no rule to match: add policy.deny words or regexes`)
+    const bindings = {
+      deny: (rules?.denyRules ?? []).length > 0,
+      allow: (rules?.allowRules ?? []).length > 0,
     }
-    if (kinds.has('allow') && (rules?.allowRules ?? []).length === 0) {
-      fatal.push(`${whose}an allow node has no rule to match: add policy.allow peers`)
+    for (const node of nodes) {
+      const reason = unboundRuleReason(node, bindings)
+      if (reason !== undefined) fatal.push(`${whose}${reason}`)
     }
   }
   const problems = [...new Set(fatal)]
@@ -301,20 +303,39 @@ export function checkPipelineScopes(config: ChannelConfig, warn: (message: strin
   for (const warning of warnings) warn(`dsbot-channel: pipeline warning: ${warning}`)
 }
 
+/** Collects what the host knows per bot: its declared layer, the rules it can match, and the peers it addresses. */
+function botScopes(config: ChannelConfig): Map<string, BotScope> {
+  const bots = new Map<string, BotScope>()
+  for (const adapter of config.adapters) {
+    const seen = bots.get(adapter.botName)
+    const rules = compilePolicy(adapter.policy).deps
+    const deny = (rules.denyRules ?? []).length > 0
+    const allow = (rules.allowRules ?? []).length > 0
+    const peers = adapter.peers.map((peer) => peer.instance)
+    if (seen === undefined) {
+      bots.set(adapter.botName, {
+        ...(adapter.pipeline === undefined ? {} : { layer: adapter.pipeline }),
+        denyRules: deny,
+        allowRules: allow,
+        peers,
+      })
+      continue
+    }
+    if (adapter.pipeline !== undefined) seen.layer = adapter.pipeline
+    seen.denyRules &&= deny
+    seen.allowRules &&= allow
+    seen.peers = [...new Set([...seen.peers, ...peers])]
+  }
+  return bots
+}
+
 /** Starts only the adapters the profile declares; an empty list starts nothing. */
 export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const config = validateConfig<ChannelConfig>(Config, raw)
   const warn = createWarn(ctx)
   checkPipelineScopes(config, warn)
-  const botLayers = new Map<string, PipelineLayer>()
-  for (const adapter of config.adapters) {
-    if (adapter.pipeline !== undefined && adapter.botName) botLayers.set(adapter.botName, adapter.pipeline)
-  }
-  for (const adapter of config.adapters) {
-    if (adapter.botName && !botLayers.has(adapter.botName)) botLayers.set(adapter.botName, {})
-  }
   const base = config.pipeline.global.length > 0 ? config.pipeline.global : defaultPipelineNodes()
-  const sessions = new SessionPipelines({ global: base, botLayers })
+  const sessions = new SessionPipelines({ global: base, bots: botScopes(config) })
   ctx.provide('dsbot-channel.pipeline')
   ctx.set('dsbot-channel.pipeline', {
     forSession: (botName: string, key: string, layer: PipelineLayer) => sessions.forSession(botName, key, layer),
