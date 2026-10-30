@@ -282,19 +282,26 @@ export function checkPipelineScopes(config: ChannelConfig, warn: (message: strin
       if (reason !== undefined) fatal.push(`node "${node.id}": ${reason}`)
     }
   }
-  for (const adapter of config.adapters) {
-    const nodes = declaredNodes(config, adapter)
+  const sources: (AdapterConfig | undefined)[] = config.adapters.length === 0 ? [undefined] : config.adapters
+  for (const adapter of sources) {
+    const nodes =
+      adapter === undefined
+        ? config.pipeline.global.length === 0
+          ? undefined
+          : config.pipeline.global
+        : declaredNodes(config, adapter)
     if (nodes === undefined) continue
-    const compiled = compilePolicy(adapter.policy)
+    const rules = adapter === undefined ? undefined : compilePolicy(adapter.policy).deps
     const kinds = new Set(nodes.map((node) => node.type))
-    if (kinds.has('deny') && (compiled.deps.denyRules ?? []).length === 0) {
+    if (kinds.has('deny') && (rules?.denyRules ?? []).length === 0) {
       fatal.push('a deny node has no rule to match: add policy.deny words or regexes')
     }
-    if (kinds.has('allow') && (compiled.deps.allowRules ?? []).length === 0) {
+    if (kinds.has('allow') && (rules?.allowRules ?? []).length === 0) {
       fatal.push('an allow node has no rule to match: add policy.allow peers')
     }
   }
-  if (fatal.length > 0) throw new ConfigError(`the pipeline cannot load: ${fatal.join('; ')}`, ['pipeline'])
+  const problems = [...new Set(fatal)]
+  if (problems.length > 0) throw new ConfigError(`the pipeline cannot load: ${problems.join('; ')}`, ['pipeline'])
   for (const warning of warnings) warn(`dsbot-channel: pipeline warning: ${warning}`)
 }
 

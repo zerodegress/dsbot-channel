@@ -62,16 +62,16 @@ describe('the pipeline a profile declares', () => {
 
   test('mounts a pipeline that only looks wrong', async () => {
     const ctx = await mount({
-      adapters: [],
+      adapters: [adapter({ policy: { deny: { words: ['spam'] }, allow: { peers: ['inst-b'] } } })],
       pipeline: { global: [node('allow', 'allow'), node('deny', 'deny')] },
     })
-    expect(ctx.get('dsbot-channel.peers')).toBeUndefined()
+    expect(ctx.get('dsbot-channel.peers')).toHaveLength(1)
   })
 
   test('hands a warning to the reporter and keeps the mount alive', () => {
     const said: string[] = []
     const config = parsed({
-      adapters: [],
+      adapters: [adapter({ policy: { deny: { words: ['spam'] }, allow: { peers: ['inst-b'] } } })],
       pipeline: { global: [node('allow', 'allow'), node('deny', 'deny')] },
     })
     checkPipelineScopes(config, (message) => said.push(message))
@@ -148,6 +148,30 @@ describe('the pipeline a profile declares', () => {
     await expect(
       mount({ adapters: [], pipeline: { global: [node('judge', 'judge')] } }),
     ).rejects.toThrow(/a judge node needs a model call/)
+  })
+
+  test('refuses a deny node when no adapter could ever bind a rule', async () => {
+    await expect(
+      mount({ adapters: [], pipeline: { global: [node('deny', 'deny')] } }),
+    ).rejects.toThrow(/a deny node has no rule to match/)
+  })
+
+  test('reports one line for a problem every layer shares', () => {
+    const layer = { insert: [{ id: 'deny2', type: 'deny', after: 'deny' }] }
+    const config = parsed({
+      adapters: [
+        adapter({ channel: 'p2p:one', botName: 'bot-a', pipeline: layer, policy: { deny: { words: ['spam'] } } }),
+        adapter({ channel: 'p2p:two', botName: 'bot-b', pipeline: layer, policy: { deny: { words: ['spam'] } } }),
+      ],
+      pipeline: { global: [node('judge', 'judge')] },
+    })
+    let message = ''
+    try {
+      checkPipelineScopes(config, () => undefined)
+    } catch (error) {
+      message = (error as Error).message
+    }
+    expect(message.match(/a judge node needs a model call/g)?.length).toBe(1)
   })
 
   test('refuses a deny node with no rule to match', () => {
