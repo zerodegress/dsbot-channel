@@ -400,6 +400,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         const adapter = byChannel.get(delivery.channel)
         const peer = adapter?.peers.find((candidate) => candidate.instance === delivery.peer)
         if (adapter === undefined || peer === undefined) {
+          statsByChannel.get(delivery.channel)?.sendFailed('no_url')
           return {
             ok: false,
             code: 'no_url',
