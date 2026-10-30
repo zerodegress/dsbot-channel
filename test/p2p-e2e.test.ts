@@ -1284,6 +1284,113 @@ describe('a mounted adapter can report on itself', () => {
     expect(reply.body).toMatchObject({ snapshot: { health: { sendFailures: { unreachable: 1 } } } })
   })
 
+  test('a reply that never lands is counted', async () => {
+    const port = await freePort()
+    const ctx = new Context()
+    captureWarnings(ctx)
+    const sessions = new StubSessions(ctx, 1)
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', sessions)
+      },
+    })
+    const fork = await ctx.plugin(entry, {
+      adapters: [
+        {
+          channel: 'p2p:a',
+          instance: 'inst-a',
+          botName: 'bot-a',
+          peers: [{ instance: 'inst-b', secret: REF, url: 'http://127.0.0.1:1' }],
+          listen: { host: '127.0.0.1', port },
+        },
+      ],
+    })
+    forks.push(fork)
+
+    await sendToPeer({
+      peer: { instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${port}` },
+      credentials,
+      to: 'bot-a',
+      body: 'hello',
+      eventId: 'evt-1',
+      sender: 'bot-b',
+      instance: 'inst-b',
+    })
+    await waitFor(() => warnings.some((line) => line.includes('was not delivered')))
+
+    const reply = await getStatus(port)
+    expect(reply.body).toMatchObject({ snapshot: { health: { sendFailures: { unreachable: 1 } } } })
+  })
+
+  test('a refusal that never lands is counted', async () => {
+    const port = await freePort()
+    const ctx = new Context()
+    captureWarnings(ctx)
+    const tools: { name: string; execute: (args: unknown, exec: unknown) => Promise<string> }[] = []
+    const controller = {
+      create(): Promise<{ sessionId: string }> {
+        return Promise.resolve({ sessionId: 'session-main' })
+      },
+      async prompt(request: { sessionId: string }): Promise<{ accepted: boolean }> {
+        const emit = (event: unknown): void => {
+          ctx.emit('session/event', { id: request.sessionId } as never, event as never)
+        }
+        emit({ type: 'turn/start' })
+        const decline = tools.find((tool) => tool.name === 'decline')
+        await decline?.execute({ reason: 'no' }, { agent: { id: request.sessionId }, concludeTurn: () => undefined } as never)
+        emit({ type: 'turn/end' })
+        return { accepted: true }
+      },
+    }
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', controller)
+        scope.provide('tools')
+        scope.set('tools', {
+          register(definition: { name: string; execute: (args: unknown, exec: unknown) => Promise<string> }) {
+            tools.push(definition)
+            return () => undefined
+          },
+        })
+      },
+    })
+    const fork = await ctx.plugin(entry, {
+      adapters: [
+        {
+          channel: 'p2p:a',
+          instance: 'inst-a',
+          botName: 'bot-a',
+          peers: [{ instance: 'inst-b', secret: REF, url: 'http://127.0.0.1:1' }],
+          listen: { host: '127.0.0.1', port },
+        },
+      ],
+    })
+    forks.push(fork)
+
+    await sendToPeer({
+      peer: { instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${port}` },
+      credentials,
+      to: 'bot-a',
+      body: 'hello',
+      eventId: 'evt-1',
+      sender: 'bot-b',
+      instance: 'inst-b',
+    })
+    await waitFor(() => tools.length > 0)
+    await new Promise((resolve) => setTimeout(resolve, 120))
+
+    const reply = await getStatus(port)
+    expect(reply.body).toMatchObject({ snapshot: { health: { sendFailures: { unreachable: 1 } } } })
+  })
+
   test('the reply names the channel and the port it is really listening on', async () => {
     const port = await freePort()
     const ctx = new Context()
