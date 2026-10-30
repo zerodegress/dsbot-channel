@@ -791,18 +791,32 @@ describe('an active push to a peer behind a name router', () => {
   })
 })
 
-describe('a message that arrives while the session is busy', () => {
-  test('the answer of its own turn comes back to the sender', async () => {
-    const posted: string[] = []
+describe('a turn that already pushed with send_text', () => {
+  interface Posted {
+    eventId?: string
+    body?: string
+  }
+
+  async function mount(
+    mode: 'body' | 'tool' | 'both',
+    failPush = false,
+  ): Promise<{ posted: Posted[]; port: number; close: () => void }> {
+    const posted: Posted[] = []
     const capture = createServer((request, response) => {
       let raw = ''
       request.on('data', (chunk: string) => {
         raw += chunk
       })
       request.on('end', () => {
-        posted.push((JSON.parse(raw) as { body?: string }).body ?? '')
+        const body = JSON.parse(raw) as Posted
+        posted.push(body)
+        if (failPush && (body.body ?? '').includes('pushed')) {
+          response.writeHead(500, { 'content-type': 'application/json' })
+          response.end(JSON.stringify({ error: 'the peer could not take it' }))
+          return
+        }
         response.writeHead(200, { 'content-type': 'application/json' })
-        response.end(JSON.stringify({ duplicate: false, messageId: 'p2p-reply' }))
+        response.end(JSON.stringify({ duplicate: false, messageId: 'p2p-ok' }))
       })
     })
     await new Promise<void>((resolve) => capture.listen(0, '127.0.0.1', resolve))
@@ -811,29 +825,26 @@ describe('a message that arrives while the session is busy', () => {
     const port = await freePort()
     const ctx = new Context()
     captureWarnings(ctx)
+    const tools: { name: string; execute: (args: unknown, exec: unknown) => Promise<string> }[] = []
     const controller = {
       create(): Promise<{ sessionId: string }> {
         return Promise.resolve({ sessionId: 'session-main' })
       },
-      async prompt(request: {
-        sessionId: string
-        requestId: string
-        content: readonly { type: string; text?: string }[]
-      }): Promise<{ accepted: boolean }> {
+      async prompt(request: { sessionId: string; requestId: string; content: readonly { type: string; text?: string }[] }): Promise<{ accepted: boolean }> {
         const emit = (event: unknown): void => {
           ctx.emit('session/event', { id: request.sessionId } as never, event as never)
         }
-        const opening = (rpcId: string): void => {
-          emit({ type: 'user/message', data: { source: { rpcId }, content: [] } })
+        emit({ type: 'turn/start' })
+        if (mode !== 'body') {
+          const push = tools.find((tool) => tool.name === 'send_text')
+          await push?.execute(
+            { text: 'pushed', channel: 'p2p:b', target: 'inst-a' },
+            { agent: { id: request.sessionId } } as never,
+          )
         }
-        const answer = (text: string): void => {
-          emit({ type: 'assistant/message', data: { message: { content: [{ type: 'text', text }] } } })
+        if (mode !== 'tool') {
+          emit({ type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'a written reply' }] } } })
         }
-        opening('a-turn-already-running')
-        answer('theirs')
-        emit({ type: 'turn/end' })
-        opening(request.requestId)
-        answer('mine')
         emit({ type: 'turn/end' })
         return { accepted: true }
       },
@@ -845,6 +856,13 @@ describe('a message that arrives while the session is busy', () => {
         scope.set('credentials', credentials)
         scope.provide('sessionController')
         scope.set('sessionController', controller)
+        scope.provide('tools')
+        scope.set('tools', {
+          register(definition: { name: string; execute: (args: unknown, exec: unknown) => Promise<string> }) {
+            tools.push(definition)
+            return () => undefined
+          },
+        })
       },
     })
     const fork = await ctx.plugin(entry, {
@@ -853,19 +871,66 @@ describe('a message that arrives while the session is busy', () => {
           channel: 'p2p:b',
           instance: 'inst-b',
           botName: 'bot-b',
-          peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}` }],
+          peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}`, botName: 'bot-a' }],
           listen: { host: '127.0.0.1', port },
         },
       ],
     })
     forks.push(fork)
+    return { posted, port, close: () => capture.close() }
+  }
+
+  test('a written reply with no push still goes out', async () => {
+    const mounted = await mount('body')
     try {
-      await send(port, 'evt-1', 'hello')
-      await waitFor(() => posted.length > 0)
-      expect(posted[0]).toContain('mine')
-      expect(posted[0]).not.toContain('theirs')
+      await send(mounted.port, 'evt-1', 'hello')
+      await waitFor(() => mounted.posted.length === 1)
+      await new Promise((resolve) => setTimeout(resolve, 60))
+      expect(mounted.posted).toHaveLength(1)
+      expect(mounted.posted[0]?.eventId).toBe('reply:evt-1')
+      expect(mounted.posted[0]?.body).toContain('a written reply')
     } finally {
-      capture.close()
+      mounted.close()
+    }
+  })
+
+  test('a push with no written reply leaves one message, not two', async () => {
+    const mounted = await mount('tool')
+    try {
+      await send(mounted.port, 'evt-1', 'hello')
+      await waitFor(() => mounted.posted.length === 1)
+      await new Promise((resolve) => setTimeout(resolve, 60))
+      expect(mounted.posted).toHaveLength(1)
+      expect(mounted.posted[0]?.eventId?.startsWith('push:')).toBe(true)
+    } finally {
+      mounted.close()
+    }
+  })
+
+  test('a push that fails still leaves the written reply to go out', async () => {
+    const mounted = await mount('both', true)
+    try {
+      await send(mounted.port, 'evt-1', 'hello')
+      await waitFor(() => mounted.posted.some((entry) => entry.eventId?.startsWith('reply:')))
+      await new Promise((resolve) => setTimeout(resolve, 60))
+      const replies = mounted.posted.filter((entry) => entry.eventId?.startsWith('reply:'))
+      expect(replies).toHaveLength(1)
+      expect(replies[0]?.body).toContain('a written reply')
+    } finally {
+      mounted.close()
+    }
+  })
+
+  test('a push and a written reply send the push alone', async () => {
+    const mounted = await mount('both')
+    try {
+      await send(mounted.port, 'evt-1', 'hello')
+      await waitFor(() => mounted.posted.length === 1)
+      await new Promise((resolve) => setTimeout(resolve, 60))
+      expect(mounted.posted).toHaveLength(1)
+      expect(mounted.posted[0]?.eventId?.startsWith('push:')).toBe(true)
+    } finally {
+      mounted.close()
     }
   })
 })
@@ -1386,5 +1451,84 @@ describe('what the wiring charges', () => {
     await send(portB, 'evt-3', 'hello')
     await waitFor(() => sessions.prompted.length === 1)
     expect(warnings.some((line) => line.includes('budget-hard'))).toBe(false)
+  })
+})
+
+describe('a message that arrives while the session is busy', () => {
+  test('the answer of its own turn comes back to the sender', async () => {
+    const posted: string[] = []
+    const capture = createServer((request, response) => {
+      let raw = ''
+      request.on('data', (chunk: string) => {
+        raw += chunk
+      })
+      request.on('end', () => {
+        posted.push((JSON.parse(raw) as { body?: string }).body ?? '')
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({ duplicate: false, messageId: 'p2p-reply' }))
+      })
+    })
+    await new Promise<void>((resolve) => capture.listen(0, '127.0.0.1', resolve))
+    const capturePort = (capture.address() as AddressInfo).port
+
+    const port = await freePort()
+    const ctx = new Context()
+    captureWarnings(ctx)
+    const controller = {
+      create(): Promise<{ sessionId: string }> {
+        return Promise.resolve({ sessionId: 'session-main' })
+      },
+      async prompt(request: {
+        sessionId: string
+        requestId: string
+        content: readonly { type: string; text?: string }[]
+      }): Promise<{ accepted: boolean }> {
+        const emit = (event: unknown): void => {
+          ctx.emit('session/event', { id: request.sessionId } as never, event as never)
+        }
+        const opening = (rpcId: string): void => {
+          emit({ type: 'user/message', data: { source: { rpcId }, content: [] } })
+        }
+        const answer = (text: string): void => {
+          emit({ type: 'assistant/message', data: { message: { content: [{ type: 'text', text }] } } })
+        }
+        opening('a-turn-already-running')
+        answer('theirs')
+        emit({ type: 'turn/end' })
+        opening(request.requestId)
+        answer('mine')
+        emit({ type: 'turn/end' })
+        return { accepted: true }
+      },
+    }
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', controller)
+      },
+    })
+    const fork = await ctx.plugin(entry, {
+      adapters: [
+        {
+          channel: 'p2p:b',
+          instance: 'inst-b',
+          botName: 'bot-b',
+          peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}` }],
+          listen: { host: '127.0.0.1', port },
+        },
+      ],
+    })
+    forks.push(fork)
+    try {
+      await send(port, 'evt-1', 'hello')
+      await waitFor(() => posted.length > 0)
+      expect(posted[0]).toContain('mine')
+      expect(posted[0]).not.toContain('theirs')
+    } finally {
+      capture.close()
+    }
   })
 })

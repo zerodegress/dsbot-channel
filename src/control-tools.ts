@@ -7,6 +7,8 @@ export interface PeerTurnRef {
   sender: string
   /** Set by end or decline so the turn that just ran sends nothing back. */
   suppressed: boolean
+  /** Set when this turn pushed with send_text, so the reply is not sent twice. */
+  pushed: boolean
 }
 
 export interface DeclinedResult {

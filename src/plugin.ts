@@ -283,6 +283,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
             peer: request.instance,
             sender: request.sender,
             suppressed: request.status === 'declined' || chains.isClosed(request.eventId),
+            pushed: false,
           }
           activeTurns.set(sessionId, turnRef)
           hold = billing.begin(adapter.botName, request.instance, sessionId)
@@ -294,6 +295,11 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
           })
           if (turnRef.suppressed) {
             billing.refund(hold)
+            hold = undefined
+            return
+          }
+          if (turnRef.pushed) {
+            billing.accept(hold)
             hold = undefined
             return
           }
@@ -376,6 +382,11 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         })),
       })),
       source: (sessionId) => (sessionId === undefined ? undefined : sources.get(sessionId)),
+      delivered: (sessionId) => {
+        if (sessionId === undefined) return
+        const turn = activeTurns.get(sessionId)
+        if (turn !== undefined) turn.pushed = true
+      },
       send: async (delivery) => {
         const adapter = byChannel.get(delivery.channel)
         const peer = adapter?.peers.find((candidate) => candidate.instance === delivery.peer)
