@@ -116,8 +116,8 @@ export const Config: any = Schema.object({
           host: Schema.string().default(DEFAULT_HOST),
           port: Schema.number().default(DEFAULT_PORT),
         }).default({}),
-        /** Loopback only, and refused once a forwarder rewrites the request; off unless asked. */
-        status: Schema.boolean().default(false),
+        /** Loopback only, and refused once a forwarder rewrites the request; on unless turned off. */
+        status: Schema.boolean().default(true),
         dedupe: Schema.object({
           ttlMs: Schema.number().default(7 * 24 * 60 * 60 * 1000),
           limit: Schema.number().default(100_000),
@@ -225,6 +225,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const warn = createWarn(ctx)
   const registry = new StatusRegistry()
   const sources = new Map<string, PushSource>()
+  const statsByChannel = new Map<string, ChannelStats>()
   const chains = new ClosedChains()
   const injected = new InjectionLedger()
   const activeTurns = new Map<string, PeerTurnRef>()
@@ -236,6 +237,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         ...(adapter.session === undefined ? {} : { session: adapter.session }),
       })
       const stats = new ChannelStats()
+      statsByChannel.set(adapter.channel, stats)
       registry.register(adapter.channel, () => ({
         channel: adapter.channel,
         bot: adapter.botName,
@@ -307,6 +309,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
             warn(
               `dsbot-channel: the turn for ${request.eventId} from ${request.instance} ended with no text and no tool call`,
             )
+            stats.emptyTurn()
             billing.reject(hold)
             hold = undefined
             return
@@ -329,6 +332,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
             inReplyTo: request.eventId,
             inReplyToExcerpt: cleanExcerpt(request.body),
           })
+          if (!sent.ok) stats.sendFailed(sent.code)
           if (sent.ok) {
             gate.recordReply(adapter.botName, request.instance)
             billing.accept(hold)
@@ -403,7 +407,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
             reason: `peer "${delivery.peer}" is gone from channel "${delivery.channel}"`,
           }
         }
-        return sendToPeer({
+        const answered = await sendToPeer({
           peer: targetOf(peer),
           credentials,
           to: delivery.to,
@@ -412,6 +416,8 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
           sender: adapter.botName,
           instance: adapter.instance,
         })
+        if (!answered.ok) statsByChannel.get(delivery.channel)?.sendFailed(answered.code)
+        return answered
       },
     })
     ctx.effect(() => tools.register(createSendText(router)), 'dsbot-channel: send_text tool')
@@ -439,6 +445,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
           final: true,
           ...(reason === undefined ? {} : { reason }),
         })
+        if (!sent.ok) statsByChannel.get(turn.channel)?.sendFailed(sent.code)
         return sent.ok ? { ok: true } : { ok: false, code: sent.code, reason: sent.reason }
       },
     }

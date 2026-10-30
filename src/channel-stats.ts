@@ -5,6 +5,13 @@ export interface ChannelFailure {
   reason: string
 }
 
+export interface ChannelHealth {
+  /** Turns that ended with no text and no tool call: always a lost answer. */
+  emptyTurns: number
+  /** Outbound failures counted by the code the send layer reported. */
+  sendFailures: Record<string, number>
+}
+
 export interface ChannelSnapshot {
   state: ChannelState
   boundPort: number | null
@@ -15,6 +22,7 @@ export interface ChannelSnapshot {
   underruns: number
   /** Requests for a path this channel does not serve, which a port scan also produces. */
   unknownPaths: number
+  health: ChannelHealth
   sampledAt: number
 }
 
@@ -28,6 +36,8 @@ export class ChannelStats {
   #inFlight = 0
   #underruns = 0
   #unknownPaths = 0
+  #emptyTurns = 0
+  readonly #sendFailures = new Map<string, number>()
 
   constructor(now: () => number = Date.now) {
     this.#now = now
@@ -61,6 +71,14 @@ export class ChannelStats {
     this.#unknownPaths += 1
   }
 
+  emptyTurn(): void {
+    this.#emptyTurns += 1
+  }
+
+  sendFailed(code: string): void {
+    this.#sendFailures.set(code, (this.#sendFailures.get(code) ?? 0) + 1)
+  }
+
   beginDelivery(): void {
     this.#inFlight += 1
   }
@@ -82,6 +100,7 @@ export class ChannelStats {
       inFlight: this.#inFlight,
       underruns: this.#underruns,
       unknownPaths: this.#unknownPaths,
+      health: { emptyTurns: this.#emptyTurns, sendFailures: Object.fromEntries(this.#sendFailures) },
       sampledAt: this.#now(),
     }
   }
