@@ -91,24 +91,44 @@ describe('a layer is a difference, not a replacement', () => {
   })
 })
 
-describe('the merged pipeline is checked, not just the global one', () => {
+describe('the merged pipeline is checked, and the report names the layer', () => {
   test('a node inserted with an unknown type is refused', () => {
     const checked = resolveAndCheck({
       global: defaultPipelineNodes(),
       bot: { insert: [{ id: 'topic', type: 'nonsense', after: 'score' }] },
     })
 
-    expect(checked.fatal).toEqual(['node "topic": unknown type "nonsense"'])
+    expect(checked.fatal).toEqual(['bot: node "topic": unknown type "nonsense"'])
   })
 
-  test('an order the global layer alone did not have is still reported', () => {
+  test('an order the bot layer introduced is reported against the bot layer', () => {
     const checked = resolveAndCheck({
       global: defaultPipelineNodes(),
       bot: { insert: [{ id: 'early-allow', type: 'allow', before: 'budget' }] },
     })
 
     expect(checked.fatal).toEqual([])
-    expect(checked.warnings).toContain('allow runs before budget')
+    expect(checked.warnings).toContain('bot: allow runs before budget')
+  })
+
+  test('an order the session layer introduced is reported against the session layer', () => {
+    const checked = resolveAndCheck({
+      global: defaultPipelineNodes(),
+      session: { insert: [{ id: 'early-allow', type: 'allow', before: 'budget' }] },
+    })
+
+    expect(checked.warnings).toContain('session: allow runs before budget')
+    expect(checked.warnings.some((line) => line.startsWith('bot: '))).toBe(false)
+  })
+
+  test('a problem the global layer already had is reported once, against global', () => {
+    const broken = defaultPipelineNodes()
+    broken.splice(1, 0, { id: 'early-allow', type: 'allow' })
+
+    const checked = resolveAndCheck({ global: broken, bot: { remove: ['noise'] } })
+
+    const hits = checked.warnings.filter((line) => line.endsWith('allow runs before budget'))
+    expect(hits).toEqual(['global: allow runs before budget'])
   })
 })
 
