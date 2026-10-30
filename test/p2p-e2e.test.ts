@@ -992,6 +992,19 @@ describe('a reply goes back to the sender of the inbound message', () => {
     }
   }
 
+  test('the reply names the message it answers and quotes the start of it', async () => {
+    const mounted = await mountWithCapture()
+    try {
+      await send(mounted.port, 'evt-1', 'what about the port')
+      await waitFor(() => mounted.captured() !== undefined)
+      const sent = mounted.captured()
+      expect(sent?.inReplyTo).toBe('evt-1')
+      expect(sent?.inReplyToExcerpt).toBe('what about the port')
+    } finally {
+      mounted.close()
+    }
+  })
+
   test('the outgoing message is addressed to the inbound sender, not to anything else', async () => {
     const mounted = await mountWithCapture()
     try {

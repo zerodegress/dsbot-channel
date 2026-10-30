@@ -29,6 +29,20 @@ describe('p2p event mapping', () => {
     expect(toP2PEvent(inbound).body.text).toBe('[p2p from peer-a · bot-a · p2p-e1] hello')
   })
 
+  test('a reply names the message it answers', () => {
+    const event = toP2PEvent({ ...inbound, inReplyTo: 'e1', inReplyToExcerpt: 'what did you mean' })
+
+    expect(event.body.text).toBe(
+      '[p2p from peer-a · bot-a · p2p-e1] (in reply to e1: "what did you mean") hello',
+    )
+  })
+
+  test('a reply with no excerpt still names the message it answers', () => {
+    const event = toP2PEvent({ ...inbound, inReplyTo: 'e1' })
+
+    expect(event.body.text).toBe('[p2p from peer-a · bot-a · p2p-e1] (in reply to e1) hello')
+  })
+
   test('an empty body leaves the prefix alone', () => {
     expect(toP2PEvent({ ...inbound, body: '' }).body.text).toBe('[p2p from peer-a · bot-a · p2p-e1]')
   })
