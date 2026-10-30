@@ -6,6 +6,8 @@ export interface PipelineNodeSpec {
   type: NodeType
   restrictSkip?: readonly SkipTarget[]
   mayRestrict?: boolean
+  /** The share of the quota a budget node allows before it restricts, from 0 to 1. */
+  softLimit?: number
 }
 
 export interface PipelineSettings {

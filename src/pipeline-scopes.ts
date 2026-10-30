@@ -1,3 +1,4 @@
+import type { NodeType } from './pipeline.js'
 import type { PipelineNodeSpec } from './pipeline-config.js'
 import { checkPipeline } from './pipeline-config.js'
 
@@ -30,7 +31,17 @@ export interface ScopeMerge {
   fatal: string[]
 }
 
-export const OVERRIDABLE = ['type', 'restrictSkip', 'mayRestrict'] as const
+const COMMON = ['type', 'restrictSkip', 'mayRestrict'] as const
+
+/** What a layer may override, per node type: a field another type has is still a mistake here. */
+export const OVERRIDABLE_BY_TYPE: Record<NodeType, readonly string[]> = {
+  deny: COMMON,
+  budget: [...COMMON, 'softLimit'],
+  allow: COMMON,
+  score: COMMON,
+  judge: COMMON,
+  prepare: COMMON,
+}
 
 export interface ScopeCheck {
   nodes: PipelineNodeSpec[]
@@ -85,7 +96,8 @@ function applyLayer(
       fatal.push(`${level}: override names a node that does not exist: "${id}"`)
       continue
     }
-    const unknown = Object.keys(patch).filter((key) => !(OVERRIDABLE as readonly string[]).includes(key))
+    const allowed = OVERRIDABLE_BY_TYPE[node.type] ?? COMMON
+    const unknown = Object.keys(patch).filter((key) => !allowed.includes(key))
     if (unknown.length > 0) {
       fatal.push(`${level}: override "${id}" names a field a node does not have: "${unknown.join('", "')}"`)
       continue
