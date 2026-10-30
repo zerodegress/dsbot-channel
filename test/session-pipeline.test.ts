@@ -223,11 +223,11 @@ describe('a session layer that could never run is refused', () => {
   test('a group and a peer key have no registry to check, and are accepted', () => {
     const sessions = harness()
 
-    sessions.forSession('orca', 'group:not-a-real-group', {})
-    sessions.forSession('orca', 'peer:openid-1', {})
+    sessions.forSession('orca', 'group:not-a-real-group', { remove: ['noise'] })
+    sessions.forSession('orca', 'peer:openid-1', { remove: ['noise'] })
 
-    expect(ids(sessions.pipelineFor('orca', 'group:not-a-real-group'))).toContain('noise')
-    expect(ids(sessions.pipelineFor('orca', 'peer:openid-1'))).toContain('noise')
+    expect(ids(sessions.pipelineFor('orca', 'group:not-a-real-group'))).not.toContain('noise')
+    expect(ids(sessions.pipelineFor('orca', 'peer:openid-1'))).not.toContain('noise')
   })
 
   test('a field no layer has is refused instead of being dropped', () => {
