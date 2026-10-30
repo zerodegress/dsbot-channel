@@ -36,11 +36,21 @@ export interface ScopePair {
   target: string
 }
 
+export interface ChargeWindow {
+  ttlMs: number
+  limit: number
+}
+
+export const DEFAULT_CHARGE_WINDOW: ChargeWindow = { ttlMs: 300_000, limit: 100_000 }
+
 export interface Hold {
   readonly botId: string
   readonly sessionKey: string
   readonly chargeKind: ChargeKind
   readonly amount: number
+  readonly chargeId?: string | undefined
+  /** A charge the ledger already recorded, so settling it must not add points again. */
+  readonly duplicate: boolean
   settled: boolean
 }
 
@@ -104,12 +114,14 @@ export function sessionKeyFor(pair: ScopePair): string {
 export class BudgetLedger {
   private readonly windows = new Map<string, Window>()
   private readonly locks = new Map<string, { level: LimitLevel; since: number }>()
+  private readonly charged = new Map<string, number>()
   private readonly now: () => number
 
   constructor(
     private readonly limits: BudgetLimits,
     private readonly settings: BudgetSettings = DEFAULT_BUDGET,
     now: () => number = Date.now,
+    private readonly charges: ChargeWindow = DEFAULT_CHARGE_WINDOW,
   ) {
     this.now = now
   }
@@ -196,15 +208,48 @@ export class BudgetLedger {
     return { byScope, aggregate, triggeredBy }
   }
 
-  reserve(botId: string, session: string, chargeKind: ChargeKind, amount: number): Hold {
-    const hold: Hold = { botId, sessionKey: session, chargeKind, amount, settled: false }
+  /** Records a charge under its own key, so a replay of the same event is charged once. */
+  reserve(botId: string, session: string, chargeKind: ChargeKind, amount: number, chargeId?: string): Hold {
+    const at = this.now()
+    if (chargeId !== undefined) {
+      const seen = this.charged.get(chargeId)
+      if (seen !== undefined && at - seen <= this.charges.ttlMs) {
+        return { botId, sessionKey: session, chargeKind, amount: 0, chargeId, duplicate: true, settled: false }
+      }
+      this.remember(chargeId, at)
+    }
+    const hold: Hold = {
+      botId,
+      sessionKey: session,
+      chargeKind,
+      amount,
+      ...(chargeId === undefined ? {} : { chargeId }),
+      duplicate: false,
+      settled: false,
+    }
     this.charge(this.keysFor(botId, session), amount)
     return hold
+  }
+
+  /** Drops the records past the replay window, then the oldest while the table is still full. */
+  private remember(chargeId: string, at: number): void {
+    this.charged.delete(chargeId)
+    this.charged.set(chargeId, at)
+    for (const [id, seen] of this.charged) {
+      if (at - seen <= this.charges.ttlMs) break
+      this.charged.delete(id)
+    }
+    while (this.charged.size > this.charges.limit) {
+      const oldest = this.charged.keys().next()
+      if (oldest.done === true) break
+      this.charged.delete(oldest.value)
+    }
   }
 
   settle(hold: Hold, outcome: 'accepted' | 'rejected'): Usage {
     if (hold.settled) throw new Error('hold already settled')
     hold.settled = true
+    if (hold.duplicate) return this.usage(hold.botId, hold.sessionKey)
     const final = hold.chargeKind === 'bot' ? this.pointsFor('bot', outcome) : hold.amount
     const delta = final - hold.amount
     if (delta !== 0) this.charge(this.keysFor(hold.botId, hold.sessionKey), delta)
@@ -214,6 +259,8 @@ export class BudgetLedger {
   refund(hold: Hold): void {
     if (hold.settled) throw new Error('hold already settled')
     hold.settled = true
+    if (hold.duplicate) return
+    if (hold.chargeId !== undefined) this.charged.delete(hold.chargeId)
     this.charge(this.keysFor(hold.botId, hold.sessionKey), -hold.amount)
   }
 

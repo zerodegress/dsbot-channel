@@ -1676,6 +1676,46 @@ describe('policy budget', () => {
     expect(sessions.prompted).toHaveLength(2)
   })
 
+  test('a replayed event reaches the turn twice but is charged once', async () => {
+    const port = await freePort()
+    const ctx = new Context()
+    captureWarnings(ctx)
+    const sessions = new StubSessions(ctx, 99)
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', sessions)
+      },
+    })
+    const fork = await ctx.plugin(entry, {
+      adapters: [
+        {
+          channel: 'p2p:a',
+          instance: 'inst-a',
+          botName: 'bot-b',
+          peers: [{ instance: 'inst-a', secret: REF }],
+          listen: { host: '127.0.0.1', port },
+          policy: { budget: { capacity: 20 } },
+          dedupe: { ttlMs: 0 },
+        },
+      ],
+    })
+    forks.push(fork)
+    const settled = (): number => warnings.filter((line) => line.includes('was not delivered')).length
+
+    await send(port, 'evt-1', 'one')
+    await waitFor(() => settled() === 1)
+    await send(port, 'evt-1', 'one')
+    await waitFor(() => settled() === 2)
+    await send(port, 'evt-2', 'two')
+    await waitFor(() => sessions.prompted.length === 3)
+
+    expect(warnings.some((line) => line.includes('budget-hard'))).toBe(false)
+  })
+
   test('a window wide enough lets the pair finish its rounds', async () => {
     const { sessions, portB } = await pair({ budget: { capacity: 4000 }, relayLimit: 2 })
     await send(portB, 'evt-1', 'hello')
