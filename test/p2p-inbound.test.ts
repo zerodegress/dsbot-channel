@@ -55,6 +55,10 @@ function bus(): {
   }
 }
 
+function prompt_(requestId: string): SessionEventLike {
+  return { type: 'user/message', data: { message: { source: { rpcId: requestId }, content: [] } } }
+}
+
 function assistant(text: string): SessionEventLike {
   return { type: 'assistant/message', data: { message: { content: [{ type: 'text', text }] } } }
 }
@@ -75,6 +79,65 @@ function harness(options: { timeoutMs?: number; cwd?: string; agentPreset?: stri
 function flush(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0))
 }
+
+describe('a turn queued behind other work', () => {
+  test('collects the answer of the turn its own message opened', async () => {
+    const { controller, events, bridge } = harness()
+    controller.onPrompt = (request) => {
+      events.emit(request.sessionId, prompt_(request.requestId))
+      events.emit(request.sessionId, assistant('mine'))
+      events.emit(request.sessionId, { type: 'turn/end' })
+    }
+
+    const result = await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })
+
+    expect(result.text).toBe('mine')
+  })
+
+  test('ignores the turn that was already running when the message was queued', async () => {
+    const { controller, events, bridge } = harness()
+    controller.onPrompt = (request) => {
+      events.emit(request.sessionId, prompt_('somebody-else'))
+      events.emit(request.sessionId, assistant('theirs'))
+      events.emit(request.sessionId, { type: 'turn/end' })
+      events.emit(request.sessionId, prompt_(request.requestId))
+      events.emit(request.sessionId, assistant('mine'))
+      events.emit(request.sessionId, { type: 'turn/end' })
+    }
+
+    const result = await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })
+
+    expect(result.text).toBe('mine')
+  })
+
+  test('drops what an earlier turn of the session had already produced', async () => {
+    const { controller, events, bridge } = harness()
+    controller.onPrompt = (request) => {
+      events.emit(request.sessionId, { type: 'turn/start' })
+      events.emit(request.sessionId, assistant('theirs'))
+      events.emit(request.sessionId, prompt_(request.requestId))
+      events.emit(request.sessionId, assistant('mine'))
+      events.emit(request.sessionId, { type: 'turn/end' })
+    }
+
+    const result = await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })
+
+    expect(result.text).toBe('mine')
+  })
+
+  test('collects an answer that joins a turn already running, with no turn/start of its own', async () => {
+    const { controller, events, bridge } = harness()
+    controller.onPrompt = (request) => {
+      events.emit(request.sessionId, prompt_(request.requestId))
+      events.emit(request.sessionId, assistant('queued answer'))
+      events.emit(request.sessionId, { type: 'turn/end' })
+    }
+
+    const result = await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })
+
+    expect(result.text).toBe('queued answer')
+  })
+})
 
 describe('peer sessions', () => {
   test('creates one session per peer and reuses it', async () => {
