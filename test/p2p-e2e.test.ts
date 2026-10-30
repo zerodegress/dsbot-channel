@@ -824,7 +824,7 @@ describe('a message that arrives while the session is busy', () => {
           ctx.emit('session/event', { id: request.sessionId } as never, event as never)
         }
         const opening = (rpcId: string): void => {
-          emit({ type: 'user/message', data: { message: { source: { rpcId }, content: [] } } })
+          emit({ type: 'user/message', data: { source: { rpcId }, content: [] } })
         }
         const answer = (text: string): void => {
           emit({ type: 'assistant/message', data: { message: { content: [{ type: 'text', text }] } } })

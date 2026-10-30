@@ -56,7 +56,7 @@ function bus(): {
 }
 
 function prompt_(requestId: string): SessionEventLike {
-  return { type: 'user/message', data: { message: { source: { rpcId: requestId }, content: [] } } }
+  return { type: 'user/message', data: { source: { rpcId: requestId }, content: [] } }
 }
 
 function assistant(text: string): SessionEventLike {
