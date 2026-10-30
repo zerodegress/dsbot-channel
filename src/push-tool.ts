@@ -62,6 +62,8 @@ export interface PushRouterOptions {
   channels: PushChannel[]
   send: (delivery: PushDelivery) => Promise<SendResult>
   source: (sessionId: string | undefined) => PushSource | undefined
+  /** Called after a push is delivered, so the turn that asked for it knows not to answer twice. */
+  delivered?: ((sessionId: string | undefined) => void) | undefined
   now?: (() => number) | undefined
   newId?: (() => string) | undefined
 }
@@ -75,6 +77,7 @@ export class PushRouter {
   readonly #channels: PushChannel[]
   readonly #send: PushRouterOptions['send']
   readonly #source: PushRouterOptions['source']
+  readonly #delivered: PushRouterOptions['delivered']
   readonly #now: () => number
   readonly #newId: () => string
   readonly #keys = new Map<string, { result: PushSent; at: number }>()
@@ -83,6 +86,7 @@ export class PushRouter {
     this.#channels = options.channels
     this.#send = options.send
     this.#source = options.source
+    this.#delivered = options.delivered
     this.#now = options.now ?? Date.now
     this.#newId = options.newId ?? (() => crypto.randomUUID())
   }
@@ -160,6 +164,7 @@ export class PushRouter {
       target: peer.instance,
     }
     if (key !== undefined) this.#keys.set(key, { result, at: this.#now() })
+    this.#delivered?.(sessionId)
     return result
   }
 }
