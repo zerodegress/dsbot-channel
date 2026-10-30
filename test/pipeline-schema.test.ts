@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
-import { checkPipelineScopes } from '../src/plugin.js'
+import { Config, checkPipelineScopes } from '../src/plugin.js'
+import type { ChannelConfig } from '../src/plugin.js'
 import { ConfigError } from '../src/config.js'
 import { staticCredentials } from '../src/p2p-secrets.js'
 
@@ -39,6 +40,8 @@ const adapter = (overrides: Record<string, unknown> = {}) => ({
 
 const node = (id: string, type: string) => ({ id, type })
 
+const parsed = (config: unknown): ChannelConfig => (Config as (value: unknown) => ChannelConfig)(config)
+
 describe('the pipeline a profile declares', () => {
   test('refuses a global pipeline that cannot load, and names the layer', async () => {
     await expect(
@@ -59,20 +62,20 @@ describe('the pipeline a profile declares', () => {
 
   test('mounts a pipeline that only looks wrong', async () => {
     const ctx = await mount({
-      adapters: [],
-      pipeline: { global: [node('judge', 'judge'), node('budget', 'budget')] },
+      adapters: [adapter({ policy: { deny: { words: ['spam'] }, allow: { peers: ['inst-b'] } } })],
+      pipeline: { global: [node('allow', 'allow'), node('deny', 'deny')] },
     })
-    expect(ctx.get('dsbot-channel.peers')).toBeUndefined()
+    expect(ctx.get('dsbot-channel.peers')).toHaveLength(1)
   })
 
   test('hands a warning to the reporter and keeps the mount alive', () => {
     const said: string[] = []
-    const config = {
-      adapters: [],
-      pipeline: { global: [node('judge', 'judge'), node('budget', 'budget')] },
-    } as unknown as Parameters<typeof checkPipelineScopes>[0]
+    const config = parsed({
+      adapters: [adapter({ policy: { deny: { words: ['spam'] }, allow: { peers: ['inst-b'] } } })],
+      pipeline: { global: [node('allow', 'allow'), node('deny', 'deny')] },
+    })
     checkPipelineScopes(config, (message) => said.push(message))
-    expect(said.some((line) => line.includes('judge runs before budget'))).toBe(true)
+    expect(said.some((line) => line.includes('allow runs before deny'))).toBe(true)
     expect(said.filter((line) => line.includes('pipeline warning:')).length).toBeGreaterThan(0)
   })
 
@@ -99,13 +102,13 @@ describe('the pipeline a profile declares', () => {
   })
 
   test('accepts two adapters that answer for one bot with the same layer', async () => {
-    const layer = { insert: [{ id: 'score', type: 'score', after: 'allow' }] }
+    const layer = { insert: [{ id: 'deny2', type: 'deny', after: 'deny' }] }
     const ctx = await mount({
       adapters: [
-        adapter({ channel: 'p2p:one', pipeline: layer }),
-        adapter({ channel: 'p2p:two', pipeline: layer }),
+        adapter({ channel: 'p2p:one', pipeline: layer, policy: { deny: { words: ['spam'] } } }),
+        adapter({ channel: 'p2p:two', pipeline: layer, policy: { deny: { words: ['spam'] } } }),
       ],
-      pipeline: { global: [node('allow', 'allow')] },
+      pipeline: { global: [node('deny', 'deny')] },
     })
     expect(ctx.get('dsbot-channel.peers')).toHaveLength(2)
   })
@@ -128,14 +131,87 @@ describe('the pipeline a profile declares', () => {
     ).rejects.toThrow(ConfigError)
   })
 
-  test('says plainly that a declared layer is not enforced yet', () => {
-    const said: string[] = []
-    const config = {
-      adapters: [],
+  test('refuses a declared node that nothing can bind', () => {
+    const config = parsed({
+      adapters: [
+        adapter({
+          pipeline: { insert: [{ id: 'judge2', type: 'judge', after: 'allow' }] },
+          policy: { allow: { peers: ['inst-b'] } },
+        }),
+      ],
       pipeline: { global: [node('allow', 'allow')] },
-    } as unknown as Parameters<typeof checkPipelineScopes>[0]
-    checkPipelineScopes(config, (message) => said.push(message))
-    expect(said.some((line) => line.includes('not enforced in this version'))).toBe(true)
+    })
+    expect(() => checkPipelineScopes(config, () => undefined)).toThrow(/a judge node needs a model call/)
+  })
+
+  test('refuses an unbound node even when no adapter is declared', async () => {
+    await expect(
+      mount({ adapters: [], pipeline: { global: [node('judge', 'judge')] } }),
+    ).rejects.toThrow(/a judge node needs a model call/)
+  })
+
+  test('refuses a deny node when no adapter could ever bind a rule', async () => {
+    await expect(
+      mount({ adapters: [], pipeline: { global: [node('deny', 'deny')] } }),
+    ).rejects.toThrow(/a deny node has no rule to match/)
+  })
+
+  test('reports one line for a problem every layer shares', () => {
+    const layer = { insert: [{ id: 'deny2', type: 'deny', after: 'deny' }] }
+    const config = parsed({
+      adapters: [
+        adapter({ channel: 'p2p:one', botName: 'bot-a', pipeline: layer, policy: { deny: { words: ['spam'] } } }),
+        adapter({ channel: 'p2p:two', botName: 'bot-b', pipeline: layer, policy: { deny: { words: ['spam'] } } }),
+      ],
+      pipeline: { global: [node('judge', 'judge')] },
+    })
+    let message = ''
+    try {
+      checkPipelineScopes(config, () => undefined)
+    } catch (error) {
+      message = (error as Error).message
+    }
+    expect(message.match(/a judge node needs a model call/g)?.length).toBe(1)
+  })
+
+  test('refuses a deny node with no rule to match', () => {
+    const config = parsed({ adapters: [adapter()], pipeline: { global: [node('deny', 'deny')] } })
+    expect(() => checkPipelineScopes(config, () => undefined)).toThrow(/a deny node has no rule to match/)
+  })
+
+  test('names the bot whose policy cannot bind the rule', () => {
+    const config = parsed({
+      adapters: [
+        adapter({ channel: 'p2p:one', botName: 'bot-a', policy: { deny: { words: ['spam'] } } }),
+        adapter({ channel: 'p2p:two', botName: 'bot-b' }),
+      ],
+      pipeline: { global: [node('deny', 'deny')] },
+    })
+    expect(() => checkPipelineScopes(config, () => undefined)).toThrow(/bot "bot-b": a deny node has no rule to match/)
+  })
+
+  test('names no bot when no adapter could bind the rule', () => {
+    const config = parsed({ adapters: [], pipeline: { global: [node('allow', 'allow')] } })
+    let message = ''
+    try {
+      checkPipelineScopes(config, () => undefined)
+    } catch (error) {
+      message = (error as Error).message
+    }
+    expect(message).toMatch(/an allow node has no rule to match/)
+    expect(message).not.toMatch(/bot "/)
+  })
+
+  test('names no bot when the adapter has no botName to name', () => {
+    const config = parsed({ adapters: [adapter({ botName: '' })], pipeline: { global: [node('deny', 'deny')] } })
+    let message = ''
+    try {
+      checkPipelineScopes(config, () => undefined)
+    } catch (error) {
+      message = (error as Error).message
+    }
+    expect(message).toMatch(/a deny node has no rule to match/)
+    expect(message).not.toMatch(/bot "/)
   })
 
   test('says nothing about enforcement when no layer is declared', () => {
