@@ -63,7 +63,7 @@ describe('the pipeline a profile declares', () => {
   test('mounts a pipeline that only looks wrong', async () => {
     const ctx = await mount({
       adapters: [],
-      pipeline: { global: [node('judge', 'judge'), node('budget', 'budget')] },
+      pipeline: { global: [node('allow', 'allow'), node('deny', 'deny')] },
     })
     expect(ctx.get('dsbot-channel.peers')).toBeUndefined()
   })
@@ -72,10 +72,10 @@ describe('the pipeline a profile declares', () => {
     const said: string[] = []
     const config = parsed({
       adapters: [],
-      pipeline: { global: [node('judge', 'judge'), node('budget', 'budget')] },
+      pipeline: { global: [node('allow', 'allow'), node('deny', 'deny')] },
     })
     checkPipelineScopes(config, (message) => said.push(message))
-    expect(said.some((line) => line.includes('judge runs before budget'))).toBe(true)
+    expect(said.some((line) => line.includes('allow runs before deny'))).toBe(true)
     expect(said.filter((line) => line.includes('pipeline warning:')).length).toBeGreaterThan(0)
   })
 
@@ -142,6 +142,12 @@ describe('the pipeline a profile declares', () => {
       pipeline: { global: [node('allow', 'allow')] },
     })
     expect(() => checkPipelineScopes(config, () => undefined)).toThrow(/a judge node needs a model call/)
+  })
+
+  test('refuses an unbound node even when no adapter is declared', async () => {
+    await expect(
+      mount({ adapters: [], pipeline: { global: [node('judge', 'judge')] } }),
+    ).rejects.toThrow(/a judge node needs a model call/)
   })
 
   test('refuses a deny node with no rule to match', () => {

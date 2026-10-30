@@ -276,15 +276,17 @@ export function checkPipelineScopes(config: ChannelConfig, warn: (message: strin
     fatal.push(...report.layer.fatal, ...report.pipeline.fatal)
     for (const warning of [...report.layer.warnings, ...report.pipeline.warnings]) warnings.add(warning)
   }
+  for (const one of scopes) {
+    for (const node of resolvePipeline(one).nodes) {
+      const reason = UNBOUND_REASON[node.type]
+      if (reason !== undefined) fatal.push(`node "${node.id}": ${reason}`)
+    }
+  }
   for (const adapter of config.adapters) {
     const nodes = declaredNodes(config, adapter)
     if (nodes === undefined) continue
     const compiled = compilePolicy(adapter.policy)
     const kinds = new Set(nodes.map((node) => node.type))
-    for (const node of nodes) {
-      const reason = UNBOUND_REASON[node.type]
-      if (reason !== undefined) fatal.push(`node "${node.id}": ${reason}`)
-    }
     if (kinds.has('deny') && (compiled.deps.denyRules ?? []).length === 0) {
       fatal.push('a deny node has no rule to match: add policy.deny words or regexes')
     }
