@@ -397,7 +397,10 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
       const specs = declaredNodes(config, adapter) ?? compiled.specs
       const pipeline = specs.length > 0 ? buildPipeline(specs, compiled.deps) : undefined
       const budget = adapter.policy.budget
-      const ledger = budget === undefined ? undefined : createLedger(budget)
+      const ledger =
+        budget === undefined
+          ? undefined
+          : createLedger(budget, { charges: { ttlMs: adapter.sentAtWindowMs ?? DEFAULT_SENT_AT_WINDOW_MS } })
       const billing = new TurnBilling({ ledger })
       const gate = new InboundGate({
         loop: { relayLimit: adapter.policy.relayLimit, relayResetMs: adapter.policy.relayResetMs },
@@ -438,7 +441,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
             pushed: false,
           }
           activeTurns.set(sessionId, turnRef)
-          hold = billing.begin(adapter.botName, request.instance, sessionId)
+          hold = billing.begin(adapter.botName, request.instance, sessionId, event.meta.derived.eventKey)
           const guidance = injected.claim(sessionId) ? guidanceFor(event.source.scope) : ''
           const turn = await sessions.runTurn({
             peer: request.instance,
