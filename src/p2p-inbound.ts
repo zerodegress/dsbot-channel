@@ -18,11 +18,11 @@ export interface SessionMessagePart {
 
 export interface SessionEventLike {
   type: string
+  /** user/message puts the message itself in data; assistant/message nests it under message. */
   data?: {
-    message?: {
-      content?: readonly SessionMessagePart[]
-      source?: { rpcId?: string }
-    }
+    content?: readonly SessionMessagePart[]
+    source?: { rpcId?: string }
+    message?: { content?: readonly SessionMessagePart[] }
   }
 }
 
@@ -156,7 +156,7 @@ export class PeerSessions {
     const stop = this.#observe((observed, event) => {
       if (observed !== sessionId) return
       if (event.type === 'user/message') {
-        const rpcId = event.data?.message?.source?.rpcId
+        const rpcId = event.data?.source?.rpcId
         if (rpcId === undefined) return
         if (rpcId !== input.requestId) return
         started = true
