@@ -1453,3 +1453,82 @@ describe('what the wiring charges', () => {
     expect(warnings.some((line) => line.includes('budget-hard'))).toBe(false)
   })
 })
+
+describe('a message that arrives while the session is busy', () => {
+  test('the answer of its own turn comes back to the sender', async () => {
+    const posted: string[] = []
+    const capture = createServer((request, response) => {
+      let raw = ''
+      request.on('data', (chunk: string) => {
+        raw += chunk
+      })
+      request.on('end', () => {
+        posted.push((JSON.parse(raw) as { body?: string }).body ?? '')
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({ duplicate: false, messageId: 'p2p-reply' }))
+      })
+    })
+    await new Promise<void>((resolve) => capture.listen(0, '127.0.0.1', resolve))
+    const capturePort = (capture.address() as AddressInfo).port
+
+    const port = await freePort()
+    const ctx = new Context()
+    captureWarnings(ctx)
+    const controller = {
+      create(): Promise<{ sessionId: string }> {
+        return Promise.resolve({ sessionId: 'session-main' })
+      },
+      async prompt(request: {
+        sessionId: string
+        requestId: string
+        content: readonly { type: string; text?: string }[]
+      }): Promise<{ accepted: boolean }> {
+        const emit = (event: unknown): void => {
+          ctx.emit('session/event', { id: request.sessionId } as never, event as never)
+        }
+        const opening = (rpcId: string): void => {
+          emit({ type: 'user/message', data: { source: { rpcId }, content: [] } })
+        }
+        const answer = (text: string): void => {
+          emit({ type: 'assistant/message', data: { message: { content: [{ type: 'text', text }] } } })
+        }
+        opening('a-turn-already-running')
+        answer('theirs')
+        emit({ type: 'turn/end' })
+        opening(request.requestId)
+        answer('mine')
+        emit({ type: 'turn/end' })
+        return { accepted: true }
+      },
+    }
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', controller)
+      },
+    })
+    const fork = await ctx.plugin(entry, {
+      adapters: [
+        {
+          channel: 'p2p:b',
+          instance: 'inst-b',
+          botName: 'bot-b',
+          peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}` }],
+          listen: { host: '127.0.0.1', port },
+        },
+      ],
+    })
+    forks.push(fork)
+    try {
+      await send(port, 'evt-1', 'hello')
+      await waitFor(() => posted.length > 0)
+      expect(posted[0]).toContain('mine')
+      expect(posted[0]).not.toContain('theirs')
+    } finally {
+      capture.close()
+    }
+  })
+})
