@@ -19,7 +19,7 @@ export function cleanExcerpt(text: string, limit = EXCERPT_CHARS): string {
     .replace(/["'`]+/g, '')
     .replace(/\s+/g, ' ')
     .trim()
-  return flat.slice(0, limit).trim()
+  return Array.from(flat).slice(0, limit).join('').trim()
 }
 
 export interface P2PInbound {
