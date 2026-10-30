@@ -14,6 +14,9 @@ export const DEFAULT_SENT_AT_WINDOW_MS = 300_000
 /** The reference is a token, not free text: it lands in a header line. */
 export const IN_REPLY_TO_MAX = 128
 
+/** An event id grows a reply: prefix each round, so it needs more room than a token. */
+export const EVENT_ID_MAX = 256
+
 function isToken(text: string): boolean {
   for (const char of text) {
     const code = char.codePointAt(0) ?? 0
@@ -72,6 +75,12 @@ export function parseRequest(payload: P2PPayload, maxBodyBytes = MAX_BODY_BYTES)
     if (typeof value !== 'string' || value.length === 0) return { ok: false, status: 400, reason: `${name} must be a non-empty string` }
   }
   if (typeof sentAt !== 'number' || !Number.isFinite(sentAt)) return { ok: false, status: 400, reason: 'sentAt must be a number' }
+  if ((eventId as string).length > EVENT_ID_MAX || !isToken(eventId as string)) {
+    return { ok: false, status: 400, reason: `eventId must be a token of at most ${EVENT_ID_MAX} characters` }
+  }
+  if (!isToken(sender as string)) {
+    return { ok: false, status: 400, reason: 'sender must be a token: printable characters, no whitespace' }
+  }
   const text = body as string
   if (Buffer.byteLength(text, 'utf8') > maxBodyBytes) return { ok: false, status: 413, reason: 'body exceeds the size limit' }
   const status = payload.status
