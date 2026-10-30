@@ -4,6 +4,9 @@ import type { Event } from './event-types.js'
 /** How much of the message being answered travels back with the reply. */
 export const EXCERPT_CHARS = 200
 
+/** How much of a peer's own text reaches a line of ours. */
+export const PEER_TEXT_MAX = 200
+
 function flatten(text: string): string {
   let out = ''
   for (const char of text) {
@@ -11,6 +14,12 @@ function flatten(text: string): string {
     out += code < 0x20 || code === 0x7f ? ' ' : char
   }
   return out
+}
+
+/** A peer's own words for a line of ours: one line, bounded, nothing that breaks the line. */
+export function oneLine(text: unknown, limit = PEER_TEXT_MAX): string {
+  const flat = flatten(typeof text === 'string' ? text : String(text ?? '')).replace(/\s+/g, ' ').trim()
+  return Array.from(flat).slice(0, limit).join('').trim()
 }
 
 /** Keeps a peer from shaping the header: no control characters, one line, no quotes. */

@@ -28,7 +28,7 @@ import { PushRouter, createSendText } from './push-tool.js'
 import type { PushSource, SendTextTool } from './push-tool.js'
 import { ClosedChains } from './chain-closer.js'
 import { InjectionLedger, guidanceFor } from './inbound-guidance.js'
-import { createDeclineTool, createEndTool } from './control-tools.js'
+import { createDeclineTool, createNoReplyTool } from './control-tools.js'
 import type { ControlPorts, PeerTurnRef } from './control-tools.js'
 
 /** Turn ceiling a message may occupy before it is dropped. */
@@ -304,6 +304,9 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
             return
           }
           if (turn.text.length === 0) {
+            warn(
+              `dsbot-channel: the turn for ${request.eventId} from ${request.instance} ended with no text and no tool call`,
+            )
             billing.reject(hold)
             hold = undefined
             return
@@ -368,7 +371,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   ctx.set('dsbot-channel.status', { snapshot: () => registry.snapshot() })
   ctx.provide('dsbot-channel.peers')
   ctx.set('dsbot-channel.peers', started)
-  type AnyTool = SendTextTool | ReturnType<typeof createEndTool> | ReturnType<typeof createDeclineTool>
+  type AnyTool = SendTextTool | ReturnType<typeof createNoReplyTool> | ReturnType<typeof createDeclineTool>
   const tools = ctx.get('tools') as { register: (definition: AnyTool) => () => void } | undefined
   if (tools !== undefined && typeof tools.register === 'function') {
     const byChannel = new Map(pairs.map(({ adapter }) => [adapter.channel, adapter]))
@@ -439,7 +442,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         return sent.ok ? { ok: true } : { ok: false, code: sent.code, reason: sent.reason }
       },
     }
-    ctx.effect(() => tools.register(createEndTool(ports)), 'dsbot-channel: end tool')
+    ctx.effect(() => tools.register(createNoReplyTool(ports)), 'dsbot-channel: no_reply tool')
     ctx.effect(() => tools.register(createDeclineTool(ports)), 'dsbot-channel: decline tool')
   }
   ctx.effect(() => async () => {

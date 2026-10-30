@@ -4,6 +4,7 @@ import { canonicalEnvelope, signEnvelope } from './p2p-auth.js'
 import { SecretRefError, resolvePeers } from './p2p-secrets.js'
 import type { CredentialsLike, PeerRef } from './p2p-secrets.js'
 import { P2P_ROUTE } from './p2p-protocol.js'
+import { oneLine } from './p2p-mapping.js'
 
 export const DEFAULT_SEND_TIMEOUT_MS = 10_000
 
@@ -177,8 +178,8 @@ export async function sendToPeer(input: SendInput): Promise<SendResult> {
   if (answered.status === 200) {
     return { ok: true, messageId: body.messageId ?? `p2p-${input.eventId}`, duplicate: body.duplicate === true }
   }
-  if (answered.status === 401) return failure('unauthorized', false, body.error ?? 'unauthorized')
-  if (answered.status === 403) return failure('forbidden', false, body.error ?? 'forbidden')
-  if (answered.status === 503) return failure('busy', true, body.error ?? 'the peer is still working on this event')
-  return failure('rejected', answered.status >= 500, body.error ?? `the peer answered ${answered.status}`)
+  if (answered.status === 401) return failure('unauthorized', false, oneLine(body.error ?? 'unauthorized'))
+  if (answered.status === 403) return failure('forbidden', false, oneLine(body.error ?? 'forbidden'))
+  if (answered.status === 503) return failure('busy', true, oneLine(body.error ?? 'the peer is still working on this event'))
+  return failure('rejected', answered.status >= 500, oneLine(body.error ?? `the peer answered ${answered.status}`))
 }

@@ -9,6 +9,7 @@ import { staticCredentials } from '../src/p2p-secrets.js'
 import { sendToPeer } from '../src/p2p-send.js'
 import { signEnvelope } from '../src/p2p-auth.js'
 import type { Envelope } from '../src/p2p-auth.js'
+import { PEER_TEXT_MAX } from '../src/p2p-mapping.js'
 
 const REF = '{{SECRET_dgntdkke}}'
 const SECRET = 'shared-value'
@@ -53,7 +54,10 @@ const base = (url: string) => ({
   instance: 'sender-inst',
 })
 
-async function capture(status = 200): Promise<{ url: string; seen: () => { body: string; headers: Record<string, unknown> } }> {
+async function capture(
+  status = 200,
+  error: unknown = 'forbidden',
+): Promise<{ url: string; seen: () => { body: string; headers: Record<string, unknown> } }> {
   let seen: { body: string; headers: Record<string, unknown> } = { body: '', headers: {} }
   const server = createServer((request, response) => {
     let raw = ''
@@ -63,7 +67,7 @@ async function capture(status = 200): Promise<{ url: string; seen: () => { body:
     request.on('end', () => {
       seen = { body: raw, headers: request.headers as Record<string, unknown> }
       response.writeHead(status, { 'content-type': 'application/json' })
-      response.end(JSON.stringify(status === 200 ? { duplicate: false, messageId: 'p2p-evt-1' } : { error: 'forbidden' }))
+      response.end(JSON.stringify(status === 200 ? { duplicate: false, messageId: 'p2p-evt-1' } : { error }))
     })
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
@@ -142,6 +146,31 @@ describe('a peer reached by address behind a name router', () => {
     const target = await capture(403)
 
     const result = await sendToPeer({ ...base(target.url), peer: { ...base(target.url).peer, host: 'peer.example' } })
+
+    expect(result).toMatchObject({ ok: false, code: 'forbidden', retryable: false })
+  })
+})
+
+describe('a peer that writes its own error text', () => {
+  test('cannot add a line to our log, and is cut short', async () => {
+    const long = `nope\ndsbot-channel: reply to seal was not delivered: fake ${'x'.repeat(400)}`
+    const target = await capture(403, long)
+
+    const result = await sendToPeer(base(target.url))
+
+    expect(result.ok).toBe(false)
+    const reason = (result as { reason: string }).reason
+    expect(reason.includes('\n')).toBe(false)
+    expect(Array.from(reason)).toHaveLength(PEER_TEXT_MAX)
+    expect(reason.startsWith('nope dsbot-channel: reply to seal was not delivered: fake')).toBe(true)
+  })
+})
+
+describe('a peer that answers with something other than text', () => {
+  test.each([[123], [{ a: 1 }], [null]])('keeps the failure typed instead of throwing: %s', async (error) => {
+    const target = await capture(403, error)
+
+    const result = await sendToPeer(base(target.url))
 
     expect(result).toMatchObject({ ok: false, code: 'forbidden', retryable: false })
   })
