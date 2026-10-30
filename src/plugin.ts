@@ -13,6 +13,9 @@ import { DEFAULT_SENT_AT_WINDOW_MS } from './p2p-protocol.js'
 import type { PeerTarget } from './p2p-send.js'
 import { DEFAULT_LOOP_IDLE_RESET_MS, DEFAULT_LOOP_MAX_TURNS, InboundGate } from './inbound-gate.js'
 import type { PolicyConfig } from './policy-config.js'
+import type { PipelineNodeSpec } from './pipeline-config.js'
+import type { PipelineLayer, PipelineScopes } from './pipeline-scopes.js'
+import { resolveAndCheck } from './pipeline-scopes.js'
 import { compilePolicy } from './policy-config.js'
 import { buildPipeline } from './build-pipeline.js'
 import { createLedger } from './budget-config.js'
@@ -62,16 +65,43 @@ export interface AdapterConfig extends ListenerConfig {
   /** Runs every peer turn in this existing session instead of one created per peer. */
   session?: string
   policy: PolicySettings
+  pipeline?: PipelineLayer | undefined
   dedupe?: { ttlMs?: number; limit?: number }
   status?: boolean
 }
 
 export interface ChannelConfig {
   adapters: AdapterConfig[]
+  pipeline: { global: PipelineNodeSpec[] }
 }
+
+const nodeSpecSchema = Schema.object({
+  id: Schema.string().required(),
+  type: Schema.string().required(),
+  restrictSkip: Schema.any(),
+  mayRestrict: Schema.boolean(),
+  softLimit: Schema.number(),
+})
+
+const layerSchema = Schema.object({
+  inherit: Schema.string(),
+  remove: Schema.array(Schema.string()).default([]),
+  insert: Schema.array(
+    Schema.object({
+      id: Schema.string().required(),
+      type: Schema.string().required(),
+      after: Schema.string(),
+      before: Schema.string(),
+    }),
+  ).default([]),
+  override: Schema.dict(Schema.any()).default({}),
+})
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export const Config: any = Schema.object({
+  pipeline: Schema.object({
+    global: Schema.array(nodeSpecSchema).default([]),
+  }).default({}),
   adapters: Schema
     .array(
       Schema.object({
@@ -108,6 +138,7 @@ export const Config: any = Schema.object({
             hardLimit: Schema.number(),
           }).default(undefined as never),
         }).default({}),
+        pipeline: (layerSchema as any).default(undefined),
         inflightTtlMs: Schema.number().default(300_000),
         sentAtWindowMs: Schema.number().default(DEFAULT_SENT_AT_WINDOW_MS),
         maxBodyBytes: Schema.number().default(64 * 1024),
@@ -189,9 +220,53 @@ function prepareAdapter(adapter: AdapterConfig, index: number): DedupeTable {
   })
 }
 
+function stable(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right))
+    return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${stable(item)}`).join(',')}}`
+  }
+  return JSON.stringify(value) ?? 'undefined'
+}
+
+/** Refuses a pipeline that cannot load, and reports the ones that only look wrong. */
+export function checkPipelineScopes(config: ChannelConfig, warn: (message: string) => void): void {
+  const layers = new Map<string, PipelineLayer>()
+  for (const adapter of config.adapters) {
+    const layer = adapter.pipeline
+    if (layer === undefined) continue
+    const seen = layers.get(adapter.botName)
+    if (seen === undefined) {
+      layers.set(adapter.botName, layer)
+      continue
+    }
+    if (stable(seen) !== stable(layer)) {
+      throw new ConfigError(
+        `two adapters answer for bot "${adapter.botName}" with different pipeline layers; one bot runs one pipeline`,
+        ['adapters'],
+      )
+    }
+  }
+  const scopes: PipelineScopes[] =
+    layers.size === 0
+      ? [{ global: config.pipeline.global }]
+      : [...layers.values()].map((bot) => ({ global: config.pipeline.global, bot }))
+  const fatal: string[] = []
+  const warnings = new Set<string>()
+  for (const one of scopes) {
+    const report = resolveAndCheck(one)
+    fatal.push(...report.layer.fatal, ...report.pipeline.fatal)
+    for (const warning of [...report.layer.warnings, ...report.pipeline.warnings]) warnings.add(warning)
+  }
+  if (fatal.length > 0) throw new ConfigError(`the pipeline cannot load: ${fatal.join('; ')}`, ['pipeline'])
+  for (const warning of warnings) warn(`dsbot-channel: pipeline warning: ${warning}`)
+}
+
 /** Starts only the adapters the profile declares; an empty list starts nothing. */
 export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const config = validateConfig<ChannelConfig>(Config, raw)
+  const warn = createWarn(ctx)
+  checkPipelineScopes(config, warn)
   if (config.adapters.length === 0) return
   const credentials = ctx.get('credentials') as CredentialsLike | undefined
   if (!credentials?.resolve) {
@@ -222,7 +297,6 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   }
   const observe = (listener: (sessionId: string, event: SessionEventLike) => void): (() => void) =>
     ctx.on('session/event', (session, event) => listener(session.id, event as unknown as SessionEventLike))
-  const warn = createWarn(ctx)
   const registry = new StatusRegistry()
   const sources = new Map<string, PushSource>()
   const statsByChannel = new Map<string, ChannelStats>()
