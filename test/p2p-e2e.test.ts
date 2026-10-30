@@ -458,7 +458,7 @@ describe('the send_text tool', () => {
   test('a peer link registers the text tool and the two ways to close a chain', async () => {
     const { tools } = await mountPair()
 
-    expect(tools.map((tool) => tool.name)).toEqual(['send_text', 'end', 'decline'])
+    expect(tools.map((tool) => tool.name)).toEqual(['send_text', 'no_reply', 'decline'])
   })
 
   test('a push with no arguments answers the peer that just messaged this session', async () => {
@@ -504,8 +504,8 @@ describe('closing a peer conversation', () => {
   }
 
   async function mount(
-    first: 'end' | 'decline' | 'none',
-    later: 'end' | 'decline' | 'none' = first,
+    first: 'no_reply' | 'decline' | 'none',
+    later: 'no_reply' | 'decline' | 'none' = first,
     host?: string,
   ): Promise<Mounted> {
     const posts: Captured[] = []
@@ -590,8 +590,8 @@ describe('closing a peer conversation', () => {
     return { posts, prompted, port, close: () => capture.close() }
   }
 
-  test('end leaves the peer with nothing at all', async () => {
-    const mounted = await mount('end')
+  test('no_reply leaves the peer with nothing at all', async () => {
+    const mounted = await mount('no_reply')
     try {
       await send(mounted.port, 'evt-1', 'hello')
       await waitFor(() => mounted.prompted.length === 1)
@@ -677,8 +677,8 @@ describe('closing a peer conversation', () => {
       await send(mounted.port, 'evt-2', 'second')
       await waitFor(() => mounted.prompted.length === 2)
 
-      expect(mounted.prompted[0]).toContain('call end')
-      expect(mounted.prompted[1]).not.toContain('call end')
+      expect(mounted.prompted[0]).toContain('call no_reply')
+      expect(mounted.prompted[1]).not.toContain('call no_reply')
     } finally {
       mounted.close()
     }
@@ -931,6 +931,68 @@ describe('a turn that already pushed with send_text', () => {
       expect(mounted.posted[0]?.eventId?.startsWith('push:')).toBe(true)
     } finally {
       mounted.close()
+    }
+  })
+})
+
+describe('a turn that answers with nothing', () => {
+  test('is recorded as an anomaly instead of passing for a normal end', async () => {
+    const posted: unknown[] = []
+    const capture = createServer((request, response) => {
+      request.on('data', () => undefined)
+      request.on('end', () => {
+        posted.push(1)
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({ duplicate: false, messageId: 'p2p-x' }))
+      })
+    })
+    await new Promise<void>((resolve) => capture.listen(0, '127.0.0.1', resolve))
+    const capturePort = (capture.address() as AddressInfo).port
+
+    const port = await freePort()
+    const ctx = new Context()
+    captureWarnings(ctx)
+    const controller = {
+      create(): Promise<{ sessionId: string }> {
+        return Promise.resolve({ sessionId: 'session-main' })
+      },
+      async prompt(request: { sessionId: string }): Promise<{ accepted: boolean }> {
+        const emit = (event: unknown): void => {
+          ctx.emit('session/event', { id: request.sessionId } as never, event as never)
+        }
+        emit({ type: 'turn/start' })
+        emit({ type: 'turn/end' })
+        return { accepted: true }
+      },
+    }
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', controller)
+      },
+    })
+    const fork = await ctx.plugin(entry, {
+      adapters: [
+        {
+          channel: 'p2p:b',
+          instance: 'inst-b',
+          botName: 'bot-b',
+          peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}` }],
+          listen: { host: '127.0.0.1', port },
+        },
+      ],
+    })
+    forks.push(fork)
+    try {
+      await send(port, 'evt-1', 'hello')
+      await waitFor(() => warnings.some((line) => line.includes('no text and no tool call')))
+      await new Promise((resolve) => setTimeout(resolve, 40))
+      expect(posted).toHaveLength(0)
+    } finally {
+      capture.close()
     }
   })
 })

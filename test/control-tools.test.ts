@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { createDeclineTool, createEndTool } from '../src/control-tools.js'
+import { createDeclineTool, createNoReplyTool } from '../src/control-tools.js'
 import type { ControlPorts, PeerTurnRef } from '../src/control-tools.js'
 
 function harness(options: { declined?: { ok: boolean; code?: string; reason?: string } } = {}) {
@@ -30,11 +30,11 @@ function harness(options: { declined?: { ok: boolean; code?: string; reason?: st
   return { turn, closed, declined, concluded, ports, exec }
 }
 
-describe('end', () => {
+describe('no_reply', () => {
   test('closes the chain, keeps the turn silent and concludes it', async () => {
     const { turn, closed, concluded, ports, exec } = harness()
 
-    const raw = await createEndTool(ports).execute({}, exec('session-1'))
+    const raw = await createNoReplyTool(ports).execute({}, exec('session-1'))
 
     expect(JSON.parse(String(raw))).toEqual({ ok: true, closed: true })
     expect(closed).toEqual(['probe-1'])
@@ -45,7 +45,7 @@ describe('end', () => {
   test('is refused outside a peer turn, so a group turn cannot close a chain', async () => {
     const { ports, exec } = harness()
 
-    await expect(createEndTool(ports).execute({}, exec('group-session'))).rejects.toThrow(
+    await expect(createNoReplyTool(ports).execute({}, exec('group-session'))).rejects.toThrow(
       'this tool is only available while answering a peer message',
     )
   })

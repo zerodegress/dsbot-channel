@@ -4,7 +4,7 @@ import { GROUP_GUIDANCE, InjectionLedger, PEER_GUIDANCE, guidanceFor } from '../
 describe('what a session is told about answering', () => {
   test('a peer link is told to answer, or to end or decline', () => {
     expect(guidanceFor('p2p')).toBe(PEER_GUIDANCE)
-    expect(PEER_GUIDANCE).toContain('end')
+    expect(PEER_GUIDANCE).toContain('no_reply')
     expect(PEER_GUIDANCE).toContain('decline')
   })
 
