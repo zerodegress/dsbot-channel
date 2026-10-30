@@ -56,7 +56,7 @@ const base = (url: string) => ({
 
 async function capture(
   status = 200,
-  error = 'forbidden',
+  error: unknown = 'forbidden',
 ): Promise<{ url: string; seen: () => { body: string; headers: Record<string, unknown> } }> {
   let seen: { body: string; headers: Record<string, unknown> } = { body: '', headers: {} }
   const server = createServer((request, response) => {
@@ -163,6 +163,16 @@ describe('a peer that writes its own error text', () => {
     expect(reason.includes('\n')).toBe(false)
     expect(Array.from(reason)).toHaveLength(PEER_TEXT_MAX)
     expect(reason.startsWith('nope dsbot-channel: reply to seal was not delivered: fake')).toBe(true)
+  })
+})
+
+describe('a peer that answers with something other than text', () => {
+  test.each([[123], [{ a: 1 }], [null]])('keeps the failure typed instead of throwing: %s', async (error) => {
+    const target = await capture(403, error)
+
+    const result = await sendToPeer(base(target.url))
+
+    expect(result).toMatchObject({ ok: false, code: 'forbidden', retryable: false })
   })
 })
 
