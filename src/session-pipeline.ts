@@ -8,6 +8,8 @@ import { resolveAndCheck, resolvePipeline } from './pipeline-scopes.js'
 export const SESSION_KEY = /^(p2p|group|peer):.+$/
 
 const P2P_PREFIX = 'p2p:'
+const LAYER_FIELDS: readonly string[] = ['inherit', 'remove', 'insert', 'override']
+const INSERT_FIELDS: readonly string[] = ['id', 'type', 'after', 'before']
 
 /** What the host knows about one bot: its profile layer, the rules it can match, and the peers it addresses. */
 export interface BotScope {
@@ -22,6 +24,24 @@ export interface SessionPipelineOptions {
   global: readonly PipelineNodeSpec[]
   /** One entry per bot the profile answers for, keyed by the name its adapters report. */
   bots: ReadonlyMap<string, BotScope>
+}
+
+/** Refuses a field nothing reads, so a layer built as plain data cannot write it and see nothing happen. */
+function checkShape(layer: PipelineLayer): void {
+  const unknown = Object.keys(layer).filter((key) => !LAYER_FIELDS.includes(key))
+  if (unknown.length > 0) {
+    throw new ConfigError(`a session layer names a field no layer has: ${quote(unknown)}`, ['pipeline'])
+  }
+  for (const spec of layer.insert ?? []) {
+    const extra = Object.keys(spec).filter((key) => !INSERT_FIELDS.includes(key))
+    if (extra.length > 0) {
+      throw new ConfigError(`insert "${spec.id}" names a field no insert has: ${quote(extra)}`, ['pipeline'])
+    }
+  }
+}
+
+function quote(fields: readonly string[]): string {
+  return fields.map((field) => `"${field}"`).join(', ')
 }
 
 function copyLayer(layer: PipelineLayer): PipelineLayer {
@@ -51,6 +71,7 @@ export class SessionPipelines {
     const bot = this.#bot(botName)
     this.#checkKey(key)
     this.#checkPeer(botName, bot, key)
+    checkShape(layer)
     const held = copyLayer(layer)
     this.#check(bot, held)
     const sessions = this.#layers.get(botName) ?? new Map<string, PipelineLayer>()
@@ -76,10 +97,6 @@ export class SessionPipelines {
       ...(bot.layer === undefined ? {} : { bot: bot.layer }),
       ...(session === undefined ? {} : { session }),
     }).nodes
-  }
-
-  keysFor(botName: string): string[] {
-    return [...(this.#layers.get(botName)?.keys() ?? [])]
   }
 
   #bot(botName: string): BotScope {

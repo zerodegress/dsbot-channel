@@ -107,7 +107,7 @@ describe('a session declares what it runs at run time', () => {
     sessions.forSession('orca', 'group:123', { remove: ['judge'] })
 
     expect(ids(sessions.pipelineFor('orca', 'group:123'))).not.toContain('judge')
-    expect(sessions.keysFor('orca')).toEqual(['group:123'])
+    expect(ids(sessions.pipelineFor('orca'))).toContain('judge')
   })
 
   test('forgetting a session puts it back on the bot pipeline', () => {
@@ -115,8 +115,7 @@ describe('a session declares what it runs at run time', () => {
     sessions.forSession('orca', 'peer:u1', { remove: ['score'] })
     sessions.forgetSession('orca', 'peer:u1')
 
-    expect(ids(sessions.pipelineFor('orca', 'peer:u1'))).toContain('score')
-    expect(sessions.keysFor('orca')).toEqual([])
+    expect(ids(sessions.pipelineFor('orca', 'peer:u1'))).toEqual(ids(sessions.pipelineFor('orca')))
   })
 
   test('a layer the caller keeps and edits cannot reach the session', () => {
@@ -157,6 +156,14 @@ describe('the plugin offers the session API to its host', () => {
     expect(() =>
       api.forSession('bot-a', 'p2p:inst-b', { insert: [{ id: 'j', type: 'judge', after: 'noise' }] }),
     ).toThrow(/a judge node needs a model call this version does not supply/)
+  })
+
+  test('a misspelt layer field is refused through the mounted API too', async () => {
+    const api = await mount()
+
+    expect(() => api.forSession('bot-a', 'p2p:inst-b', { insertt: [] } as never)).toThrow(
+      /a session layer names a field no layer has: "insertt"/,
+    )
   })
 
   test('a rule node with no rule behind it is refused at the call', async () => {
@@ -219,7 +226,28 @@ describe('a session layer that could never run is refused', () => {
     sessions.forSession('orca', 'group:not-a-real-group', {})
     sessions.forSession('orca', 'peer:openid-1', {})
 
-    expect(sessions.keysFor('orca')).toEqual(['group:not-a-real-group', 'peer:openid-1'])
+    expect(ids(sessions.pipelineFor('orca', 'group:not-a-real-group'))).toContain('noise')
+    expect(ids(sessions.pipelineFor('orca', 'peer:openid-1'))).toContain('noise')
+  })
+
+  test('a field no layer has is refused instead of being dropped', () => {
+    const sessions = harness()
+
+    for (const layer of [{ insertt: [] }, { reomve: [] }, { inherit: 'bot', extra: 1 }]) {
+      expect(() => sessions.forSession('orca', 'group:1', layer as PipelineLayer)).toThrow(
+        /a session layer names a field no layer has/,
+      )
+    }
+  })
+
+  test('a field no insert has is refused instead of being dropped', () => {
+    const sessions = harness()
+
+    expect(() =>
+      sessions.forSession('orca', 'group:1', {
+        insert: [{ id: 'x', type: 'allow', after: 'allow', bogus: 1 } as never],
+      }),
+    ).toThrow(/insert "x" names a field no insert has: "bogus"/)
   })
 
   test('a difference that cannot be applied is refused', () => {
