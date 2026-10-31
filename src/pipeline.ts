@@ -81,7 +81,7 @@ export interface PipelineResult {
   dropped?: 'timeout'
 }
 
-const DEFAULT_MAX_TURN_MS = 120_000
+export const DEFAULT_MAX_TURN_MS = 120_000
 
 class TurnTimeout extends Error {}
 

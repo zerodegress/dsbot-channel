@@ -1,6 +1,7 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import { buildPipeline, BuildError } from '../src/build-pipeline.js'
 import type { PipelineDeps } from '../src/build-pipeline.js'
+import { DEFAULT_PIPELINE } from '../src/pipeline-config.js'
 
 const event = { eventKey: 'peer-a:m1', scope: 'p2p' as const, mentioned: false, text: 'hello' }
 
@@ -150,5 +151,38 @@ describe('the budget node reports what the ledger says', () => {
       budget: () => ({ state: 'normal', triggeredBy: [] }),
     })
     expect((await pipeline.run(event)).decision).toBe('allow')
+  })
+})
+
+describe('the options a host passes', () => {
+  const hung = (): PipelineDeps => ({ judge: () => new Promise(() => {}) })
+
+  test('maxTurnMs decides when the turn is dropped', async () => {
+    const pipeline = buildPipeline([{ id: 'j', type: 'judge' }], hung(), { maxTurnMs: 20 })
+    const result = await pipeline.run(event)
+    expect(result.dropped).toBe('timeout')
+    expect(result.decision).toBe('deny')
+  })
+
+  test('judgeTimeoutMs ends a judge before the turn ceiling', async () => {
+    const started = Date.now()
+    const pipeline = buildPipeline([{ id: 'j', type: 'judge' }], hung(), { maxTurnMs: 60_000, judgeTimeoutMs: 20 })
+    expect((await pipeline.run(event)).dropped).toBe('timeout')
+    expect(Date.now() - started).toBeLessThan(1_000)
+  })
+
+  test('DEFAULT_PIPELINE is the fallback when a host passes no options', async () => {
+    vi.useFakeTimers()
+    try {
+      const pipeline = buildPipeline([{ id: 'j', type: 'judge' }], hung())
+      const running = pipeline.run(event)
+      await vi.advanceTimersByTimeAsync(DEFAULT_PIPELINE.judgeTimeoutMs - 1)
+      const stillWaiting = await Promise.race([running.then(() => 'finished'), Promise.resolve('pending')])
+      expect(stillWaiting).toBe('pending')
+      await vi.advanceTimersByTimeAsync(1)
+      expect((await running).dropped).toBe('timeout')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

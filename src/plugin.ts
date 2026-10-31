@@ -13,7 +13,8 @@ import { DEFAULT_SENT_AT_WINDOW_MS } from './p2p-protocol.js'
 import type { PeerTarget } from './p2p-send.js'
 import { DEFAULT_LOOP_IDLE_RESET_MS, DEFAULT_LOOP_MAX_TURNS, InboundGate } from './inbound-gate.js'
 import type { PolicyConfig } from './policy-config.js'
-import type { PipelineNodeSpec } from './pipeline-config.js'
+import type { PipelineNodeSpec, PipelineSettings } from './pipeline-config.js'
+import { DEFAULT_PIPELINE } from './pipeline-config.js'
 import type { PipelineLayer, PipelineScopes } from './pipeline-scopes.js'
 import { resolveAndCheck, resolvePipeline } from './pipeline-scopes.js'
 import { compilePolicy } from './policy-config.js'
@@ -36,9 +37,6 @@ import { ClosedChains } from './chain-closer.js'
 import { InjectionLedger, guidanceFor } from './inbound-guidance.js'
 import { createDeclineTool, createNoReplyTool } from './control-tools.js'
 import type { ControlPorts, PeerTurnRef } from './control-tools.js'
-
-/** Turn ceiling a message may occupy before it is dropped. */
-export const MAX_TURN_MS = 120_000
 
 /** One place that turns a configured peer into a send target, so a new field reaches every path. */
 function targetOf(peer: PeerRef): PeerTarget {
@@ -75,7 +73,7 @@ export interface AdapterConfig extends ListenerConfig {
 
 export interface ChannelConfig {
   adapters: AdapterConfig[]
-  pipeline: { global: PipelineNodeSpec[] }
+  pipeline: PipelineSettings & { global: PipelineNodeSpec[] }
 }
 
 const nodeSpecSchema = Schema.object({
@@ -104,6 +102,8 @@ const layerSchema = Schema.object({
 export const Config: any = Schema.object({
   pipeline: Schema.object({
     global: Schema.array(nodeSpecSchema).default([]),
+    maxTurnMs: Schema.number().default(DEFAULT_PIPELINE.maxTurnMs),
+    judgeTimeoutMs: Schema.number().default(DEFAULT_PIPELINE.judgeTimeoutMs),
   }).default({}),
   adapters: Schema
     .array(
@@ -162,7 +162,7 @@ export const Config: any = Schema.object({
 })
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-function prepareAdapter(adapter: AdapterConfig, index: number): DedupeTable {
+function prepareAdapter(adapter: AdapterConfig, index: number, maxTurnMs: number): DedupeTable {
   const path = (field: string): string[] => ['adapters', String(index), field]
   assertBindHost(adapter.listen.host ?? DEFAULT_HOST, path('listen'))
   const { relayLimit, relayResetMs } = adapter.policy
@@ -209,9 +209,9 @@ function prepareAdapter(adapter: AdapterConfig, index: number): DedupeTable {
       path('sentAtWindowMs'),
     )
   }
-  if (adapter.inflightTtlMs <= MAX_TURN_MS) {
+  if (adapter.inflightTtlMs <= maxTurnMs) {
     throw new ConfigError(
-      `inflightTtlMs must exceed maxTurnMs: ${adapter.inflightTtlMs} <= ${MAX_TURN_MS}`,
+      `inflightTtlMs must exceed maxTurnMs: ${adapter.inflightTtlMs} <= ${maxTurnMs}`,
       path('inflightTtlMs'),
     )
   }
@@ -219,7 +219,7 @@ function prepareAdapter(adapter: AdapterConfig, index: number): DedupeTable {
     ttlMs: adapter.dedupe?.ttlMs ?? 7 * 24 * 60 * 60 * 1000,
     limit: adapter.dedupe?.limit ?? 100_000,
     inflightTtlMs: adapter.inflightTtlMs,
-    maxTurnMs: MAX_TURN_MS,
+    maxTurnMs,
   })
 }
 
@@ -240,6 +240,25 @@ function declaredNodes(config: ChannelConfig, adapter: AdapterConfig): PipelineN
     ...(adapter.pipeline === undefined ? {} : { bot: adapter.pipeline }),
   }
   return resolvePipeline(scopes).nodes
+}
+
+/** Refuses a turn timing no pipeline can run with. */
+export function checkPipelineSettings(settings: PipelineSettings): void {
+  for (const field of ['maxTurnMs', 'judgeTimeoutMs'] as const) {
+    const value = settings[field]
+    if (!Number.isInteger(value) || value < 1) {
+      throw new ConfigError(
+        `${field} must be a whole number of milliseconds, at least 1: ${value}`,
+        ['pipeline', field],
+      )
+    }
+  }
+  if (settings.judgeTimeoutMs > settings.maxTurnMs) {
+    throw new ConfigError(
+      `judgeTimeoutMs must not exceed maxTurnMs: ${settings.judgeTimeoutMs} > ${settings.maxTurnMs}`,
+      ['pipeline', 'judgeTimeoutMs'],
+    )
+  }
 }
 
 /** Refuses a pipeline that cannot load, and reports the ones that only look wrong. */
@@ -332,6 +351,8 @@ function botScopes(config: ChannelConfig, warn: (message: string) => void): Map<
 export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const config = validateConfig<ChannelConfig>(Config, raw)
   const warn = createWarn(ctx)
+  const settings: PipelineSettings = { maxTurnMs: config.pipeline.maxTurnMs, judgeTimeoutMs: config.pipeline.judgeTimeoutMs }
+  checkPipelineSettings(settings)
   checkPipelineScopes(config, warn)
   const pipelines = new SessionPipelines({ bots: botScopes(config, warn) })
   ctx.provide('dsbot-channel.pipeline')
@@ -356,7 +377,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
       ])
     }
     seen.add(adapter.channel)
-    return { adapter, index, table: prepareAdapter(adapter, index) }
+    return { adapter, index, table: prepareAdapter(adapter, index, settings.maxTurnMs) }
   })
   for (const { adapter, index } of pairs) {
     if (adapter.peers.length === 0) {
@@ -409,7 +430,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
           const sessionId = await sessions.sessionFor(request.instance)
           sources.set(sessionId, { channel: adapter.channel, peer: request.instance })
           const specs = pipelines.pipelineFor(adapter.botName, `p2p:${request.instance}`)
-          const pipeline = specs.length > 0 ? buildPipeline(specs, compiled.deps) : undefined
+          const pipeline = specs.length > 0 ? buildPipeline(specs, compiled.deps, settings) : undefined
           const decision = await gate.admit({
             event: {
               eventKey: event.meta.derived.eventKey,
