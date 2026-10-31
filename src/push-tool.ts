@@ -1,5 +1,5 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { SendFailureCode, SendResult } from './adapters/p2p/p2p-send.js'
+import type { SendFailureCode, SendResult } from './contract.js'
 
 export const PUSH_WINDOW_MS = 10 * 60 * 1000
 export const PUSH_SCOPES = ['c2c', 'group', 'p2p'] as const

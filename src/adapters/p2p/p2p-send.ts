@@ -5,10 +5,10 @@ import { SecretRefError, resolvePeers } from './p2p-secrets.js'
 import type { CredentialsLike, PeerRef } from './p2p-secrets.js'
 import { P2P_ROUTE } from './p2p-protocol.js'
 import { oneLine } from './p2p-mapping.js'
+import type { SendFailure, SendFailureCode, SendResult } from '../../contract.js'
+export type { SendFailure, SendFailureCode, SendResult, SendSuccess } from '../../contract.js'
 
 export const DEFAULT_SEND_TIMEOUT_MS = 10_000
-
-export type SendFailureCode = 'no_url' | 'credential' | 'unreachable' | 'timeout' | 'unauthorized' | 'forbidden' | 'busy' | 'rejected'
 
 export interface PeerTarget extends PeerRef {
   url?: string
@@ -37,21 +37,6 @@ export interface P2PSendInput {
   inReplyTo?: string
   inReplyToExcerpt?: string
 }
-
-export interface SendSuccess {
-  ok: true
-  messageId: string
-  duplicate: boolean
-}
-
-export interface SendFailure {
-  ok: false
-  code: SendFailureCode
-  retryable: boolean
-  reason: string
-}
-
-export type SendResult = SendSuccess | SendFailure
 
 function failure(code: SendFailureCode, retryable: boolean, reason: string): SendFailure {
   return { ok: false, code, retryable, reason }

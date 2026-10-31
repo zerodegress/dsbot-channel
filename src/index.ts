@@ -21,6 +21,7 @@ export { buildEvent, chargeKey, dedupeKeyFor, replyIdempotencyKey, unstableDedup
 export { ConfigError, WILDCARD_HOSTS, assertBindHost, strict, validateConfig } from './config.js'
 export { INBOUND_REJECTIONS, REPLY_TARGET_MAX, SESSION_KEY_MAX, tokenProblem } from './contract.js'
 export type {
+  AdapterCheckSettings,
   AdapterHandle,
   AdapterPorts,
   ChannelAdapter,

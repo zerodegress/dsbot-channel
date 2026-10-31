@@ -18,7 +18,8 @@ export interface InboundMessage {
   sessionKey: string
   /** The address of the conversation this message came from; core never parses it. */
   replyTarget: string
-  chainId: string
+  /** Required from #89; the field is here so one message type serves both batches. */
+  chainId?: string | undefined
   source: Source
   author: Author
   body: Body
@@ -59,6 +60,8 @@ export type SendResult = SendSuccess | SendFailure
 export interface SendInput {
   /** The adapter's own address for the recipient; core never parses it. */
   target: string
+  /** The bot identity the message is addressed to; an adapter may ignore it. */
+  to?: string | undefined
   eventId: string
   chainId?: string | undefined
   inReplyTo?: string | undefined
@@ -82,12 +85,21 @@ export interface AdapterHandle {
   stop(): Promise<void>
 }
 
+export interface AdapterCheckSettings {
+  /** The turn ceiling core enforces, so an adapter can size its own in-flight window above it. */
+  maxTurnMs: number
+}
+
 export interface ChannelAdapter {
   kind: string
   /** Checks what the transport needs at mount time and throws ConfigError on a bad profile. */
-  checkConfig(): void
+  checkConfig(settings: AdapterCheckSettings): void
   /** Returns why a session key is unusable, or undefined when it is; core never parses the key. */
   checkSessionKey(key: string): string | undefined
+  /** Returns why an explicitly named target is unusable, or undefined when it is. */
+  checkTarget(target: string): string | undefined
+  /** One line naming the addresses this adapter accepts, for an error message. */
+  describeTargets(): string
   guidance: { peer: string; group: string }
   status(): AdapterStatus
   send(input: SendInput): Promise<SendResult>
