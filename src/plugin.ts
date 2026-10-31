@@ -30,6 +30,7 @@ import type { PushSource, SendTextTool } from './push-tool.js'
 import type { BotScope } from './session-pipeline.js'
 import { SessionPipelines } from './session-pipeline.js'
 import { TurnBilling } from './turn-billing.js'
+import { TurnStats } from './turn-stats.js'
 import { createWarn } from './warn.js'
 
 export interface PolicySettings extends PolicyConfig {
@@ -393,6 +394,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const injected = new InjectionLedger()
   const activeTurns = new Map<string, PeerTurnRef>()
   const eventKeys = new KeyGuard()
+  const turns = new TurnStats()
   const resolveSecret = async (reference: string): Promise<string | undefined> => {
     const found = await credentials.resolve?.(reference)
     return found?.value
@@ -409,6 +411,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
       pushed: false,
     }
     activeTurns.set(sessionId, turnRef)
+    turns.started()
     let hold: Hold | undefined
     try {
       hold = runtime.billing.begin(adapter.botName, message.replyTarget, sessionId, message.eventKey)
@@ -421,17 +424,20 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         text: guidance.length === 0 ? message.body.text : `${guidance}\n\n${message.body.text}`,
       })
       if (turnRef.suppressed) {
+        turns.suppressed()
         runtime.billing.refund(hold)
         hold = undefined
         return
       }
       if (turnRef.pushed) {
+        turns.pushed()
         runtime.billing.accept(hold)
         hold = undefined
         return
       }
       if (turn.text.length === 0) {
         warn(`dsbot-channel: the turn for ${message.requestId} from ${message.replyTarget} ended with no text and no tool call`)
+        turns.empty()
         runtime.billing.reject(hold)
         hold = undefined
         return
@@ -447,11 +453,13 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         inReplyToText: message.rawText,
       })
       if (sent.ok) {
+        turns.replied()
         runtime.gate.recordReply(adapter.botName, message.replyTarget)
         runtime.billing.accept(hold)
         hold = undefined
         return
       }
+      turns.sendFailed(sent.code)
       runtime.billing.reject(hold)
       hold = undefined
       warn(`dsbot-channel: reply to ${message.replyTarget} was not delivered: ${sent.code} ${sent.reason}`)
@@ -535,6 +543,8 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   ctx.set('dsbot-channel.status', {
     snapshot: () => ({ sampledAt: Date.now(), adapters: [...reporting].map((adapter) => adapter.status()) }),
   })
+  ctx.provide('dsbot-channel.turns')
+  ctx.set('dsbot-channel.turns', { snapshot: () => turns.snapshot() })
   ctx.provide('dsbot-channel.peers')
   ctx.set('dsbot-channel.peers', started)
   type AnyTool = SendTextTool | ReturnType<typeof createNoReplyTool> | ReturnType<typeof createDeclineTool>

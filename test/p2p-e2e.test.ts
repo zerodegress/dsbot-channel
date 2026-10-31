@@ -1408,6 +1408,9 @@ p2p: {
       instance: 'inst-b',
     })
     await waitFor(() => warnings.some((line) => line.includes('no text and no tool call')))
+
+    const turns = ctx.get('dsbot-channel.turns') as { snapshot(): { empty: number; started: number } }
+    expect(turns.snapshot()).toMatchObject({ started: 1, empty: 1 })
   })
 
   test('a failed push is counted by the code the send layer reported', async () => {
