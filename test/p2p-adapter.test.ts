@@ -156,6 +156,25 @@ describe('the p2p adapter carries a message through the contract', () => {
   })
 })
 
+describe('the event key the adapter builds', () => {
+  const adapter = new P2PAdapter(config(7123))
+
+  test('does not depend on the chain root', () => {
+    const base = {
+      eventId: 'evt-key-1',
+      to: 'bot-b',
+      sender: 'bot-a',
+      instance: 'inst-a',
+      body: 'hello',
+      sentAt: 1_700_000_000_000,
+    }
+    const first = adapter.toInbound({ ...base, chainId: 'evt-key-1' })
+    const second = adapter.toInbound({ ...base, chainId: 'some-other-root' })
+    expect(second.eventKey).toBe(first.eventKey)
+    expect(second.chainId).toBe('some-other-root')
+  })
+})
+
 describe('the p2p adapter sends through its own addressing', () => {
   test('a send reaches the configured peer url with the contract fields', async () => {
     const posted: Record<string, unknown>[] = []
