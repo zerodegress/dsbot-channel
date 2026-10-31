@@ -18,7 +18,8 @@ import { DEFAULT_PIPELINE } from './pipeline-config.js'
 import type { PipelineLayer, PipelineScopes } from './pipeline-scopes.js'
 import { resolveAndCheck, resolvePipeline } from './pipeline-scopes.js'
 import { compilePolicy } from './policy-config.js'
-import { buildPipeline } from './build-pipeline.js'
+import { BuildError, buildPipeline } from './build-pipeline.js'
+import type { PipelineDeps } from './build-pipeline.js'
 import { createLedger } from './budget-config.js'
 import type { BudgetConfig } from './budget-config.js'
 import { TurnBilling } from './turn-billing.js'
@@ -322,8 +323,32 @@ export function checkPipelineScopes(config: ChannelConfig, warn: (message: strin
 }
 
 /** Collects what the host knows per bot: the pipeline it runs, the rules it can match, and the peers it addresses. */
-function botScopes(config: ChannelConfig, warn: (message: string) => void): Map<string, BotScope> {
-  const bots = new Map<string, BotScope>()
+interface BotFacts extends BotScope {
+  /** The dependencies the base pipeline is bound with, taken from the adapter that supplied it. */
+  deps: PipelineDeps
+}
+
+/** Refuses a profile whose adapters cannot bind the pipeline their bot runs; a boot must not defer this to the first message. */
+function assertBotsBind(config: ChannelConfig, bots: Map<string, BotFacts>): void {
+  for (const adapter of config.adapters) {
+    const facts = bots.get(adapter.botName)
+    if (facts === undefined) continue
+    try {
+      buildPipeline(facts.base, compilePolicy(adapter.policy).deps)
+    } catch (error) {
+      if (error instanceof BuildError) {
+        throw new ConfigError(
+          `adapter "${adapter.channel}" cannot bind the pipeline bot "${adapter.botName}" runs: ${error.message}`,
+          ['adapters'],
+        )
+      }
+      throw error
+    }
+  }
+}
+
+function botScopes(config: ChannelConfig, warn: (message: string) => void): Map<string, BotFacts> {
+  const bots = new Map<string, BotFacts>()
   for (const adapter of config.adapters) {
     const seen = bots.get(adapter.botName)
     const compiled = compilePolicy(adapter.policy)
@@ -332,7 +357,7 @@ function botScopes(config: ChannelConfig, warn: (message: string) => void): Map<
     const peers = adapter.peers.map((peer) => peer.instance)
     const base = declaredNodes(config, adapter) ?? compiled.specs
     if (seen === undefined) {
-      bots.set(adapter.botName, { base, denyRules: deny, allowRules: allow, peers })
+      bots.set(adapter.botName, { base, denyRules: deny, allowRules: allow, peers, deps: compiled.deps })
       continue
     }
     if (stable(seen.base) !== stable(base)) {
@@ -354,7 +379,9 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const settings: PipelineSettings = { maxTurnMs: config.pipeline.maxTurnMs, judgeTimeoutMs: config.pipeline.judgeTimeoutMs }
   checkPipelineSettings(settings)
   checkPipelineScopes(config, warn)
-  const pipelines = new SessionPipelines({ bots: botScopes(config, warn) })
+  const bots = botScopes(config, warn)
+  assertBotsBind(config, bots)
+  const pipelines = new SessionPipelines({ bots })
   ctx.provide('dsbot-channel.pipeline')
   ctx.set('dsbot-channel.pipeline', {
     forSession: (botName: string, key: string, layer: PipelineLayer) => pipelines.forSession(botName, key, layer),
@@ -430,7 +457,8 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
           const sessionId = await sessions.sessionFor(request.instance)
           sources.set(sessionId, { channel: adapter.channel, peer: request.instance })
           const specs = pipelines.pipelineFor(adapter.botName, `p2p:${request.instance}`)
-          const pipeline = specs.length > 0 ? buildPipeline(specs, compiled.deps, settings) : undefined
+          const deps = bots.get(adapter.botName)?.deps ?? compiled.deps
+          const pipeline = specs.length > 0 ? buildPipeline(specs, deps, settings) : undefined
           const decision = await gate.admit({
             event: {
               eventKey: event.meta.derived.eventKey,

@@ -28,6 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - A session layer declared at run time now decides what that session's next turn runs; before, it was stored, readable, and never consulted.
-- Turn timings reach the pipeline that runs them, instead of every pipeline falling back to built-in defaults.
+- A profile whose adapters answer for one bot with rules that cannot bind its pipeline is refused at load time, instead of silently dropping every message on one adapter.
 - Signature verification now covers `eventId`, `sentAt` and `body`, and signatures are base64-encoded as the wire protocol specifies.
 - Stale in-flight reservations are reclaimed after their TTL, so a crashed delivery no longer blocks the same `eventId`.
