@@ -333,12 +333,12 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const config = validateConfig<ChannelConfig>(Config, raw)
   const warn = createWarn(ctx)
   checkPipelineScopes(config, warn)
-  const sessions = new SessionPipelines({ bots: botScopes(config, warn) })
+  const pipelines = new SessionPipelines({ bots: botScopes(config, warn) })
   ctx.provide('dsbot-channel.pipeline')
   ctx.set('dsbot-channel.pipeline', {
-    forSession: (botName: string, key: string, layer: PipelineLayer) => sessions.forSession(botName, key, layer),
-    forgetSession: (botName: string, key: string) => sessions.forgetSession(botName, key),
-    pipelineFor: (botName: string, key?: string) => sessions.pipelineFor(botName, key),
+    forSession: (botName: string, key: string, layer: PipelineLayer) => pipelines.forSession(botName, key, layer),
+    forgetSession: (botName: string, key: string) => pipelines.forgetSession(botName, key),
+    pipelineFor: (botName: string, key?: string) => pipelines.pipelineFor(botName, key),
   })
   if (config.adapters.length === 0) return
   const credentials = ctx.get('credentials') as CredentialsLike | undefined
@@ -392,8 +392,6 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         snapshot: stats.snapshot(),
       }))
       const compiled = compilePolicy(adapter.policy)
-      const specs = declaredNodes(config, adapter) ?? compiled.specs
-      const pipeline = specs.length > 0 ? buildPipeline(specs, compiled.deps) : undefined
       const budget = adapter.policy.budget
       const ledger =
         budget === undefined
@@ -402,7 +400,6 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
       const billing = new TurnBilling({ ledger })
       const gate = new InboundGate({
         loop: { relayLimit: adapter.policy.relayLimit, relayResetMs: adapter.policy.relayResetMs },
-        pipeline,
         ledger,
       })
       const handOff = (request: InboundRequest): void => {
@@ -411,6 +408,8 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         const reply = async (): Promise<void> => {
           const sessionId = await sessions.sessionFor(request.instance)
           sources.set(sessionId, { channel: adapter.channel, peer: request.instance })
+          const specs = pipelines.pipelineFor(adapter.botName, `p2p:${request.instance}`)
+          const pipeline = specs.length > 0 ? buildPipeline(specs, compiled.deps) : undefined
           const decision = await gate.admit({
             event: {
               eventKey: event.meta.derived.eventKey,
@@ -422,6 +421,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
             peer: request.instance,
             botId: adapter.botName,
             session: sessionId,
+            ...(pipeline === undefined ? {} : { pipeline }),
           })
           if (!decision.allow) {
             const detail = decision.detail === undefined ? '' : ` (${decision.detail})`

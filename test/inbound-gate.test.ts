@@ -121,6 +121,14 @@ describe('the pipeline decides first when one is configured', () => {
     expect(decision).toMatchObject({ allow: false, reason: 'pipeline-restrict' })
   })
 
+  test('the pipeline a caller passes with the turn wins over the configured one', async () => {
+    const configured = new Pipeline([node('allow', { kind: 'allow', reason: 'configured' })])
+    const session = new Pipeline([node('deny', { kind: 'deny', reason: 'this session refuses' })])
+    const gate = new InboundGate({ pipeline: configured })
+    const decision = await gate.admit({ event, peer: 'peer-a', botId: 'bot', pipeline: session })
+    expect(decision).toMatchObject({ allow: false, reason: 'pipeline-deny', detail: 'this session refuses' })
+  })
+
   test('without a pipeline the event is allowed on its own', async () => {
     expect((await new InboundGate({}).admit({ event, peer: 'peer-a', botId: 'bot' })).reason).toBe('allowed')
   })

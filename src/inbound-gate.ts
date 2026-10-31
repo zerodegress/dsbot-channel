@@ -25,6 +25,8 @@ export interface AdmitInput {
   peer: string
   botId: string
   session?: string | undefined
+  /** The pipeline this turn runs, when the caller resolves one per session. */
+  pipeline?: Pipeline | undefined
 }
 
 export type GateReason = 'allowed' | 'loop-limit' | 'pipeline-deny' | 'pipeline-restrict' | 'budget-hard'
@@ -112,8 +114,9 @@ export class InboundGate {
       return { allow: false, reason: 'loop-limit', detail: `${this.roundsWith(botId, peer)} rounds with ${peer}`, limitState, triggeredBy }
     }
 
-    if (this.options.pipeline) {
-      const result = await this.options.pipeline.run(event)
+    const pipeline = input.pipeline ?? this.options.pipeline
+    if (pipeline) {
+      const result = await pipeline.run(event)
       if (result.decision !== 'allow') {
         const reason = result.restricted ? 'pipeline-restrict' : 'pipeline-deny'
         return { allow: false, reason, pipeline: result, limitState, triggeredBy, detail: Object.values(result.reasons)[0] }
