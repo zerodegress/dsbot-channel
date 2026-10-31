@@ -193,7 +193,38 @@ describe('two adapters in one process', () => {
           adapter('p2p:b', 'inst-b', 'inst-a', {}),
         ],
       }),
-    ).rejects.toThrow(/different pipelines or rules/)
+    ).rejects.toThrow(/different pipelines/)
+  })
+
+  test('refuses two adapters for one bot that declare the same shape with different rules', async () => {
+    const ctx = new Context()
+    captureWarnings(ctx)
+    const sessions = new StubSessions(ctx)
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', sessions)
+      },
+    })
+    const adapter = (channel: string, instance: string, peerInstance: string, words: string[]) => ({
+      channel,
+      instance,
+      botName: 'bot-shared',
+      peers: [{ instance: peerInstance, secret: REF }],
+      listen: { host: '127.0.0.1', port: 0 },
+      policy: { deny: { words } },
+    })
+    await expect(
+      ctx.plugin(entry, {
+        adapters: [
+          adapter('p2p:a', 'inst-a', 'inst-b', ['spam']),
+          adapter('p2p:b', 'inst-b', 'inst-a', ['viagra']),
+        ],
+      }),
+    ).rejects.toThrow(/different rules/)
   })
 
   test('a peer without a url comes back as no_url instead of silence', async () => {

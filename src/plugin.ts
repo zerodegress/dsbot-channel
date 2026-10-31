@@ -18,7 +18,7 @@ import { DEFAULT_PIPELINE } from './pipeline-config.js'
 import type { PipelineLayer, PipelineScopes } from './pipeline-scopes.js'
 import { resolveAndCheck, resolvePipeline } from './pipeline-scopes.js'
 import { compilePolicy } from './policy-config.js'
-import { BuildError, buildPipeline } from './build-pipeline.js'
+import { buildPipeline } from './build-pipeline.js'
 import type { PipelineDeps } from './build-pipeline.js'
 import { createLedger } from './budget-config.js'
 import type { BudgetConfig } from './budget-config.js'
@@ -328,25 +328,6 @@ interface BotFacts extends BotScope {
   deps: PipelineDeps
 }
 
-/** Refuses a profile whose adapters cannot bind the pipeline their bot runs; a boot must not defer this to the first message. */
-function assertBotsBind(config: ChannelConfig, bots: Map<string, BotFacts>): void {
-  for (const adapter of config.adapters) {
-    const facts = bots.get(adapter.botName)
-    if (facts === undefined) continue
-    try {
-      buildPipeline(facts.base, compilePolicy(adapter.policy).deps)
-    } catch (error) {
-      if (error instanceof BuildError) {
-        throw new ConfigError(
-          `adapter "${adapter.channel}" cannot bind the pipeline bot "${adapter.botName}" runs: ${error.message}`,
-          ['adapters'],
-        )
-      }
-      throw error
-    }
-  }
-}
-
 function botScopes(config: ChannelConfig): Map<string, BotFacts> {
   const bots = new Map<string, BotFacts>()
   for (const adapter of config.adapters) {
@@ -360,9 +341,15 @@ function botScopes(config: ChannelConfig): Map<string, BotFacts> {
       bots.set(adapter.botName, { base, denyRules: deny, allowRules: allow, peers, deps: compiled.deps })
       continue
     }
-    if (stable(seen.base) !== stable(base) || stable(seen.deps) !== stable(compiled.deps)) {
+    if (stable(seen.base) !== stable(base)) {
       throw new ConfigError(
-        `two adapters answer for bot "${adapter.botName}" with different pipelines or rules; a bot runs one pipeline`,
+        `two adapters answer for bot "${adapter.botName}" with different pipelines; one bot runs one pipeline`,
+        ['adapters'],
+      )
+    }
+    if (stable(seen.deps) !== stable(compiled.deps)) {
+      throw new ConfigError(
+        `two adapters answer for bot "${adapter.botName}" with different rules; one bot runs one pipeline`,
         ['adapters'],
       )
     }
@@ -381,7 +368,6 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   checkPipelineSettings(settings)
   checkPipelineScopes(config, warn)
   const bots = botScopes(config)
-  assertBotsBind(config, bots)
   const pipelines = new SessionPipelines({ bots })
   ctx.provide('dsbot-channel.pipeline')
   ctx.set('dsbot-channel.pipeline', {
