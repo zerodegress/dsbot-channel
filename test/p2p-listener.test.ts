@@ -8,7 +8,7 @@ import { P2P_ROUTE } from '../src/adapters/p2p/p2p-protocol.js'
 import { signEnvelope } from '../src/adapters/p2p/p2p-auth.js'
 import type { Envelope } from '../src/adapters/p2p/p2p-auth.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
-import type { InboundRequest } from '../src/adapters/p2p/p2p-inbound.js'
+import type { InboundRequest } from '../src/peer-sessions.js'
 
 const secret = 'peer-secret-1'
 const secretRef = 'PEER_SHARED_SECRET'

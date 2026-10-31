@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
-import { PeerSessions, TurnTimeoutError } from '../src/adapters/p2p/p2p-inbound.js'
-import type { PromptRequest, SessionControllerLike, SessionEventLike } from '../src/adapters/p2p/p2p-inbound.js'
+import { PeerSessions, TurnTimeoutError } from '../src/peer-sessions.js'
+import type { PromptRequest, SessionControllerLike, SessionEventLike } from '../src/peer-sessions.js'
 
 type Observer = (sessionId: string, event: SessionEventLike) => void
 

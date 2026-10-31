@@ -15,7 +15,7 @@ import type {
 import { REPLY_TARGET_MAX, SESSION_KEY_MAX, tokenProblem } from '../../contract.js'
 import { GROUP_GUIDANCE, PEER_GUIDANCE } from '../../inbound-guidance.js'
 import { DedupeTable } from './p2p-dedupe.js'
-import type { InboundRequest } from './p2p-inbound.js'
+import type { InboundRequest } from '../../peer-sessions.js'
 import { DEFAULT_HOST, DEFAULT_PORT, checkListenerConfig, startListener } from './p2p-listener.js'
 import { toP2PEvent } from './p2p-mapping.js'
 import { DEFAULT_SENT_AT_WINDOW_MS, MAX_BODY_BYTES } from './p2p-protocol.js'
