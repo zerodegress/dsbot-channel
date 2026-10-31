@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { adapterFactory } from './adapter-registry.js'
@@ -405,10 +406,11 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
     const { config: adapter, adapter: transport } = runtime.channel
     const turnRef: PeerTurnRef = {
       eventId: message.requestId,
+      chainId: message.chainId,
       channel: adapter.channel,
       target: message.replyTarget,
       sender: message.author.senderId,
-      suppressed: message.suppressed === true || chains.isClosed(message.requestId),
+      suppressed: message.suppressed === true || chains.isClosed(message.chainId),
       pushed: false,
     }
     activeTurns.set(sessionId, turnRef)
@@ -447,7 +449,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         target: message.replyTarget,
         to: message.author.senderId,
         body: turn.text,
-        eventId: `reply:${message.requestId}`,
+        eventId: `reply:${randomUUID()}`,
         chainId: message.chainId,
         sender: adapter.botName,
         instance: adapter.instance,

@@ -157,7 +157,7 @@ p2p: {
     expect(bodyOf(sessions.prompted[0]?.text ?? '').endsWith(' hello')).toBe(true)
     expect(bodyOf(sessions.prompted[0]?.text ?? '')).toBe(INCOMING)
     expect(sessions.prompted[0]?.requestId).toBe('evt-1')
-    expect(bodyOf(sessions.prompted[1]?.text ?? '').startsWith('[p2p from inst-b · bot-b · p2p-reply:evt-1] ')).toBe(true)
+    expect(bodyOf(sessions.prompted[1]?.text ?? '').startsWith('[p2p from inst-b · bot-b · p2p-reply:')).toBe(true)
     expect(bodyOf(sessions.prompted[1]?.text ?? '')).toContain(INCOMING)
 
     await waitFor(() => sessions.prompted.length === 2)
@@ -475,7 +475,7 @@ policy: {
   return { sessions, portB }
 }
 
-function send(port: number, eventId: string, body: string, sender = 'bot-a') {
+function send(port: number, eventId: string, body: string, sender = 'bot-a', chainId?: string) {
   return sendToPeer({
     peer: { instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${port}` },
     credentials,
@@ -484,6 +484,7 @@ function send(port: number, eventId: string, body: string, sender = 'bot-a') {
     eventId,
     sender,
     instance: 'inst-a',
+    ...(chainId === undefined ? {} : { chainId }),
   })
 }
 
@@ -762,7 +763,7 @@ p2p: {
       await waitFor(() => mounted.posts.length === 1)
       expect(mounted.posts[0]).toMatchObject({ status: 'declined', final: true, reason: 'no', body: '' })
 
-      await send(mounted.port, 'reply:evt-1', 'are you there')
+      await send(mounted.port, 'evt-2', 'are you there', 'bot-a', 'evt-1')
       await waitFor(() => mounted.prompted.length === 2)
       await new Promise((resolve) => setTimeout(resolve, 60))
       expect(mounted.posts).toHaveLength(1)
@@ -788,7 +789,7 @@ p2p: {
       await send(mounted.port, 'evt-1', 'hello')
       await waitFor(() => mounted.posts.length === 1)
 
-      await send(mounted.port, 'reply:evt-1', 'are you there')
+      await send(mounted.port, 'evt-2', 'are you there', 'bot-a', 'evt-1')
       await waitFor(() => mounted.prompted.length === 2)
       await new Promise((resolve) => setTimeout(resolve, 60))
       expect(mounted.posts).toHaveLength(1)
@@ -952,6 +953,7 @@ describe('a turn that already pushed with send_text', () => {
   interface Posted {
     eventId?: string
     body?: string
+    inReplyTo?: string
   }
 
   async function mount(
@@ -1046,7 +1048,8 @@ p2p: {
       await waitFor(() => mounted.posted.length === 1)
       await new Promise((resolve) => setTimeout(resolve, 60))
       expect(mounted.posted).toHaveLength(1)
-      expect(mounted.posted[0]?.eventId).toBe('reply:evt-1')
+      expect(mounted.posted[0]?.eventId?.startsWith('reply:')).toBe(true)
+      expect(mounted.posted[0]?.inReplyTo).toBe('evt-1')
       expect(mounted.posted[0]?.body).toContain('a written reply')
     } finally {
       mounted.close()
@@ -2182,5 +2185,23 @@ describe('an active push to another peer on the same channel', () => {
     } finally {
       capture.close()
     }
+  })
+})
+
+describe('a reply chain three hops long', () => {
+  test('keeps one chain root and never grows an event id', async () => {
+    const { sessions, portB } = await pair()
+
+    await send(portB, 'evt-1', 'hello')
+    await waitFor(() => sessions.prompted.length >= 3, 8000)
+
+    const ids = sessions.prompted.map((entry) => entry.requestId)
+    expect(ids[0]).toBe('evt-1')
+    for (const later of ids.slice(1)) {
+      expect(later.startsWith('reply:')).toBe(true)
+      expect(later).not.toContain('reply:reply:')
+      expect(later.length).toBeLessThanOrEqual(64)
+    }
+    expect(new Set(ids).size).toBe(ids.length)
   })
 })

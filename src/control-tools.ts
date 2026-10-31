@@ -2,6 +2,8 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 
 export interface PeerTurnRef {
   eventId: string
+  /** The chain root this turn belongs to. */
+  chainId: string
   channel: string
   /** The address this turn answers on, as the adapter named it. */
   target: string
@@ -20,8 +22,8 @@ export interface DeclinedResult {
 
 export interface ControlPorts {
   turnOf: (sessionId: string | undefined) => PeerTurnRef | undefined
-  isClosed: (eventId: string) => boolean
-  closeChain: (eventId: string) => void
+  isClosed: (chainId: string) => boolean
+  closeChain: (chainId: string) => void
   decline: (turn: PeerTurnRef, reason: string | undefined) => Promise<DeclinedResult>
 }
 
@@ -43,7 +45,7 @@ export function createNoReplyTool(ports: ControlPorts) {
     async execute(_args: unknown, exec: { agent?: { id?: string }; concludeTurn: () => void }): Promise<string> {
       const turn = ports.turnOf(exec?.agent?.id)
       if (turn === undefined) throw new Error(NO_TURN)
-      ports.closeChain(turn.eventId)
+      ports.closeChain(turn.chainId)
       turn.suppressed = true
       exec.concludeTurn()
       return JSON.stringify({ ok: true, closed: true })
@@ -67,8 +69,8 @@ export function createDeclineTool(ports: ControlPorts) {
     ): Promise<string> {
       const turn = ports.turnOf(exec?.agent?.id)
       if (turn === undefined) throw new Error(NO_TURN)
-      const already = ports.isClosed(turn.eventId)
-      ports.closeChain(turn.eventId)
+      const already = ports.isClosed(turn.chainId)
+      ports.closeChain(turn.chainId)
       turn.suppressed = true
       if (already) {
         exec.concludeTurn()
