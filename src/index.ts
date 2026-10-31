@@ -19,6 +19,20 @@ export { LAYERS, LayerViolationError, declareLayer, derivedLayer, readDeclared, 
 export type { DeclaredLayer, Layer } from './event-layers.js'
 export { buildEvent, chargeKey, dedupeKeyFor, replyIdempotencyKey, unstableDedupeKey } from './event-build.js'
 export { ConfigError, WILDCARD_HOSTS, assertBindHost, strict, validateConfig } from './config.js'
+export { INBOUND_REJECTIONS, SESSION_KEY_MAX } from './contract.js'
+export type {
+  AdapterHandle,
+  AdapterPorts,
+  ChannelAdapter,
+  InboundMessage,
+  InboundRejection,
+  InboundVerdict,
+  SendFailure,
+  SendFailureCode,
+  SendInput,
+  SendResult,
+  SendSuccess,
+} from './contract.js'
 export { signEnvelope, canonicalEnvelope, verifyRequest, digestBody } from './p2p-auth.js'
 export type { AuthInput, AuthResult, PeerSecret } from './p2p-auth.js'
 export { DedupeTable } from './p2p-dedupe.js'
@@ -111,7 +125,7 @@ export type { CredentialsLike, PeerRef, ResolvedSecret } from './p2p-secrets.js'
 export { BuildError, buildPipeline } from './build-pipeline.js'
 export type { BudgetVerdict, JudgeVerdict, MatchRule, PipelineDeps } from './build-pipeline.js'
 export { DEFAULT_SEND_TIMEOUT_MS, sendToPeer } from './p2p-send.js'
-export type { PeerTarget, SendFailure, SendFailureCode, SendInput, SendResult, SendSuccess } from './p2p-send.js'
+export type { PeerTarget, P2PSendInput } from './p2p-send.js'
 export { DEFAULT_LOOP_IDLE_RESET_MS, DEFAULT_LOOP_MAX_TURNS, InboundGate } from './inbound-gate.js'
 export type { AdmitInput, GateDecision, GateOptions, GateReason, LoopConfig } from './inbound-gate.js'
 export { ChannelStats } from './channel-stats.js'

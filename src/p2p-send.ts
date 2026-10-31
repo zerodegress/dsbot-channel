@@ -17,7 +17,7 @@ export interface PeerTarget extends PeerRef {
   host?: string
 }
 
-export interface SendInput {
+export interface P2PSendInput {
   peer: PeerTarget
   credentials: CredentialsLike
   to: string
@@ -116,7 +116,7 @@ function postWithHost(
 }
 
 /** Posts one signed message to a peer; the eventId doubles as the retry key. */
-export async function sendToPeer(input: SendInput): Promise<SendResult> {
+export async function sendToPeer(input: P2PSendInput): Promise<SendResult> {
   const url = input.peer.url
   if (!url) return failure('no_url', false, `peer "${input.peer.instance}" has no url configured`)
 
