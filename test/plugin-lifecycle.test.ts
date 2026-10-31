@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { createServer, request } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
 import * as entry from '../src/index.js'
 import { DEFAULT_PORT } from '../src/index.js'
@@ -145,12 +146,12 @@ describe('plugin lifecycle', () => {
   test('a later adapter that fails to start stops the ones already listening', async () => {
     const taken = createServer()
     await new Promise<void>((resolve) => taken.listen(0, '127.0.0.1', resolve))
-    const takenPort = (taken.address() as import('node:net').AddressInfo).port
+    const takenPort = (taken.address() as AddressInfo).port
     const freePort = await new Promise<number>((resolve, reject) => {
       const probe = createServer()
       probe.once('error', reject)
       probe.listen(0, '127.0.0.1', () => {
-        const port = (probe.address() as import('node:net').AddressInfo).port
+        const port = (probe.address() as AddressInfo).port
         probe.close(() => resolve(port))
       })
     })
