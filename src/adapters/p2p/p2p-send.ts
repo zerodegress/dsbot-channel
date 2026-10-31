@@ -162,9 +162,12 @@ export async function sendToPeer(input: P2PSendInput): Promise<SendResult> {
   }
 
   if (!('status' in answered)) return answered
-  const body = answered.body as { messageId?: string; duplicate?: boolean; error?: string }
+  const body = answered.body as { messageId?: string; duplicate?: boolean; error?: string; code?: string }
   if (answered.status === 200) {
     return { ok: true, messageId: body.messageId ?? `p2p-${input.eventId}`, duplicate: body.duplicate === true }
+  }
+  if (answered.status === 401 && body.code === 'protocol_mismatch') {
+    return failure('protocol_mismatch', false, oneLine(body.error ?? 'the peer speaks another protocol'))
   }
   if (answered.status === 401) return failure('unauthorized', false, oneLine(body.error ?? 'unauthorized'))
   if (answered.status === 403) return failure('forbidden', false, oneLine(body.error ?? 'forbidden'))

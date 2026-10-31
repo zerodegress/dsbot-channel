@@ -42,6 +42,7 @@ export type InboundVerdict =
 
 export type SendFailureCode =
   | 'no_url'
+  | 'protocol_mismatch'
   | 'credential'
   | 'unreachable'
   | 'timeout'

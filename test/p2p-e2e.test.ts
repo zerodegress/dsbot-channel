@@ -645,6 +645,8 @@ describe('closing a peer conversation', () => {
     final?: boolean
     reason?: string
     body?: string
+    chainId?: string
+    inReplyTo?: string
     seenHost?: string | undefined
   }
 
@@ -777,7 +779,7 @@ p2p: {
     try {
       await send(mounted.port, 'evt-1', 'hello')
       await waitFor(() => mounted.posts.length === 1)
-      expect(mounted.posts[0]).toMatchObject({ status: 'declined', seenHost: 'peer.example' })
+      expect(mounted.posts[0]).toMatchObject({ status: 'declined', seenHost: 'peer.example', chainId: 'evt-1' })
     } finally {
       mounted.close()
     }

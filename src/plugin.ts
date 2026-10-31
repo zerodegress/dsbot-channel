@@ -617,6 +617,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
           to: turn.sender,
           body: '',
           eventId: `decline:${turn.eventId}`,
+          chainId: turn.chainId,
           sender: channel.config.botName,
           instance: channel.config.instance,
           status: 'declined',

@@ -34,7 +34,10 @@ export function cleanExcerpt(text: string, limit = EXCERPT_CHARS): string {
 /** Longest handle a header line carries, so a reply's id cannot grow the line. */
 export const HANDLE_MAX = 64
 
-/** A short single-line handle for a header: printable, bounded, never the whole id. */
+/**
+ * A bounded single-line handle for a header: the id is already short (42-47 characters
+ * for a reply), and the limit keeps a caller from ever pushing a whole long id through.
+ */
 export function shortHandle(value: string, limit = HANDLE_MAX): string {
   return Array.from(oneLine(value, limit)).slice(0, limit).join('')
 }

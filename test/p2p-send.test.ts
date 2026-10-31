@@ -224,6 +224,19 @@ describe('failures are told apart', () => {
     expect(result).toMatchObject({ ok: false, code: 'forbidden' })
   })
 
+  test('a peer on the old protocol is reported as its own failure code', async () => {
+    const server = createServer((request, response) => {
+      request.resume()
+      response.writeHead(401, { 'content-type': 'application/json' })
+      response.end(JSON.stringify({ error: 'chainId is required', code: 'protocol_mismatch' }))
+    })
+    servers.push(server)
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+    const address = server.address() as AddressInfo
+    const result = await sendToPeer(base(`http://127.0.0.1:${address.port}`))
+    expect(result).toMatchObject({ ok: false, code: 'protocol_mismatch', retryable: false })
+  })
+
   test('a peer answering 503 is busy and retryable', async () => {
     const server = createServer((request, response) => {
       request.resume()

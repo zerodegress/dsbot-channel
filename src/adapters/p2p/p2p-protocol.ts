@@ -14,7 +14,7 @@ export const DEFAULT_SENT_AT_WINDOW_MS = 300_000
 /** The reference is a token, not free text: it lands in a header line. */
 export const IN_REPLY_TO_MAX = 128
 
-/** An event id grows a reply: prefix each round, so it needs more room than a token. */
+/** An event id is a token the adapter builds; a reply's own id stays this short. */
 export const EVENT_ID_MAX = 256
 
 /** A chain root is an event id, so it gets the same room. */
