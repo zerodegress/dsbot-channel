@@ -13,11 +13,11 @@ import type {
   SendResult,
 } from '../../contract.js'
 import { REPLY_TARGET_MAX, SESSION_KEY_MAX, tokenProblem } from '../../contract.js'
-import { GROUP_GUIDANCE, PEER_GUIDANCE } from '../../inbound-guidance.js'
+import { GROUP_GUIDANCE, PEER_GUIDANCE } from './guidance.js'
 import { DedupeTable } from './p2p-dedupe.js'
 import type { InboundRequest } from '../../peer-sessions.js'
 import { DEFAULT_HOST, DEFAULT_PORT, checkListenerConfig, startListener } from './p2p-listener.js'
-import { toP2PEvent } from './p2p-mapping.js'
+import { cleanExcerpt, toP2PEvent } from './p2p-mapping.js'
 import { DEFAULT_SENT_AT_WINDOW_MS, MAX_BODY_BYTES } from './p2p-protocol.js'
 import type { CredentialsLike, PeerRef } from './p2p-secrets.js'
 import { sendToPeer } from './p2p-send.js'
@@ -182,7 +182,7 @@ export class P2PAdapter implements ChannelAdapter {
       ...(peer.url === undefined ? {} : { url: peer.url }),
       ...(peer.host === undefined ? {} : { host: peer.host }),
     }
-    return sendToPeer({
+    const result = await sendToPeer({
       peer: target,
       credentials: this.#credentials(ports),
       to: input.to ?? '',
@@ -196,7 +196,10 @@ export class P2PAdapter implements ChannelAdapter {
       ...(input.reason === undefined ? {} : { reason: input.reason }),
       ...(input.final === undefined ? {} : { final: input.final }),
       ...(input.inReplyTo === undefined ? {} : { inReplyTo: input.inReplyTo }),
+      ...(input.inReplyToText === undefined ? {} : { inReplyToExcerpt: cleanExcerpt(input.inReplyToText) }),
     })
+    if (!result.ok) this.#stats.sendFailed(result.code)
+    return result
   }
 
   async start(ports: AdapterPorts): Promise<AdapterHandle> {
@@ -226,12 +229,22 @@ export class P2PAdapter implements ChannelAdapter {
       },
       ...(this.#config.status === false
         ? {}
-        : { status: { report: () => this.status() } }),
+        : {
+            status: {
+              report: () => ({
+                channel: this.#config.channel,
+                bot: this.#config.botName,
+                instance: this.#config.instance,
+                snapshot: this.#stats.snapshot(),
+              }),
+            },
+          }),
     })
     return {
       stop: async () => {
         await listener.close()
       },
+      address: () => ({ port: listener.address().port }),
     }
   }
 
@@ -242,8 +255,11 @@ export class P2PAdapter implements ChannelAdapter {
       eventKey: event.meta.derived.eventKey,
       sessionKey: `p2p:${request.instance}`,
       replyTarget: request.instance,
+      requestId: request.eventId,
+      ...(request.status === 'declined' ? { suppressed: true } : {}),
       source: event.source,
       author: event.author,
+      rawText: request.body,
       body: event.body,
       transport: event.meta.transport,
       declared: event.meta.declared,

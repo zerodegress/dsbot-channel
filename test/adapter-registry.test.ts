@@ -66,7 +66,7 @@ describe('the p2p transport block', () => {
 
   test('refuses a port that is not a whole number', () => {
     expect(() =>
-      parseP2PConfig(mount({ peers: [{ instance: 'b', secret: 's' }], listen: { port: 0 } })),
+      parseP2PConfig(mount({ peers: [{ instance: 'b', secret: 's' }], listen: { port: -1 } })),
     ).toThrow(/listen.port/)
   })
 })

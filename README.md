@@ -33,10 +33,11 @@ config:
       channel: p2p:self
       instance: self
       botName: self-bot
-      listen: { host: 127.0.0.1, port: 7123 }
-      peers:
-        - instance: peer-a
-          secret: PEER_A_REFERENCE
+      p2p:
+        listen: { host: 127.0.0.1, port: 7123 }
+        peers:
+          - instance: peer-a
+            secret: PEER_A_REFERENCE
 ```
 
 `instance` and `channel` are both required on every adapter, and `channel` must be unique. `secret` is a reference name in the host credentials service, not the secret itself.

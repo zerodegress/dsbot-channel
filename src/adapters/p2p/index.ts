@@ -34,6 +34,14 @@ function optionalText(value: unknown, field: string): string | undefined {
   return value
 }
 
+function optionalPort(value: unknown, field: string): number | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    refuse(`p2p.${field} must be a whole port number of at least 0`, field)
+  }
+  return value
+}
+
 function optionalWhole(value: unknown, field: string): number | undefined {
   if (value === undefined) return undefined
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
@@ -63,7 +71,7 @@ function parseListen(value: unknown): { host?: string; port?: number } | undefin
   const listen = record(value, 'listen')
   return {
     ...(optionalText(listen.host, 'listen.host') === undefined ? {} : { host: listen.host as string }),
-    ...(optionalWhole(listen.port, 'listen.port') === undefined ? {} : { port: listen.port as number }),
+    ...(optionalPort(listen.port, 'listen.port') === undefined ? {} : { port: listen.port as number }),
   }
 }
 
@@ -71,7 +79,7 @@ function parseDedupe(value: unknown): { ttlMs?: number; limit?: number } | undef
   if (value === undefined) return undefined
   const dedupe = record(value, 'dedupe')
   return {
-    ...(optionalWhole(dedupe.ttlMs, 'dedupe.ttlMs') === undefined ? {} : { ttlMs: dedupe.ttlMs as number }),
+    ...(optionalPort(dedupe.ttlMs, 'dedupe.ttlMs') === undefined ? {} : { ttlMs: dedupe.ttlMs as number }),
     ...(optionalWhole(dedupe.limit, 'dedupe.limit') === undefined ? {} : { limit: dedupe.limit as number }),
   }
 }
@@ -85,6 +93,7 @@ export function parseP2PConfig(mount: AdapterMount): P2PAdapterConfig {
     channel: mount.channel,
     instance: mount.instance,
     botName: mount.botName,
+    ...(mount.status === undefined ? {} : { status: mount.status }),
     peers: parsePeers(raw.peers),
     ...(parseListen(raw.listen) === undefined ? {} : { listen: parseListen(raw.listen) }),
     ...(parseDedupe(raw.dedupe) === undefined ? {} : { dedupe: parseDedupe(raw.dedupe) }),

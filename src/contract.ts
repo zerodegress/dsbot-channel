@@ -18,10 +18,16 @@ export interface InboundMessage {
   sessionKey: string
   /** The address of the conversation this message came from; core never parses it. */
   replyTarget: string
+  /** The platform's own id for this message; core hands it to the host as rpcId, unparsed. */
+  requestId: string
+  /** The adapter already knows this turn must not answer: the sender declined, or it answered elsewhere. */
+  suppressed?: boolean | undefined
   /** Required from #89; the field is here so one message type serves both batches. */
   chainId?: string | undefined
   source: Source
   author: Author
+  /** What the platform sent, before the adapter adds its own header; core matches policy on this. */
+  rawText: string
   body: Body
   transport: TransportMeta
   declared: DeclaredMeta
@@ -65,6 +71,8 @@ export interface SendInput {
   eventId: string
   chainId?: string | undefined
   inReplyTo?: string | undefined
+  /** The text being answered; the adapter trims it for the peer's header. */
+  inReplyToText?: string | undefined
   body: string
   sender: string
   instance: string
@@ -83,6 +91,8 @@ export interface AdapterPorts {
 
 export interface AdapterHandle {
   stop(): Promise<void>
+  /** The bound address, for a transport that listens on one; core only passes it to its host. */
+  address?: (() => { port: number }) | undefined
 }
 
 export interface AdapterCheckSettings {
@@ -108,6 +118,12 @@ export interface ChannelAdapter {
 
 /** Longest session key core accepts before asking the adapter. */
 export const SESSION_KEY_MAX = 128
+
+/** Longest platform message id core hands to the host untouched. */
+export const REQUEST_ID_MAX = 256
+
+/** The guidance an adapter may inject once per session, bounded so a profile cannot blow the context. */
+export const GUIDANCE_MAX = 400
 
 /** Longest reply address core accepts before asking the adapter. */
 export const REPLY_TARGET_MAX = 256

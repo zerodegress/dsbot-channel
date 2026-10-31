@@ -96,13 +96,15 @@ async function mountReceiver(): Promise<Mounted> {
   const fork = await ctx.plugin(entry, {
     adapters: [
       {
-        channel: 'p2p:b',
-        instance: 'inst-b',
-        botName: 'bot-b',
-        peers: [{ instance: 'inst-a', secret: REF }],
-        policy: { deny: { words: ['spam'] }, allow: { peers: ['inst-a'] } },
-        listen: { host: '127.0.0.1', port },
-      },
+channel: 'p2p:b',
+instance: 'inst-b',
+botName: 'bot-b',
+p2p: {
+  peers: [{ instance: 'inst-a', secret: REF }],
+  listen: { host: '127.0.0.1', port }
+},
+policy: { deny: { words: ['spam'] }, allow: { peers: ['inst-a'] } }
+},
     ],
   })
   forks.push(fork)

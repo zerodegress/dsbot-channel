@@ -9,6 +9,8 @@ export interface AdapterMount {
   botName: string
   /** The transport block the profile declared; only the adapter knows its shape. */
   transport: Record<string, unknown>
+  /** Whether this adapter answers its own status route; the transport decides what that means. */
+  status?: boolean | undefined
 }
 
 export interface AdapterOptions {

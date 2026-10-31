@@ -29,12 +29,14 @@ describe('scaffold', () => {
     const fork = ctx.plugin(plugin, {
       adapters: [
         {
-          channel: 'p2p:self',
-          instance: 'inst-a',
-          botName: 'bot-a',
-          peers: [{ instance: 'inst-b', secret: 'PEER_SHARED_SECRET' }],
-          listen: { host: '127.0.0.1', port: 0 },
-        },
+channel: 'p2p:self',
+instance: 'inst-a',
+botName: 'bot-a',
+p2p: {
+  peers: [{ instance: 'inst-b', secret: 'PEER_SHARED_SECRET' }],
+  listen: { host: '127.0.0.1', port: 0 }
+}
+},
       ],
     })
     await fork

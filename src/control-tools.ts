@@ -3,7 +3,8 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 export interface PeerTurnRef {
   eventId: string
   channel: string
-  peer: string
+  /** The address this turn answers on, as the adapter named it. */
+  target: string
   sender: string
   /** Set by end or decline so the turn that just ran sends nothing back. */
   suppressed: boolean

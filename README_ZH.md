@@ -33,10 +33,11 @@ config:
       channel: p2p:self
       instance: self
       botName: self-bot
-      listen: { host: 127.0.0.1, port: 7123 }
-      peers:
-        - instance: peer-a
-          secret: PEER_A_REFERENCE
+      p2p:
+        listen: { host: 127.0.0.1, port: 7123 }
+        peers:
+          - instance: peer-a
+            secret: PEER_A_REFERENCE
 ```
 
 `instance` 和 `channel` 每个 adapter 都必填，`channel` 不能重复。`secret` 填的是宿主任凭服务里的引用名，不是密钥本身。
