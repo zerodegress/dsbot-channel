@@ -1,5 +1,5 @@
 import type { NodeType, SkipTarget } from './pipeline.js'
-import { NODE_TYPES, SKIP_TARGETS } from './pipeline.js'
+import { DEFAULT_MAX_TURN_MS, NODE_TYPES, SKIP_TARGETS } from './pipeline.js'
 
 export interface PipelineNodeSpec {
   id: string
@@ -15,7 +15,7 @@ export interface PipelineSettings {
   judgeTimeoutMs: number
 }
 
-export const DEFAULT_PIPELINE: PipelineSettings = { maxTurnMs: 120_000, judgeTimeoutMs: 8_000 }
+export const DEFAULT_PIPELINE: PipelineSettings = { maxTurnMs: DEFAULT_MAX_TURN_MS, judgeTimeoutMs: 8_000 }
 
 export interface CheckReport {
   fatal: string[]

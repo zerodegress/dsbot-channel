@@ -165,6 +165,68 @@ describe('two adapters in one process', () => {
     await fork.dispose()
   })
 
+  test('refuses two adapters for one bot when their rules cannot bind the pipeline it runs', async () => {
+    const ctx = new Context()
+    captureWarnings(ctx)
+    const sessions = new StubSessions(ctx)
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', sessions)
+      },
+    })
+    const adapter = (channel: string, instance: string, peerInstance: string, policy: Record<string, unknown>) => ({
+      channel,
+      instance,
+      botName: 'bot-shared',
+      peers: [{ instance: peerInstance, secret: REF }],
+      listen: { host: '127.0.0.1', port: 0 },
+      policy,
+    })
+    await expect(
+      ctx.plugin(entry, {
+        adapters: [
+          adapter('p2p:a', 'inst-a', 'inst-b', { deny: { words: ['spam'] } }),
+          adapter('p2p:b', 'inst-b', 'inst-a', {}),
+        ],
+      }),
+    ).rejects.toThrow(/different pipelines/)
+  })
+
+  test('refuses two adapters for one bot that declare the same shape with different rules', async () => {
+    const ctx = new Context()
+    captureWarnings(ctx)
+    const sessions = new StubSessions(ctx)
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', sessions)
+      },
+    })
+    const adapter = (channel: string, instance: string, peerInstance: string, words: string[]) => ({
+      channel,
+      instance,
+      botName: 'bot-shared',
+      peers: [{ instance: peerInstance, secret: REF }],
+      listen: { host: '127.0.0.1', port: 0 },
+      policy: { deny: { words } },
+    })
+    await expect(
+      ctx.plugin(entry, {
+        adapters: [
+          adapter('p2p:a', 'inst-a', 'inst-b', ['spam']),
+          adapter('p2p:b', 'inst-b', 'inst-a', ['viagra']),
+        ],
+      }),
+    ).rejects.toThrow(/different rules/)
+  })
+
   test('a peer without a url comes back as no_url instead of silence', async () => {
     const [portA, portB] = [await freePort(), await freePort()]
     const ctx = new Context()
@@ -218,6 +280,71 @@ describe('two adapters in one process', () => {
 
     await fork.dispose()
   })
+  test('two adapters that answer for one bot with the same rules run a turn on each', async () => {
+    const [portA, portB] = [await freePort(), await freePort()]
+    const ctx = new Context()
+    captureWarnings(ctx)
+    const sessions = new StubSessions(ctx, 2)
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', sessions)
+      },
+    })
+    const adapter = (
+      channel: string,
+      instance: string,
+      peerInstance: string,
+      port: number,
+      peerPort: number,
+    ) => ({
+      channel,
+      instance,
+      botName: 'bot-shared',
+      peers: [{ instance: peerInstance, secret: REF, url: `http://127.0.0.1:${peerPort}` }],
+      listen: { host: '127.0.0.1', port },
+      policy: { deny: { words: ['spam'] }, allow: { peers: ['inst-a', 'inst-b'] } },
+    })
+    const fork = await ctx.plugin(entry, {
+      adapters: [
+        adapter('p2p:a', 'inst-a', 'inst-b', portA, portB),
+        adapter('p2p:b', 'inst-b', 'inst-a', portB, portA),
+      ],
+    })
+    forks.push(fork)
+
+    const toB = await sendToPeer({
+      peer: { instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${portB}` },
+      credentials,
+      to: 'bot-shared',
+      body: 'hello',
+      eventId: 'evt-shared-1',
+      sender: 'inst-a',
+      instance: 'inst-a',
+    })
+    const toA = await sendToPeer({
+      peer: { instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${portA}` },
+      credentials,
+      to: 'bot-shared',
+      body: 'hi there',
+      eventId: 'evt-shared-2',
+      sender: 'inst-b',
+      instance: 'inst-b',
+    })
+    expect(toB).toMatchObject({ ok: true, duplicate: false })
+    expect(toA).toMatchObject({ ok: true, duplicate: false })
+
+    await waitFor(() => sessions.prompted.length >= 2)
+    const texts = sessions.prompted.map((prompt) => bodyOf(prompt.text))
+    expect(texts.some((text) => text.includes('hello'))).toBe(true)
+    expect(texts.some((text) => text.includes('hi there'))).toBe(true)
+
+    await fork.dispose()
+  })
+
 })
 
 describe('reporting failures', () => {

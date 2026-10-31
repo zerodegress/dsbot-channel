@@ -11,9 +11,10 @@ const P2P_PREFIX = 'p2p:'
 const LAYER_FIELDS: readonly string[] = ['inherit', 'remove', 'insert', 'override']
 const INSERT_FIELDS: readonly string[] = ['id', 'type', 'after', 'before']
 
-/** What the host knows about one bot: its profile layer, the rules it can match, and the peers it addresses. */
+/** What the host knows about one bot: the pipeline it runs, the rules it can match, and the peers it addresses. */
 export interface BotScope {
-  layer?: PipelineLayer | undefined
+  /** The nodes this bot runs when no session layer applies. */
+  base: readonly PipelineNodeSpec[]
   /** A rule node is bound only when every adapter of this bot can match one. */
   denyRules: boolean
   allowRules: boolean
@@ -21,7 +22,6 @@ export interface BotScope {
 }
 
 export interface SessionPipelineOptions {
-  global: readonly PipelineNodeSpec[]
   /** One entry per bot the profile answers for, keyed by the name its adapters report. */
   bots: ReadonlyMap<string, BotScope>
 }
@@ -93,8 +93,7 @@ export class SessionPipelines {
     if (key !== undefined) this.#checkKey(key)
     const session = key === undefined ? undefined : this.#layers.get(botName)?.get(key)
     return resolvePipeline({
-      global: this.#options.global,
-      ...(bot.layer === undefined ? {} : { bot: bot.layer }),
+      global: bot.base,
       ...(session === undefined ? {} : { session }),
     }).nodes
   }
@@ -122,11 +121,7 @@ export class SessionPipelines {
   }
 
   #check(bot: BotScope, layer: PipelineLayer): void {
-    const report = resolveAndCheck({
-      global: this.#options.global,
-      ...(bot.layer === undefined ? {} : { bot: bot.layer }),
-      session: layer,
-    })
+    const report = resolveAndCheck({ global: bot.base, session: layer })
     const fatal = [...report.layer.fatal, ...report.pipeline.fatal]
     if (fatal.length > 0) throw new ConfigError(fatal.join('; '), ['pipeline'])
     const rules = { deny: bot.denyRules, allow: bot.allowRules }

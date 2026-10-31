@@ -13,12 +13,13 @@ import { DEFAULT_SENT_AT_WINDOW_MS } from './p2p-protocol.js'
 import type { PeerTarget } from './p2p-send.js'
 import { DEFAULT_LOOP_IDLE_RESET_MS, DEFAULT_LOOP_MAX_TURNS, InboundGate } from './inbound-gate.js'
 import type { PolicyConfig } from './policy-config.js'
-import type { PipelineNodeSpec } from './pipeline-config.js'
-import { defaultPipelineNodes } from './pipeline-config.js'
+import type { PipelineNodeSpec, PipelineSettings } from './pipeline-config.js'
+import { DEFAULT_PIPELINE } from './pipeline-config.js'
 import type { PipelineLayer, PipelineScopes } from './pipeline-scopes.js'
 import { resolveAndCheck, resolvePipeline } from './pipeline-scopes.js'
 import { compilePolicy } from './policy-config.js'
 import { buildPipeline } from './build-pipeline.js'
+import type { PipelineDeps } from './build-pipeline.js'
 import { createLedger } from './budget-config.js'
 import type { BudgetConfig } from './budget-config.js'
 import { TurnBilling } from './turn-billing.js'
@@ -37,9 +38,6 @@ import { ClosedChains } from './chain-closer.js'
 import { InjectionLedger, guidanceFor } from './inbound-guidance.js'
 import { createDeclineTool, createNoReplyTool } from './control-tools.js'
 import type { ControlPorts, PeerTurnRef } from './control-tools.js'
-
-/** Turn ceiling a message may occupy before it is dropped. */
-export const MAX_TURN_MS = 120_000
 
 /** One place that turns a configured peer into a send target, so a new field reaches every path. */
 function targetOf(peer: PeerRef): PeerTarget {
@@ -76,7 +74,7 @@ export interface AdapterConfig extends ListenerConfig {
 
 export interface ChannelConfig {
   adapters: AdapterConfig[]
-  pipeline: { global: PipelineNodeSpec[] }
+  pipeline: PipelineSettings & { global: PipelineNodeSpec[] }
 }
 
 const nodeSpecSchema = Schema.object({
@@ -105,6 +103,8 @@ const layerSchema = Schema.object({
 export const Config: any = Schema.object({
   pipeline: Schema.object({
     global: Schema.array(nodeSpecSchema).default([]),
+    maxTurnMs: Schema.number().default(DEFAULT_PIPELINE.maxTurnMs),
+    judgeTimeoutMs: Schema.number().default(DEFAULT_PIPELINE.judgeTimeoutMs),
   }).default({}),
   adapters: Schema
     .array(
@@ -163,7 +163,7 @@ export const Config: any = Schema.object({
 })
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-function prepareAdapter(adapter: AdapterConfig, index: number): DedupeTable {
+function prepareAdapter(adapter: AdapterConfig, index: number, maxTurnMs: number): DedupeTable {
   const path = (field: string): string[] => ['adapters', String(index), field]
   assertBindHost(adapter.listen.host ?? DEFAULT_HOST, path('listen'))
   const { relayLimit, relayResetMs } = adapter.policy
@@ -210,9 +210,9 @@ function prepareAdapter(adapter: AdapterConfig, index: number): DedupeTable {
       path('sentAtWindowMs'),
     )
   }
-  if (adapter.inflightTtlMs <= MAX_TURN_MS) {
+  if (adapter.inflightTtlMs <= maxTurnMs) {
     throw new ConfigError(
-      `inflightTtlMs must exceed maxTurnMs: ${adapter.inflightTtlMs} <= ${MAX_TURN_MS}`,
+      `inflightTtlMs must exceed maxTurnMs: ${adapter.inflightTtlMs} <= ${maxTurnMs}`,
       path('inflightTtlMs'),
     )
   }
@@ -220,7 +220,7 @@ function prepareAdapter(adapter: AdapterConfig, index: number): DedupeTable {
     ttlMs: adapter.dedupe?.ttlMs ?? 7 * 24 * 60 * 60 * 1000,
     limit: adapter.dedupe?.limit ?? 100_000,
     inflightTtlMs: adapter.inflightTtlMs,
-    maxTurnMs: MAX_TURN_MS,
+    maxTurnMs,
   })
 }
 
@@ -241,6 +241,25 @@ function declaredNodes(config: ChannelConfig, adapter: AdapterConfig): PipelineN
     ...(adapter.pipeline === undefined ? {} : { bot: adapter.pipeline }),
   }
   return resolvePipeline(scopes).nodes
+}
+
+/** Refuses a turn timing no pipeline can run with. */
+export function checkPipelineSettings(settings: PipelineSettings): void {
+  for (const field of ['maxTurnMs', 'judgeTimeoutMs'] as const) {
+    const value = settings[field]
+    if (!Number.isInteger(value) || value < 1) {
+      throw new ConfigError(
+        `${field} must be a whole number of milliseconds, at least 1: ${value}`,
+        ['pipeline', field],
+      )
+    }
+  }
+  if (settings.judgeTimeoutMs > settings.maxTurnMs) {
+    throw new ConfigError(
+      `judgeTimeoutMs must not exceed maxTurnMs: ${settings.judgeTimeoutMs} > ${settings.maxTurnMs}`,
+      ['pipeline', 'judgeTimeoutMs'],
+    )
+  }
 }
 
 /** Refuses a pipeline that cannot load, and reports the ones that only look wrong. */
@@ -303,25 +322,37 @@ export function checkPipelineScopes(config: ChannelConfig, warn: (message: strin
   for (const warning of warnings) warn(`dsbot-channel: pipeline warning: ${warning}`)
 }
 
-/** Collects what the host knows per bot: its declared layer, the rules it can match, and the peers it addresses. */
-function botScopes(config: ChannelConfig): Map<string, BotScope> {
-  const bots = new Map<string, BotScope>()
+/** Collects what the host knows per bot: the pipeline it runs, the rules it can match, and the peers it addresses. */
+interface BotFacts extends BotScope {
+  /** The dependencies the base pipeline is bound with, taken from the adapter that supplied it. */
+  deps: PipelineDeps
+}
+
+function botScopes(config: ChannelConfig): Map<string, BotFacts> {
+  const bots = new Map<string, BotFacts>()
   for (const adapter of config.adapters) {
     const seen = bots.get(adapter.botName)
-    const rules = compilePolicy(adapter.policy).deps
-    const deny = (rules.denyRules ?? []).length > 0
-    const allow = (rules.allowRules ?? []).length > 0
+    const compiled = compilePolicy(adapter.policy)
+    const deny = (compiled.deps.denyRules ?? []).length > 0
+    const allow = (compiled.deps.allowRules ?? []).length > 0
     const peers = adapter.peers.map((peer) => peer.instance)
+    const base = declaredNodes(config, adapter) ?? compiled.specs
     if (seen === undefined) {
-      bots.set(adapter.botName, {
-        ...(adapter.pipeline === undefined ? {} : { layer: adapter.pipeline }),
-        denyRules: deny,
-        allowRules: allow,
-        peers,
-      })
+      bots.set(adapter.botName, { base, denyRules: deny, allowRules: allow, peers, deps: compiled.deps })
       continue
     }
-    if (adapter.pipeline !== undefined) seen.layer = adapter.pipeline
+    if (stable(seen.base) !== stable(base)) {
+      throw new ConfigError(
+        `two adapters answer for bot "${adapter.botName}" with different pipelines; one bot runs one pipeline`,
+        ['adapters'],
+      )
+    }
+    if (stable(seen.deps) !== stable(compiled.deps)) {
+      throw new ConfigError(
+        `two adapters answer for bot "${adapter.botName}" with different rules; one bot runs one pipeline`,
+        ['adapters'],
+      )
+    }
     seen.denyRules &&= deny
     seen.allowRules &&= allow
     seen.peers = [...new Set([...seen.peers, ...peers])]
@@ -333,14 +364,16 @@ function botScopes(config: ChannelConfig): Map<string, BotScope> {
 export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const config = validateConfig<ChannelConfig>(Config, raw)
   const warn = createWarn(ctx)
+  const settings: PipelineSettings = { maxTurnMs: config.pipeline.maxTurnMs, judgeTimeoutMs: config.pipeline.judgeTimeoutMs }
+  checkPipelineSettings(settings)
   checkPipelineScopes(config, warn)
-  const base = config.pipeline.global.length > 0 ? config.pipeline.global : defaultPipelineNodes()
-  const sessions = new SessionPipelines({ global: base, bots: botScopes(config) })
+  const bots = botScopes(config)
+  const pipelines = new SessionPipelines({ bots })
   ctx.provide('dsbot-channel.pipeline')
   ctx.set('dsbot-channel.pipeline', {
-    forSession: (botName: string, key: string, layer: PipelineLayer) => sessions.forSession(botName, key, layer),
-    forgetSession: (botName: string, key: string) => sessions.forgetSession(botName, key),
-    pipelineFor: (botName: string, key?: string) => sessions.pipelineFor(botName, key),
+    forSession: (botName: string, key: string, layer: PipelineLayer) => pipelines.forSession(botName, key, layer),
+    forgetSession: (botName: string, key: string) => pipelines.forgetSession(botName, key),
+    pipelineFor: (botName: string, key?: string) => pipelines.pipelineFor(botName, key),
   })
   if (config.adapters.length === 0) return
   const credentials = ctx.get('credentials') as CredentialsLike | undefined
@@ -358,7 +391,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
       ])
     }
     seen.add(adapter.channel)
-    return { adapter, index, table: prepareAdapter(adapter, index) }
+    return { adapter, index, table: prepareAdapter(adapter, index, settings.maxTurnMs) }
   })
   for (const { adapter, index } of pairs) {
     if (adapter.peers.length === 0) {
@@ -394,8 +427,6 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         snapshot: stats.snapshot(),
       }))
       const compiled = compilePolicy(adapter.policy)
-      const specs = declaredNodes(config, adapter) ?? compiled.specs
-      const pipeline = specs.length > 0 ? buildPipeline(specs, compiled.deps) : undefined
       const budget = adapter.policy.budget
       const ledger =
         budget === undefined
@@ -404,7 +435,6 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
       const billing = new TurnBilling({ ledger })
       const gate = new InboundGate({
         loop: { relayLimit: adapter.policy.relayLimit, relayResetMs: adapter.policy.relayResetMs },
-        pipeline,
         ledger,
       })
       const handOff = (request: InboundRequest): void => {
@@ -413,6 +443,9 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         const reply = async (): Promise<void> => {
           const sessionId = await sessions.sessionFor(request.instance)
           sources.set(sessionId, { channel: adapter.channel, peer: request.instance })
+          const specs = pipelines.pipelineFor(adapter.botName, `p2p:${request.instance}`)
+          const deps = bots.get(adapter.botName)?.deps ?? compiled.deps
+          const pipeline = specs.length > 0 ? buildPipeline(specs, deps, settings) : undefined
           const decision = await gate.admit({
             event: {
               eventKey: event.meta.derived.eventKey,
@@ -424,6 +457,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
             peer: request.instance,
             botId: adapter.botName,
             session: sessionId,
+            ...(pipeline === undefined ? {} : { pipeline }),
           })
           if (!decision.allow) {
             const detail = decision.detail === undefined ? '' : ` (${decision.detail})`

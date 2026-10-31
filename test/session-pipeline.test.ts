@@ -6,7 +6,8 @@ import entry from '../src/index.js'
 import { staticCredentials } from '../src/p2p-secrets.js'
 import { defaultPipelineNodes } from '../src/pipeline-config.js'
 import type { PipelineNodeSpec } from '../src/pipeline-config.js'
-import type { PipelineLayer } from '../src/pipeline-scopes.js'
+import { resolvePipeline } from '../src/pipeline-scopes.js'
+import type { PipelineLayer, PipelineScopes } from '../src/pipeline-scopes.js'
 import type { BotScope } from '../src/session-pipeline.js'
 import { SessionPipelines } from '../src/session-pipeline.js'
 
@@ -40,18 +41,24 @@ interface BotInput {
 
 function harness(input: Record<string, BotInput> = { orca: { peers: ['seal'] } }) {
   const bots = new Map<string, BotScope>(
-    Object.entries(input).map(([name, one]) => [
-      name,
-      {
-        ...(one.layer === undefined ? {} : { layer: one.layer }),
-        denyRules: one.deny ?? false,
-        allowRules: one.allow ?? false,
-        peers: one.peers ?? [],
-      },
-    ]),
+    Object.entries(input).map(([name, one]) => {
+      const scopes: PipelineScopes =
+        one.layer === undefined ? { global: defaultPipelineNodes() } : { global: defaultPipelineNodes(), bot: one.layer }
+      return [
+        name,
+        {
+          base: resolvePipeline(scopes).nodes,
+          denyRules: one.deny ?? false,
+          allowRules: one.allow ?? false,
+          peers: one.peers ?? [],
+        },
+      ]
+    }),
   )
-  return new SessionPipelines({ global: defaultPipelineNodes(), bots })
+  return new SessionPipelines({ bots })
 }
+
+const bindable = { deny: { words: ['spam'] }, allow: { peers: ['inst-b'] } }
 
 async function mount(options: { policy?: Record<string, unknown> } = {}) {
   const port = await freePort()
@@ -75,7 +82,7 @@ async function mount(options: { policy?: Record<string, unknown> } = {}) {
         instance: 'inst-a',
         botName: 'bot-a',
         peers: [{ instance: 'inst-b', secret: REF }],
-        ...(options.policy === undefined ? {} : { policy: options.policy }),
+        policy: options.policy ?? bindable,
         listen: { host: '127.0.0.1', port },
       },
     ],
@@ -137,11 +144,11 @@ describe('the plugin offers the session API to its host', () => {
   test('a mounted bot can declare and read a session layer', async () => {
     const api = await mount()
 
-    api.forSession('bot-a', 'p2p:inst-b', { remove: ['judge'] })
+    api.forSession('bot-a', 'p2p:inst-b', { remove: ['allow'] })
     const nodes = api.pipelineFor('bot-a', 'p2p:inst-b')
 
-    expect(nodes.map((node) => node.id)).not.toContain('judge')
-    expect(nodes.map((node) => node.id)).toContain('noise')
+    expect(nodes.map((node) => node.id)).not.toContain('allow')
+    expect(nodes.map((node) => node.id)).toContain('deny')
   })
 
   test('a peer name the adapter does not address is refused at the call', async () => {
@@ -154,7 +161,7 @@ describe('the plugin offers the session API to its host', () => {
     const api = await mount()
 
     expect(() =>
-      api.forSession('bot-a', 'p2p:inst-b', { insert: [{ id: 'j', type: 'judge', after: 'noise' }] }),
+      api.forSession('bot-a', 'p2p:inst-b', { insert: [{ id: 'j', type: 'judge', after: 'deny' }] }),
     ).toThrow(/a judge node needs a model call this version does not supply/)
   })
 
@@ -170,7 +177,7 @@ describe('the plugin offers the session API to its host', () => {
     const api = await mount({ policy: { allow: { peers: ['inst-b'] } } })
 
     expect(() =>
-      api.forSession('bot-a', 'p2p:inst-b', { insert: [{ id: 'extra-deny', type: 'deny', after: 'noise' }] }),
+      api.forSession('bot-a', 'p2p:inst-b', { insert: [{ id: 'extra-deny', type: 'deny', after: 'allow' }] }),
     ).toThrow(/node "extra-deny": a deny node has no rule to match/)
   })
 

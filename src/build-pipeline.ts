@@ -1,6 +1,7 @@
 import type { LimitLevel } from './budget-ledger.js'
 import { Pipeline } from './pipeline.js'
-import type { NodeContext, PipelineEvent, PipelineNode } from './pipeline.js'
+import type { NodeContext, PipelineEvent, PipelineNode, PipelineOptions } from './pipeline.js'
+import { DEFAULT_PIPELINE } from './pipeline-config.js'
 import type { PipelineNodeSpec } from './pipeline-config.js'
 
 export interface MatchRule {
@@ -52,7 +53,11 @@ function require<T>(nodeId: string, nodeType: string, needs: string, value: T | 
 }
 
 /** Turns node specs into runnable nodes; every effect comes from the injected dependencies. */
-export function buildPipeline(specs: readonly PipelineNodeSpec[], deps: PipelineDeps): Pipeline {
+export function buildPipeline(
+  specs: readonly PipelineNodeSpec[],
+  deps: PipelineDeps,
+  options: PipelineOptions = DEFAULT_PIPELINE,
+): Pipeline {
   const nodes: PipelineNode[] = specs.map((spec) => {
     switch (spec.type) {
       case 'deny': {
@@ -122,5 +127,5 @@ export function buildPipeline(specs: readonly PipelineNodeSpec[], deps: Pipeline
         throw new BuildError(spec.id, String(spec.type))
     }
   })
-  return new Pipeline(nodes)
+  return new Pipeline(nodes, options)
 }

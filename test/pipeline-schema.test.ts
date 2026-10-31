@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
-import { Config, checkPipelineScopes } from '../src/plugin.js'
+import { Config, checkPipelineScopes, checkPipelineSettings } from '../src/plugin.js'
 import type { ChannelConfig } from '../src/plugin.js'
 import { ConfigError } from '../src/config.js'
 import { staticCredentials } from '../src/p2p-secrets.js'
@@ -221,5 +221,44 @@ describe('the pipeline a profile declares', () => {
     >[0]
     checkPipelineScopes(config, (message) => said.push(message))
     expect(said).toHaveLength(0)
+  })
+})
+
+describe('the turn timings a profile declares', () => {
+  test('an empty profile runs on the defaults', () => {
+    const config = parsed({})
+    expect(config.pipeline).toMatchObject({ maxTurnMs: 120_000, judgeTimeoutMs: 8_000 })
+  })
+
+  test('a profile may shorten the turn and the judge inside it', () => {
+    const config = parsed({ pipeline: { maxTurnMs: 30_000, judgeTimeoutMs: 2_000 } })
+    expect(() => checkPipelineSettings(config.pipeline)).not.toThrow()
+    expect(config.pipeline.judgeTimeoutMs).toBe(2_000)
+  })
+
+  test('a judge timeout beyond the turn ceiling is refused', () => {
+    expect(() => checkPipelineSettings({ maxTurnMs: 1_000, judgeTimeoutMs: 2_000 })).toThrow(
+      /judgeTimeoutMs must not exceed maxTurnMs: 2000 > 1000/,
+    )
+  })
+
+  test.each([0, -1, 1.5])('a timing of %s is refused', (value) => {
+    expect(() => checkPipelineSettings({ maxTurnMs: value, judgeTimeoutMs: 1 })).toThrow(
+      /maxTurnMs must be a whole number of milliseconds, at least 1/,
+    )
+  })
+
+  test('a longer turn ceiling makes the default dedupe window too short', async () => {
+    await expect(
+      mount({ adapters: [adapter()], pipeline: { maxTurnMs: 400_000 } }),
+    ).rejects.toThrow(/inflightTtlMs must exceed maxTurnMs: 300000 <= 400000/)
+  })
+
+  test('a longer dedupe window lets the longer turn through', async () => {
+    const ctx = await mount({
+      adapters: [adapter({ inflightTtlMs: 600_000 })],
+      pipeline: { maxTurnMs: 400_000 },
+    })
+    expect(ctx.get('dsbot-channel.peers')).toHaveLength(1)
   })
 })
