@@ -15,7 +15,7 @@ import type {
 import { REPLY_TARGET_MAX, SESSION_KEY_MAX, tokenProblem } from '../../contract.js'
 import { GROUP_GUIDANCE, PEER_GUIDANCE } from './guidance.js'
 import { DedupeTable } from './p2p-dedupe.js'
-import type { InboundRequest } from '../../peer-sessions.js'
+import type { InboundRequest } from './p2p-wire.js'
 import { DEFAULT_HOST, DEFAULT_PORT, checkListenerConfig, startListener } from './p2p-listener.js'
 import { cleanExcerpt, toP2PEvent } from './p2p-mapping.js'
 import { DEFAULT_SENT_AT_WINDOW_MS, MAX_BODY_BYTES } from './p2p-protocol.js'
@@ -69,6 +69,7 @@ export class P2PAdapter implements ChannelAdapter {
   readonly #config: P2PAdapterConfig
   readonly #options: P2PAdapterOptions
   readonly #stats: ChannelStats
+  readonly #now: () => number
   #table: DedupeTable | undefined
   #ports: AdapterPorts | undefined
 
@@ -76,6 +77,7 @@ export class P2PAdapter implements ChannelAdapter {
     this.#config = config
     this.#options = options
     this.#stats = new ChannelStats(options.now)
+    this.#now = options.now ?? Date.now
   }
 
   get snapshot(): ChannelSnapshot {
@@ -176,6 +178,15 @@ export class P2PAdapter implements ChannelAdapter {
     if (peer === undefined) {
       return { ok: false, code: 'no_url', retryable: false, reason: `this adapter addresses no peer "${input.target}"` }
     }
+    const to = input.to ?? peer.botName ?? ''
+    if (to.length === 0) {
+      return {
+        ok: false,
+        code: 'no_url',
+        retryable: false,
+        reason: `peer "${peer.instance}" names no bot, so this message has no recipient`,
+      }
+    }
     const target: PeerTarget = {
       instance: peer.instance,
       secret: peer.secret,
@@ -185,7 +196,7 @@ export class P2PAdapter implements ChannelAdapter {
     const result = await sendToPeer({
       peer: target,
       credentials: this.#credentials(ports),
-      to: input.to ?? '',
+      to,
       body: input.body,
       eventId: input.eventId,
       sender: input.sender,
@@ -263,7 +274,7 @@ export class P2PAdapter implements ChannelAdapter {
       body: event.body,
       transport: event.meta.transport,
       declared: event.meta.declared,
-      receivedAt: Date.now(),
+      receivedAt: this.#now(),
     }
   }
 

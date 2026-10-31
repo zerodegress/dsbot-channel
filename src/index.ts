@@ -87,7 +87,6 @@ export { DEFAULT_HOST, DEFAULT_PORT, SIGNATURE_HEADER, checkListenerConfig, star
 export type { Listener, ListenerConfig, ListenerOptions } from './adapters/p2p/p2p-listener.js'
 export { DEFAULT_TURN_TIMEOUT_MS, PeerSessions, TurnTimeoutError } from './peer-sessions.js'
 export type {
-  InboundRequest,
   PeerSessionsOptions,
   PeerTurn,
   PeerTurnInput,

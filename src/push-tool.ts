@@ -158,7 +158,7 @@ export class PushRouter {
     return {
       channel,
       target,
-      ...(inherited?.sender === undefined ? {} : { to: inherited.sender }),
+      ...(target === inherited?.replyTarget && inherited?.sender !== undefined ? { to: inherited.sender } : {}),
     }
   }
 

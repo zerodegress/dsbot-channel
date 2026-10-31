@@ -469,6 +469,11 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   }
 
   const started: AdapterHandle[] = []
+  ctx.effect(() => async () => {
+    await Promise.allSettled(started.map((handle) => handle.stop()))
+    reporting.clear()
+    started.length = 0
+  }, 'dsbot-channel: peer listeners')
   try {
     for (const channel of channels) {
       const { config: adapter, adapter: transport } = channel
@@ -495,9 +500,9 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
           tokenProblem('session key', message.sessionKey, SESSION_KEY_MAX) ?? transport.checkSessionKey(message.sessionKey)
         if (keyProblem !== undefined) return { ok: false, code: 'session_key_invalid', reason: keyProblem }
         const requestProblem = tokenProblem('requestId', message.requestId, REQUEST_ID_MAX)
-        if (requestProblem !== undefined) return { ok: false, code: 'session_key_invalid', reason: requestProblem }
+        if (requestProblem !== undefined) return { ok: false, code: 'request_id_invalid', reason: requestProblem }
         const targetProblem = tokenProblem('replyTarget', message.replyTarget, REPLY_TARGET_MAX)
-        if (targetProblem !== undefined) return { ok: false, code: 'session_key_invalid', reason: targetProblem }
+        if (targetProblem !== undefined) return { ok: false, code: 'reply_target_invalid', reason: targetProblem }
         const conflict = eventKeys.check(message.eventKey, message.body.text)
         if (conflict !== undefined) return { ok: false, code: 'event_key_conflict', reason: conflict }
         const sessionId = await sessions.sessionFor(message.sessionKey)
@@ -614,11 +619,6 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
     ctx.effect(() => tools.register(createNoReplyTool(ports)), 'dsbot-channel: no_reply tool')
     ctx.effect(() => tools.register(createDeclineTool(ports)), 'dsbot-channel: decline tool')
   }
-  ctx.effect(() => async () => {
-    reporting.clear()
-    ctx.set('dsbot-channel.peers', [])
-    await Promise.allSettled(started.map((handle) => handle.stop()))
-  }, 'dsbot-channel: peer listeners')
 }
 
 /** Creates every adapter the profile declares, before any of them opens a socket. */

@@ -7,7 +7,7 @@ import type { ChannelStats } from '../../channel-stats.js'
 import { STATUS_ROUTE, hasForwardingHeaders, isLoopbackPeer } from './p2p-status.js'
 import { MAX_BODY_BYTES, P2P_ROUTE, handleMessage, parseRequest } from './p2p-protocol.js'
 import type { HandleResult, P2PConfig, P2PPayload } from './p2p-protocol.js'
-import type { InboundRequest } from '../../peer-sessions.js'
+import type { InboundRequest } from './p2p-wire.js'
 
 export const DEFAULT_HOST = '127.0.0.1'
 

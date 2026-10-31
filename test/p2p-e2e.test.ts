@@ -2103,3 +2103,83 @@ describe('the shape a profile declares', () => {
     expect(sessions.prompted).toHaveLength(0)
   })
 })
+
+describe('an active push to another peer on the same channel', () => {
+  test('the recipient is the target peer, not the sender of the last message', async () => {
+    const posted: Record<string, unknown>[] = []
+    const capture = createServer((request, response) => {
+      let raw = ''
+      request.on('data', (chunk: string) => {
+        raw += chunk
+      })
+      request.on('end', () => {
+        posted.push(JSON.parse(raw) as Record<string, unknown>)
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({ duplicate: false, messageId: 'p2p-push' }))
+      })
+    })
+    await new Promise<void>((resolve) => capture.listen(0, '127.0.0.1', resolve))
+    const capturePort = (capture.address() as AddressInfo).port
+    const portB = await freePort()
+    const ctx = new Context()
+    captureWarnings(ctx)
+    const sessions = new StubSessions(ctx, 99)
+    const tools: { name: string; execute: (args: unknown, exec: unknown) => Promise<unknown> }[] = []
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', sessions)
+        scope.provide('tools')
+        scope.set('tools', {
+          register: (tool: { name: string; execute: (args: unknown, exec: unknown) => Promise<unknown> }) => {
+            tools.push(tool)
+            return () => undefined
+          },
+        })
+      },
+    })
+    const fork = await ctx.plugin(entry, {
+      adapters: [
+        {
+          channel: 'p2p:b',
+          instance: 'inst-b',
+          botName: 'bot-b',
+          p2p: {
+            peers: [
+              { instance: 'inst-a', secret: REF },
+              { instance: 'inst-c', secret: REF, url: `http://127.0.0.1:${capturePort}`, botName: 'bot-c' },
+            ],
+            listen: { host: '127.0.0.1', port: portB },
+          },
+        },
+      ],
+    })
+    forks.push(fork)
+
+    try {
+      await sendToPeer({
+        peer: { instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${portB}` },
+        credentials,
+        to: 'bot-b',
+        body: 'hello',
+        eventId: 'evt-push-target',
+        sender: 'bot-a',
+        instance: 'inst-a',
+      })
+      await waitFor(() => sessions.prompted.length > 0)
+      const sessionId = sessions.prompted[0]?.sessionId as string
+      const push = tools.find((tool) => tool.name === 'send_text')
+      expect(push).toBeDefined()
+
+      await push!.execute({ text: 'to c', target: 'inst-c' }, { agent: { id: sessionId } })
+
+      await waitFor(() => posted.length > 0)
+      expect(posted[0]).toMatchObject({ to: 'bot-c', instance: 'inst-b', sender: 'bot-b', body: 'to c' })
+    } finally {
+      capture.close()
+    }
+  })
+})
