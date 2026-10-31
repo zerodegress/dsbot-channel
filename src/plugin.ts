@@ -14,7 +14,6 @@ import type { PeerTarget } from './p2p-send.js'
 import { DEFAULT_LOOP_IDLE_RESET_MS, DEFAULT_LOOP_MAX_TURNS, InboundGate } from './inbound-gate.js'
 import type { PolicyConfig } from './policy-config.js'
 import type { PipelineNodeSpec } from './pipeline-config.js'
-import { defaultPipelineNodes } from './pipeline-config.js'
 import type { PipelineLayer, PipelineScopes } from './pipeline-scopes.js'
 import { resolveAndCheck, resolvePipeline } from './pipeline-scopes.js'
 import { compilePolicy } from './policy-config.js'
@@ -303,25 +302,25 @@ export function checkPipelineScopes(config: ChannelConfig, warn: (message: strin
   for (const warning of warnings) warn(`dsbot-channel: pipeline warning: ${warning}`)
 }
 
-/** Collects what the host knows per bot: its declared layer, the rules it can match, and the peers it addresses. */
-function botScopes(config: ChannelConfig): Map<string, BotScope> {
+/** Collects what the host knows per bot: the pipeline it runs, the rules it can match, and the peers it addresses. */
+function botScopes(config: ChannelConfig, warn: (message: string) => void): Map<string, BotScope> {
   const bots = new Map<string, BotScope>()
   for (const adapter of config.adapters) {
     const seen = bots.get(adapter.botName)
-    const rules = compilePolicy(adapter.policy).deps
-    const deny = (rules.denyRules ?? []).length > 0
-    const allow = (rules.allowRules ?? []).length > 0
+    const compiled = compilePolicy(adapter.policy)
+    const deny = (compiled.deps.denyRules ?? []).length > 0
+    const allow = (compiled.deps.allowRules ?? []).length > 0
     const peers = adapter.peers.map((peer) => peer.instance)
+    const base = declaredNodes(config, adapter) ?? compiled.specs
     if (seen === undefined) {
-      bots.set(adapter.botName, {
-        ...(adapter.pipeline === undefined ? {} : { layer: adapter.pipeline }),
-        denyRules: deny,
-        allowRules: allow,
-        peers,
-      })
+      bots.set(adapter.botName, { base, denyRules: deny, allowRules: allow, peers })
       continue
     }
-    if (adapter.pipeline !== undefined) seen.layer = adapter.pipeline
+    if (stable(seen.base) !== stable(base)) {
+      warn(
+        `dsbot-channel: two adapters answer for bot "${adapter.botName}" with different pipelines; its sessions run the first one`,
+      )
+    }
     seen.denyRules &&= deny
     seen.allowRules &&= allow
     seen.peers = [...new Set([...seen.peers, ...peers])]
@@ -334,8 +333,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const config = validateConfig<ChannelConfig>(Config, raw)
   const warn = createWarn(ctx)
   checkPipelineScopes(config, warn)
-  const base = config.pipeline.global.length > 0 ? config.pipeline.global : defaultPipelineNodes()
-  const sessions = new SessionPipelines({ global: base, bots: botScopes(config) })
+  const sessions = new SessionPipelines({ bots: botScopes(config, warn) })
   ctx.provide('dsbot-channel.pipeline')
   ctx.set('dsbot-channel.pipeline', {
     forSession: (botName: string, key: string, layer: PipelineLayer) => sessions.forSession(botName, key, layer),
