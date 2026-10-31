@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { PUSH_WINDOW_MS, PushRouter, createSendText, describeChannels } from '../src/push-tool.js'
 import type { PushChannel, PushDelivery, PushSource } from '../src/push-tool.js'
-import type { SendResult } from '../src/p2p-send.js'
+import type { SendResult } from '../src/adapters/p2p/p2p-send.js'
 
 const channels: PushChannel[] = [
   {

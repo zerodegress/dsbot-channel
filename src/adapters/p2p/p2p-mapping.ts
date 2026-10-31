@@ -1,5 +1,5 @@
-import { buildEvent } from './event-build.js'
-import type { Event } from './event-types.js'
+import { buildEvent } from '../../event-build.js'
+import type { Event } from '../../event-types.js'
 
 /** How much of the message being answered travels back with the reply. */
 export const EXCERPT_CHARS = 200

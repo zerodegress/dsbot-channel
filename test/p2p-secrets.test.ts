@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'vitest'
-import { SecretRefError, assertPeersResolvable, resolvePeers } from '../src/p2p-secrets.js'
-import type { CredentialsLike } from '../src/p2p-secrets.js'
-import { DedupeTable } from '../src/p2p-dedupe.js'
-import { handleMessage } from '../src/p2p-protocol.js'
-import { signEnvelope } from '../src/p2p-auth.js'
-import type { Envelope } from '../src/p2p-auth.js'
+import { SecretRefError, assertPeersResolvable, resolvePeers } from '../src/adapters/p2p/p2p-secrets.js'
+import type { CredentialsLike } from '../src/adapters/p2p/p2p-secrets.js'
+import { DedupeTable } from '../src/adapters/p2p/p2p-dedupe.js'
+import { handleMessage } from '../src/adapters/p2p/p2p-protocol.js'
+import { signEnvelope } from '../src/adapters/p2p/p2p-auth.js'
+import type { Envelope } from '../src/adapters/p2p/p2p-auth.js'
 
 const refs = [
   { instance: 'peer-a', secret: 'P2P_A_SECRET' },

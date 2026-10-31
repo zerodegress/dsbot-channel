@@ -2,7 +2,7 @@ import { verifyRequest } from './p2p-auth.js'
 import type { CredentialsLike, PeerRef } from './p2p-secrets.js'
 import { SecretRefError, resolvePeers } from './p2p-secrets.js'
 import type { DedupeTable } from './p2p-dedupe.js'
-import type { ChannelStats } from './channel-stats.js'
+import type { ChannelStats } from '../../channel-stats.js'
 import { EXCERPT_CHARS } from './p2p-mapping.js'
 
 export const P2P_ROUTE = '/p2p/v1/message'

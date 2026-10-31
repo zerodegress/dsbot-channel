@@ -3,8 +3,8 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
-import { staticCredentials } from '../src/p2p-secrets.js'
-import { sendToPeer } from '../src/p2p-send.js'
+import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
+import { sendToPeer } from '../src/adapters/p2p/p2p-send.js'
 
 const REF = '{{SECRET_9m2xr7qd}}'
 const credentials = staticCredentials({ [REF]: 'shared-value' })

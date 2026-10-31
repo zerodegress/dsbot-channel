@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { createHash } from 'node:crypto'
-import { signEnvelope, verifyRequest } from '../src/p2p-auth.js'
-import type { Envelope } from '../src/p2p-auth.js'
+import { signEnvelope, verifyRequest } from '../src/adapters/p2p/p2p-auth.js'
+import type { Envelope } from '../src/adapters/p2p/p2p-auth.js'
 
 const digest = (body: string) => createHash('sha256').update(body, 'utf8').digest('hex')
 

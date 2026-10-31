@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { Context, type Plugin } from '@deepseek-ai/cordis'
-import { staticCredentials } from '../src/p2p-secrets.js'
+import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
 import * as entry from '../src/index.js'
 
 const sessionStub = {

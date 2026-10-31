@@ -4,7 +4,7 @@ import entry from '../src/index.js'
 import { Config, checkPipelineScopes, checkPipelineSettings } from '../src/plugin.js'
 import type { ChannelConfig } from '../src/plugin.js'
 import { ConfigError } from '../src/config.js'
-import { staticCredentials } from '../src/p2p-secrets.js'
+import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
 
 const REF = '{{SECRET_pq7x2m4a}}'
 

@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'vitest'
-import { DedupeTable } from '../src/p2p-dedupe.js'
-import { EVENT_ID_MAX, IN_REPLY_TO_MAX } from '../src/p2p-protocol.js'
-import { EXCERPT_CHARS } from '../src/p2p-mapping.js'
+import { DedupeTable } from '../src/adapters/p2p/p2p-dedupe.js'
+import { EVENT_ID_MAX, IN_REPLY_TO_MAX } from '../src/adapters/p2p/p2p-protocol.js'
+import { EXCERPT_CHARS } from '../src/adapters/p2p/p2p-mapping.js'
 import { ChannelStats } from '../src/channel-stats.js'
-import { P2P_ROUTE, handleMessage, parseRequest } from '../src/p2p-protocol.js'
-import { signEnvelope } from '../src/p2p-auth.js'
-import type { Envelope } from '../src/p2p-auth.js'
+import { P2P_ROUTE, handleMessage, parseRequest } from '../src/adapters/p2p/p2p-protocol.js'
+import { signEnvelope } from '../src/adapters/p2p/p2p-auth.js'
+import type { Envelope } from '../src/adapters/p2p/p2p-auth.js'
 
 const fakeCredentials = (values: Record<string, string>) => ({
   resolve: async (reference: string) => {

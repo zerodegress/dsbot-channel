@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { buildEvent } from '../src/event-build.js'
-import { EXCERPT_CHARS, cleanExcerpt, toP2PEvent } from '../src/p2p-mapping.js'
+import { EXCERPT_CHARS, cleanExcerpt, toP2PEvent } from '../src/adapters/p2p/p2p-mapping.js'
 
 const inbound = { instance: 'peer-a', sender: 'bot-a', messageId: 'p2p-e1', body: 'hello', sentAt: 1_700_000_000_000 }
 

@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'vitest'
-import { signEnvelope } from '../src/p2p-auth.js'
-import type { Envelope } from '../src/p2p-auth.js'
-import { DedupeTable } from '../src/p2p-dedupe.js'
-import { handleMessage } from '../src/p2p-protocol.js'
-import type { HandleInput, P2PConfig } from '../src/p2p-protocol.js'
+import { signEnvelope } from '../src/adapters/p2p/p2p-auth.js'
+import type { Envelope } from '../src/adapters/p2p/p2p-auth.js'
+import { DedupeTable } from '../src/adapters/p2p/p2p-dedupe.js'
+import { handleMessage } from '../src/adapters/p2p/p2p-protocol.js'
+import type { HandleInput, P2PConfig } from '../src/adapters/p2p/p2p-protocol.js'
 
 const fakeCredentials = (values: Record<string, string>) => ({
   resolve: async (reference: string) => {
