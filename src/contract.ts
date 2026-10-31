@@ -16,6 +16,8 @@ export interface InboundMessage {
   eventKey: string
   /** Opaque dictionary key; core never parses it. */
   sessionKey: string
+  /** The address of the conversation this message came from; core never parses it. */
+  replyTarget: string
   chainId: string
   source: Source
   author: Author
@@ -94,3 +96,17 @@ export interface ChannelAdapter {
 
 /** Longest session key core accepts before asking the adapter. */
 export const SESSION_KEY_MAX = 128
+
+/** Longest reply address core accepts before asking the adapter. */
+export const REPLY_TARGET_MAX = 256
+
+/** Why a token is unusable, or undefined when it is: non-empty, one line, printable, bounded. */
+export function tokenProblem(name: string, value: unknown, max: number): string | undefined {
+  if (typeof value !== 'string' || value.length === 0) return `${name} must be a non-empty string`
+  if (Array.from(value).length > max) return `${name} is longer than ${max} characters`
+  for (const char of value) {
+    const code = char.codePointAt(0) ?? 0
+    if (code < 0x21 || code > 0x7e) return `${name} must be one line of printable characters without spaces`
+  }
+  return undefined
+}
