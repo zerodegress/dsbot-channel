@@ -142,6 +142,33 @@ describe('plugin lifecycle', () => {
     await fork.dispose()
   })
 
+  test('a later adapter that fails to start stops the ones already listening', async () => {
+    const taken = createServer()
+    await new Promise<void>((resolve) => taken.listen(0, '127.0.0.1', resolve))
+    const takenPort = (taken.address() as import('node:net').AddressInfo).port
+    const freePort = await new Promise<number>((resolve, reject) => {
+      const probe = createServer()
+      probe.once('error', reject)
+      probe.listen(0, '127.0.0.1', () => {
+        const port = (probe.address() as import('node:net').AddressInfo).port
+        probe.close(() => resolve(port))
+      })
+    })
+    const ctx = await contextWithCredentials()
+    const one = adapter({ channel: 'p2p:one', listen: { host: '127.0.0.1', port: freePort } })
+    const two = adapter({ channel: 'p2p:two', botName: 'bot-b', listen: { host: '127.0.0.1', port: takenPort } })
+
+    await expect(ctx.plugin(entry.default, { adapters: [one, two] })).rejects.toThrow(/EADDRINUSE/)
+
+    const rebound = await new Promise<boolean>((resolve) => {
+      const probe = createServer()
+      probe.once('error', () => resolve(false))
+      probe.listen(freePort, '127.0.0.1', () => probe.close(() => resolve(true)))
+    })
+    expect(rebound).toBe(true)
+    taken.close()
+  })
+
   test('refuses a duplicate adapter channel', async () => {
     const ctx = await contextWithCredentials()
     const cfg = { adapters: [adapter(), adapter({ botName: 'bot-b' })] }

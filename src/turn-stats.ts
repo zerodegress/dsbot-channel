@@ -9,6 +9,8 @@ export interface TurnStatsSnapshot {
   pushed: number
   /** Turns a tool closed on purpose, so they answered nothing. */
   suppressed: number
+  /** Turns that ended with an exception instead of one of the endings above. */
+  failed: number
   /** Outbound failures counted by the code the adapter reported. */
   sendFailures: Record<string, number>
   sampledAt: number
@@ -22,6 +24,7 @@ export class TurnStats {
   #empty = 0
   #pushed = 0
   #suppressed = 0
+  #failed = 0
   readonly #sendFailures = new Map<string, number>()
 
   constructor(now: () => number = Date.now) {
@@ -48,6 +51,10 @@ export class TurnStats {
     this.#suppressed += 1
   }
 
+  failed(): void {
+    this.#failed += 1
+  }
+
   sendFailed(code: string): void {
     this.#sendFailures.set(code, (this.#sendFailures.get(code) ?? 0) + 1)
   }
@@ -59,6 +66,7 @@ export class TurnStats {
       empty: this.#empty,
       pushed: this.#pushed,
       suppressed: this.#suppressed,
+      failed: this.#failed,
       sendFailures: Object.fromEntries(this.#sendFailures),
       sampledAt: this.#now(),
     }

@@ -11,6 +11,7 @@ describe('what core counts about the turns it ran', () => {
       empty: 0,
       pushed: 0,
       suppressed: 0,
+      failed: 0,
       sendFailures: {},
       sampledAt: 1_000,
     })
@@ -26,16 +27,19 @@ describe('what core counts about the turns it ran', () => {
     stats.pushed()
     stats.started()
     stats.suppressed()
+    stats.started()
+    stats.failed()
     stats.sendFailed('timeout')
     stats.sendFailed('timeout')
     stats.sendFailed('forbidden')
 
     expect(stats.snapshot()).toMatchObject({
-      started: 4,
+      started: 5,
       replied: 1,
       empty: 1,
       pushed: 1,
       suppressed: 1,
+      failed: 1,
       sendFailures: { timeout: 2, forbidden: 1 },
     })
   })

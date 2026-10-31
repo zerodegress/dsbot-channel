@@ -468,6 +468,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
     }
   }
 
+  const reporting = new Set(channels.map((channel) => channel.adapter))
   const started: AdapterHandle[] = []
   ctx.effect(() => async () => {
     await Promise.allSettled(started.map((handle) => handle.stop()))
@@ -532,6 +533,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         }
         setTimeout(() => {
           void runTurn(runtime, message, sessionId).catch((error: unknown) => {
+            turns.failed()
             warn(`dsbot-channel: peer turn for ${message.replyTarget} failed: ${String(error)}`)
           })
         }, 0)
@@ -543,7 +545,6 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
     await Promise.allSettled(started.map((handle) => handle.stop()))
     throw error
   }
-  const reporting = new Set(channels.map((channel) => channel.adapter))
   ctx.provide('dsbot-channel.status')
   ctx.set('dsbot-channel.status', {
     snapshot: () => ({ sampledAt: Date.now(), adapters: [...reporting].map((adapter) => adapter.status()) }),
