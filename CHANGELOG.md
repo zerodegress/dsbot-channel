@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Adapters are declared as a list, each with its own listener settings and its own peer list.
 - Per-adapter `policy` rules that deny a message by word or regular expression, allow named peers through, and cap how many rounds one peer may hold, tuned with `relayLimit` and `relayResetMs`.
 - Per-adapter `policy.budget` with a required `capacity` in points and an optional `hardLimit` ratio; once the window reaches the hard limit the next turn is refused.
+- `pipeline.maxTurnMs` and `pipeline.judgeTimeoutMs`, so a profile sets the ceiling one turn may occupy and the judging deadline inside it.
 
 ### Changed
 
@@ -26,5 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A session layer declared at run time now decides what that session's next turn runs; before, it was stored, readable, and never consulted.
+- Turn timings reach the pipeline that runs them, instead of every pipeline falling back to built-in defaults.
 - Signature verification now covers `eventId`, `sentAt` and `body`, and signatures are base64-encoded as the wire protocol specifies.
 - Stale in-flight reservations are reclaimed after their TTL, so a crashed delivery no longer blocks the same `eventId`.
