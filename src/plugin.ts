@@ -347,7 +347,7 @@ function assertBotsBind(config: ChannelConfig, bots: Map<string, BotFacts>): voi
   }
 }
 
-function botScopes(config: ChannelConfig, warn: (message: string) => void): Map<string, BotFacts> {
+function botScopes(config: ChannelConfig): Map<string, BotFacts> {
   const bots = new Map<string, BotFacts>()
   for (const adapter of config.adapters) {
     const seen = bots.get(adapter.botName)
@@ -360,9 +360,10 @@ function botScopes(config: ChannelConfig, warn: (message: string) => void): Map<
       bots.set(adapter.botName, { base, denyRules: deny, allowRules: allow, peers, deps: compiled.deps })
       continue
     }
-    if (stable(seen.base) !== stable(base)) {
-      warn(
-        `dsbot-channel: two adapters answer for bot "${adapter.botName}" with different pipelines; its sessions run the first one`,
+    if (stable(seen.base) !== stable(base) || stable(seen.deps) !== stable(compiled.deps)) {
+      throw new ConfigError(
+        `two adapters answer for bot "${adapter.botName}" with different pipelines or rules; a bot runs one pipeline`,
+        ['adapters'],
       )
     }
     seen.denyRules &&= deny
@@ -379,7 +380,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const settings: PipelineSettings = { maxTurnMs: config.pipeline.maxTurnMs, judgeTimeoutMs: config.pipeline.judgeTimeoutMs }
   checkPipelineSettings(settings)
   checkPipelineScopes(config, warn)
-  const bots = botScopes(config, warn)
+  const bots = botScopes(config)
   assertBotsBind(config, bots)
   const pipelines = new SessionPipelines({ bots })
   ctx.provide('dsbot-channel.pipeline')
