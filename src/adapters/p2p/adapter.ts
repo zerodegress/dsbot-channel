@@ -195,6 +195,7 @@ export class P2PAdapter implements ChannelAdapter {
     }
     const result = await sendToPeer({
       peer: target,
+      ...(input.chainId === undefined ? {} : { chainId: input.chainId }),
       credentials: this.#credentials(ports),
       to,
       body: input.body,
@@ -266,6 +267,7 @@ export class P2PAdapter implements ChannelAdapter {
       eventKey: event.meta.derived.eventKey,
       sessionKey: `p2p:${request.instance}`,
       replyTarget: request.instance,
+      chainId: request.chainId,
       requestId: request.eventId,
       ...(request.status === 'declined' ? { suppressed: true } : {}),
       source: event.source,

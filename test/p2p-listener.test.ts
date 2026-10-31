@@ -65,7 +65,7 @@ function post(port: number, body: unknown, headers?: Record<string, string>): Pr
 }
 
 const message = (overrides: Record<string, unknown> = {}) => ({
-  eventId: 'evt-1',
+  eventId: 'evt-1',  chainId: 'evt-1',
   to: 'bot-a',
   sender: 'bot-b',
   instance: 'inst-b',

@@ -21,6 +21,8 @@ export interface P2PSendInput {
   peer: PeerTarget
   credentials: CredentialsLike
   to: string
+  /** The root event of the conversation; a new conversation uses its own event id. */
+  chainId?: string
   body: string
   eventId: string
   sender: string
@@ -117,6 +119,7 @@ export async function sendToPeer(input: P2PSendInput): Promise<SendResult> {
   const sentAt = input.sentAt ?? Date.now()
   const envelope = {
     eventId: input.eventId,
+    chainId: input.chainId ?? input.eventId,
     to: input.to,
     sender: input.sender,
     instance: input.instance,

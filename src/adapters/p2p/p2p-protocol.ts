@@ -17,6 +17,9 @@ export const IN_REPLY_TO_MAX = 128
 /** An event id grows a reply: prefix each round, so it needs more room than a token. */
 export const EVENT_ID_MAX = 256
 
+/** A chain root is an event id, so it gets the same room. */
+export const CHAIN_ID_MAX = 256
+
 function isToken(text: string): boolean {
   for (const char of text) {
     const code = char.codePointAt(0) ?? 0
@@ -55,6 +58,7 @@ export const DECLINED = 'declined'
 
 export interface ParsedMessage {
   eventId: string
+  chainId: string
   to: string
   sender: string
   instance: string
@@ -67,7 +71,9 @@ export interface ParsedMessage {
   inReplyToExcerpt?: string
 }
 
-export type Parsed = { ok: true; value: ParsedMessage } | { ok: false; status: 400 | 413; reason: string }
+export type Parsed =
+  | { ok: true; value: ParsedMessage }
+  | { ok: false; status: 400 | 401 | 413; reason: string; protocolMismatch?: boolean }
 
 export function parseRequest(payload: P2PPayload, maxBodyBytes = MAX_BODY_BYTES): Parsed {
   const { eventId, to, sender, instance, body, sentAt } = payload
@@ -91,6 +97,18 @@ export function parseRequest(payload: P2PPayload, maxBodyBytes = MAX_BODY_BYTES)
   if (reason !== undefined && typeof reason !== 'string') return { ok: false, status: 400, reason: 'reason must be a string' }
   const final = payload.final
   if (final !== undefined && typeof final !== 'boolean') return { ok: false, status: 400, reason: 'final must be a boolean' }
+  const chainId = payload.chainId
+  if (chainId === undefined) {
+    return {
+      ok: false,
+      status: 401,
+      reason: 'chainId is required: this peer speaks the chain-root protocol',
+      protocolMismatch: true,
+    }
+  }
+  if (typeof chainId !== 'string' || !isToken(chainId) || chainId.length > CHAIN_ID_MAX) {
+    return { ok: false, status: 400, reason: `chainId must be a token of at most ${CHAIN_ID_MAX} characters` }
+  }
   const inReplyTo = payload.inReplyTo
   if (inReplyTo !== undefined) {
     if (typeof inReplyTo !== 'string' || inReplyTo.length === 0 || inReplyTo.length > IN_REPLY_TO_MAX || !isToken(inReplyTo)) {
@@ -107,6 +125,7 @@ export function parseRequest(payload: P2PPayload, maxBodyBytes = MAX_BODY_BYTES)
     ok: true,
     value: {
       eventId: eventId as string,
+      chainId,
       to: to as string,
       sender: sender as string,
       instance: instance as string,
@@ -145,7 +164,14 @@ function messageIdFor(eventId: string): string {
 export async function handleMessage(input: HandleInput): Promise<HandleResult> {
   const { config, table, auth, payload } = input
   const parsed = parseRequest(payload, config.maxBodyBytes)
-  if (!parsed.ok) return { ok: false, status: parsed.status, body: { error: parsed.reason } }
+  if (!parsed.ok) {
+    if (parsed.protocolMismatch) input.stats?.protocolMismatch()
+    return {
+      ok: false,
+      status: parsed.status,
+      body: { error: parsed.reason, ...(parsed.protocolMismatch ? { code: 'protocol_mismatch' } : {}) },
+    }
+  }
   const request = parsed.value
 
   let resolved

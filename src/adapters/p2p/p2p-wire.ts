@@ -1,5 +1,6 @@
 export interface InboundRequest {
   eventId: string
+  chainId: string
   to: string
   sender: string
   instance: string

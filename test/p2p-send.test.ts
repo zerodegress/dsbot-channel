@@ -49,7 +49,7 @@ const base = (url: string) => ({
   credentials,
   to: 'remote-bot',
   body: 'hello',
-  eventId: 'evt-1',
+  eventId: 'evt-1',  chainId: 'evt-1',
   sender: 'sender-bot',
   instance: 'sender-inst',
 })

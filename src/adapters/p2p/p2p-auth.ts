@@ -15,6 +15,8 @@ export interface AuthResult {
 /** Everything the signature covers, in the order both sides build it. */
 export interface Envelope {
   eventId: string
+  /** The root event of the conversation this message belongs to; signed like eventId. */
+  chainId: string
   to: string
   sender: string
   instance: string
@@ -48,6 +50,7 @@ export function digestBody(body: string): string {
 export function canonicalEnvelope(envelope: Envelope): string {
   return JSON.stringify({
     eventId: envelope.eventId,
+    chainId: envelope.chainId,
     to: envelope.to,
     sender: envelope.sender,
     instance: envelope.instance,

@@ -24,8 +24,8 @@ export interface InboundMessage {
   requestId: string
   /** The adapter already knows this turn must not answer: the sender declined, or it answered elsewhere. */
   suppressed?: boolean | undefined
-  /** Required from #89; the field is here so one message type serves both batches. */
-  chainId?: string | undefined
+  /** The root event of the conversation, from the adapter; core never derives it. */
+  chainId: string
   source: Source
   author: Author
   /** What the platform sent, before the adapter adds its own header; core matches policy on this. */
@@ -123,6 +123,9 @@ export const SESSION_KEY_MAX = 128
 
 /** Longest platform message id core hands to the host untouched. */
 export const REQUEST_ID_MAX = 256
+
+/** Longest chain root core accepts from an adapter. */
+export const CHAIN_ID_MAX = 256
 
 /** The guidance an adapter may inject once per session, bounded so a profile cannot blow the context. */
 export const GUIDANCE_MAX = 400

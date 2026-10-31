@@ -10,10 +10,10 @@ import type { Hold } from './budget-ledger.js'
 import { ClosedChains } from './chain-closer.js'
 import { ConfigError, validateConfig } from './config.js'
 import type { AdapterCheckSettings, AdapterHandle, ChannelAdapter, InboundMessage, InboundVerdict } from './contract.js'
-import { GUIDANCE_MAX, REPLY_TARGET_MAX, REQUEST_ID_MAX, SESSION_KEY_MAX, tokenProblem } from './contract.js'
+import { CHAIN_ID_MAX, GUIDANCE_MAX, REPLY_TARGET_MAX, REQUEST_ID_MAX, SESSION_KEY_MAX, tokenProblem } from './contract.js'
 import { createDeclineTool, createNoReplyTool } from './control-tools.js'
 import type { ControlPorts, PeerTurnRef } from './control-tools.js'
-import { KeyGuard } from './event-keys.js'
+import { ChainGuard, KeyGuard } from './event-keys.js'
 import { InboundGate } from './inbound-gate.js'
 import { InjectionLedger } from './inbound-guidance.js'
 import { PeerSessions } from './peer-sessions.js'
@@ -394,6 +394,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const injected = new InjectionLedger()
   const activeTurns = new Map<string, PeerTurnRef>()
   const eventKeys = new KeyGuard()
+  const chainKeys = new ChainGuard()
   const turns = new TurnStats()
   const resolveSecret = async (reference: string): Promise<string | undefined> => {
     const found = await credentials.resolve?.(reference)
@@ -447,6 +448,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         to: message.author.senderId,
         body: turn.text,
         eventId: `reply:${message.requestId}`,
+        chainId: message.chainId,
         sender: adapter.botName,
         instance: adapter.instance,
         inReplyTo: message.requestId,
@@ -506,6 +508,10 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         if (targetProblem !== undefined) return { ok: false, code: 'reply_target_invalid', reason: targetProblem }
         const conflict = eventKeys.check(message.eventKey, message.body.text)
         if (conflict !== undefined) return { ok: false, code: 'event_key_conflict', reason: conflict }
+        const chainProblem = tokenProblem('chainId', message.chainId, CHAIN_ID_MAX)
+        if (chainProblem !== undefined) return { ok: false, code: 'chain_conflict', reason: chainProblem }
+        const chainConflict = chainKeys.check(message.chainId, message.eventKey)
+        if (chainConflict !== undefined) return { ok: false, code: 'chain_conflict', reason: chainConflict }
         const sessionId = await sessions.sessionFor(message.sessionKey)
         sources.set(sessionId, {
           channel: adapter.channel,
@@ -586,6 +592,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
           to: delivery.to,
           body: delivery.text,
           eventId: delivery.eventId,
+          chainId: delivery.eventId,
           sender: channel.config.botName,
           instance: channel.config.instance,
         })

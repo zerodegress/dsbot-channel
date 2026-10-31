@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { KeyGuard } from '../src/event-keys.js'
+import { ChainGuard, KeyGuard } from '../src/event-keys.js'
 
 describe('a key an adapter repeats', () => {
   test('the same key with the same content is not a conflict', () => {
@@ -26,5 +26,26 @@ describe('a key an adapter repeats', () => {
     const guard = new KeyGuard({ limit: 3 })
     for (let index = 0; index < 10; index += 1) guard.check(`key-${index}`, 'x')
     expect(guard.size).toBeLessThanOrEqual(3)
+  })
+})
+
+describe('the chain an event belongs to', () => {
+  test('the same event in the same chain is not a conflict', () => {
+    const guard = new ChainGuard()
+    expect(guard.check('root-1', 'evt-1')).toBeUndefined()
+    expect(guard.check('root-1', 'evt-1')).toBeUndefined()
+  })
+
+  test('an event already in one chain cannot move to another', () => {
+    const guard = new ChainGuard()
+    guard.check('root-1', 'evt-1')
+    expect(guard.check('root-2', 'evt-1')).toMatch(/already belongs to chain "root-1"/)
+  })
+
+  test('a different event in the same chain is fine', () => {
+    const guard = new ChainGuard()
+    guard.check('root-1', 'evt-1')
+    expect(guard.check('root-1', 'evt-2')).toBeUndefined()
+    expect(guard.size).toBe(2)
   })
 })

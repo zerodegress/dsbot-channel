@@ -56,3 +56,39 @@ export class KeyGuard {
     }
   }
 }
+
+/** Refuses an event that belongs to two chains: one message can only sit in one conversation. */
+export class ChainGuard {
+  readonly #seen = new Map<string, { chainId: string; at: number }>()
+  readonly #limit: number
+  readonly #ttlMs: number
+  readonly #now: () => number
+
+  constructor(options: KeyGuardOptions = {}) {
+    this.#limit = options.limit ?? KEY_GUARD_LIMIT
+    this.#ttlMs = options.ttlMs ?? KEY_GUARD_TTL_MS
+    this.#now = options.now ?? Date.now
+  }
+
+  /** The problem with this pairing, or undefined when the event's chain is new or unchanged. */
+  check(chainId: string, eventKey: string): string | undefined {
+    const at = this.#now()
+    const seen = this.#seen.get(eventKey)
+    if (seen !== undefined && at - seen.at < this.#ttlMs) {
+      if (seen.chainId === chainId) return undefined
+      return `event "${eventKey}" already belongs to chain "${seen.chainId}"`
+    }
+    this.#seen.set(eventKey, { chainId, at })
+    if (this.#seen.size > this.#limit) {
+      for (const [key, entry] of this.#seen) {
+        if (at - entry.at >= this.#ttlMs || this.#seen.size > this.#limit) this.#seen.delete(key)
+        if (this.#seen.size <= this.#limit) break
+      }
+    }
+    return undefined
+  }
+
+  get size(): number {
+    return this.#seen.size
+  }
+}

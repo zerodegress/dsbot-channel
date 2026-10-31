@@ -1239,6 +1239,7 @@ p2p: {
       expect(sent?.to).toBe('bot-a')
       expect(sent?.sender).toBe('bot-b')
       expect(sent?.instance).toBe('inst-b')
+      expect(sent?.chainId).toBe('evt-1')
     } finally {
       mounted.close()
     }

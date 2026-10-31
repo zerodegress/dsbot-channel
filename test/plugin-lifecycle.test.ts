@@ -63,7 +63,7 @@ const adapter = (overrides: Record<string, unknown> = {}) => {
 const config = (overrides: Record<string, unknown> = {}) => ({ adapters: [adapter(overrides)] })
 
 const message = {
-  eventId: 'evt-1',
+  eventId: 'evt-1',  chainId: 'evt-1',
   to: 'bot-a',
   sender: 'bot-b',
   instance: 'inst-b',

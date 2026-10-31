@@ -21,7 +21,7 @@ export { LAYERS, LayerViolationError, declareLayer, derivedLayer, readDeclared, 
 export type { DeclaredLayer, Layer } from './event-layers.js'
 export { buildEvent, chargeKey, dedupeKeyFor, replyIdempotencyKey, unstableDedupeKey } from './event-build.js'
 export { ConfigError, WILDCARD_HOSTS, assertBindHost, strict, validateConfig } from './config.js'
-export { GUIDANCE_MAX, INBOUND_REJECTIONS, REPLY_TARGET_MAX, REQUEST_ID_MAX, SESSION_KEY_MAX, tokenProblem } from './contract.js'
+export { CHAIN_ID_MAX, GUIDANCE_MAX, INBOUND_REJECTIONS, REPLY_TARGET_MAX, REQUEST_ID_MAX, SESSION_KEY_MAX, tokenProblem } from './contract.js'
 export type {
   AdapterCheckSettings,
   AdapterHandle,

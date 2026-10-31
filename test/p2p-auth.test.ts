@@ -8,6 +8,7 @@ const digest = (body: string) => createHash('sha256').update(body, 'utf8').diges
 function envelope(overrides: Partial<Envelope> = {}): Envelope {
   return {
     eventId: 'e1',
+    chainId: 'e1',
     to: 'bot-b',
     sender: 'bot-a',
     instance: 'peer-a',
