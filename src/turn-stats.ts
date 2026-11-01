@@ -5,6 +5,8 @@ export interface TurnStatsSnapshot {
   replied: number
   /** Turns that ended with no text and no tool call, which always loses an answer. */
   empty: number
+  /** Turns whose plain text was discarded because the session requires a tool call. */
+  dropped: number
   /** Turns that already answered through send_text. */
   pushed: number
   /** Turns a tool closed on purpose, so they answered nothing. */
@@ -22,6 +24,7 @@ export class TurnStats {
   #started = 0
   #replied = 0
   #empty = 0
+  #dropped = 0
   #pushed = 0
   #suppressed = 0
   #failed = 0
@@ -41,6 +44,10 @@ export class TurnStats {
 
   empty(): void {
     this.#empty += 1
+  }
+
+  dropped(): void {
+    this.#dropped += 1
   }
 
   pushed(): void {
@@ -64,6 +71,7 @@ export class TurnStats {
       started: this.#started,
       replied: this.#replied,
       empty: this.#empty,
+      dropped: this.#dropped,
       pushed: this.#pushed,
       suppressed: this.#suppressed,
       failed: this.#failed,

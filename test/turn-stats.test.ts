@@ -9,6 +9,7 @@ describe('what core counts about the turns it ran', () => {
       started: 0,
       replied: 0,
       empty: 0,
+      dropped: 0,
       pushed: 0,
       suppressed: 0,
       failed: 0,
@@ -23,6 +24,7 @@ describe('what core counts about the turns it ran', () => {
     stats.replied()
     stats.started()
     stats.empty()
+    stats.dropped()
     stats.started()
     stats.pushed()
     stats.started()
@@ -37,6 +39,7 @@ describe('what core counts about the turns it ran', () => {
       started: 5,
       replied: 1,
       empty: 1,
+      dropped: 1,
       pushed: 1,
       suppressed: 1,
       failed: 1,
