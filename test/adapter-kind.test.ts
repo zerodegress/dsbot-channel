@@ -19,6 +19,19 @@ const credentials = staticCredentials({ [REF]: 'shared-value' })
 const verdicts: InboundVerdict[] = []
 const messages: InboundMessage[] = []
 
+function groupMessage(): InboundMessage {
+  return {
+    ...message('x-group'),
+    sessionKey: 'group:12345',
+    replyTarget: '12345',
+    source: { kind: 'x-group', instance: 'inst-a', peer: 'inst-a', scope: 'group' },
+  }
+}
+
+function strictMessage(): InboundMessage {
+  return { ...message('x-strict'), sessionKey: 'bad key' }
+}
+
 function message(kind: string): InboundMessage {
   return {
     eventKey: 'inst-a:msg-1',
@@ -41,15 +54,18 @@ class StubAdapter implements ChannelAdapter {
   readonly guidance = { peer: 'peer guidance', group: 'group guidance' }
   readonly #outbound: InboundMessage[]
 
-  constructor(outbound: InboundMessage[], kind = 'x-demo') {
+  readonly #acceptKey: (key: string) => string | undefined
+
+  constructor(outbound: InboundMessage[], kind = 'x-demo', acceptKey: (key: string) => string | undefined = () => undefined) {
     this.#outbound = outbound
     this.kind = kind
+    this.#acceptKey = acceptKey
   }
 
   checkConfig(): void {}
 
-  checkSessionKey(): string | undefined {
-    return undefined
+  checkSessionKey(key: string): string | undefined {
+    return this.#acceptKey(key)
   }
 
   checkTarget(): string | undefined {
@@ -100,8 +116,15 @@ class StubAdapter implements ChannelAdapter {
 
 registerAdapter('x-demo', (mount: AdapterMount) => new StubAdapter([message(mount.transport.sourceKind as string ?? 'x-demo')]))
 registerAdapter('x-liar', (mount: AdapterMount) => new StubAdapter([message('p2p')], mount.transport.reportedKind as string))
+registerAdapter('x-group', () => new StubAdapter([groupMessage()], 'x-group'))
+registerAdapter('x-strict', () => new StubAdapter([strictMessage()], 'x-strict', (key) => (key === 'x-ok' ? undefined : `this adapter does not address "${key}"`)))
 
 async function mountWith(kind: string, adapterKind = 'x-demo'): Promise<Context> {
+  return mountPrompted(kind, adapterKind).then((one) => one.ctx)
+}
+
+async function mountPrompted(kind: string, adapterKind = 'x-demo'): Promise<{ ctx: Context; prompts: number[] }> {
+  const prompts: number[] = []
   const ctx = new Context()
   await ctx.plugin({
     name: 'probe-services',
@@ -111,7 +134,10 @@ async function mountWith(kind: string, adapterKind = 'x-demo'): Promise<Context>
       scope.provide('sessionController')
       scope.set('sessionController', {
         create: () => Promise.resolve({ sessionId: 'session-1' }),
-        prompt: () => Promise.resolve({ accepted: true }),
+        prompt: () => {
+          prompts.push(1)
+          return Promise.resolve({ accepted: true })
+        },
       })
     },
   })
@@ -127,12 +153,33 @@ async function mountWith(kind: string, adapterKind = 'x-demo'): Promise<Context>
       },
     ],
   })
-  return ctx
+  return { ctx, prompts }
 }
 
 describe('the kind a transport answers to', () => {
   test('a factory that reports another kind than the profile mounted is refused at load', async () => {
     await expect(mountWith('x-liar', 'x-liar')).rejects.toThrow(/mounted as kind "x-liar" reports kind "p2p"/)
+  })
+})
+
+describe('the session key an adapter supplies', () => {
+  test('a group key reaches a turn and is billed there, not under a peer pool', async () => {
+    verdicts.length = 0
+    const { prompts } = await mountPrompted('x-demo', 'x-group')
+
+    expect(verdicts).toEqual([{ ok: true }])
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(prompts).toHaveLength(1)
+  })
+
+  test('a key the adapter refuses never starts a turn', async () => {
+    verdicts.length = 0
+    const { prompts } = await mountPrompted('x-strict', 'x-strict')
+
+    expect(verdicts).toHaveLength(1)
+    expect(verdicts[0]).toMatchObject({ ok: false, code: 'session_key_invalid' })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(prompts).toHaveLength(0)
   })
 })
 

@@ -106,8 +106,8 @@ describe('a turn hands its own charge key to the ledger', () => {
   test('one event key reserves one turn', () => {
     const ledger = new BudgetLedger(limits)
     const billing = new TurnBilling({ ledger })
-    billing.begin('bot-a', 'peer-a', 'p2p:peer-a', 'e1')
-    const again = billing.begin('bot-a', 'peer-a', 'p2p:peer-a', 'e1')
+    billing.begin('bot-a', 'p2p:peer-a', 'e1')
+    const again = billing.begin('bot-a', 'p2p:peer-a', 'e1')
 
     expect(again?.duplicate).toBe(true)
     expect(ledger.usage('bot-a', 'p2p:peer-a').global).toBe(20)
@@ -116,8 +116,8 @@ describe('a turn hands its own charge key to the ledger', () => {
   test('the same event for two bots is two turns worth of points', () => {
     const ledger = new BudgetLedger(limits)
     const billing = new TurnBilling({ ledger })
-    billing.begin('bot-a', 'peer-a', 'p2p:peer-a', 'e1')
-    billing.begin('bot-b', 'peer-a', 'p2p:peer-a', 'e1')
+    billing.begin('bot-a', 'p2p:peer-a', 'e1')
+    billing.begin('bot-b', 'p2p:peer-a', 'e1')
 
     expect(ledger.usage('bot-a', 'p2p:peer-a')['bot:bot-a']).toBe(20)
     expect(ledger.usage('bot-b', 'p2p:peer-a')['bot:bot-b']).toBe(20)

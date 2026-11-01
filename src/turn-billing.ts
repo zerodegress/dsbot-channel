@@ -1,5 +1,4 @@
 import type { BudgetLedger, Hold } from './budget-ledger.js'
-import { sessionKeyFor } from './budget-ledger.js'
 import { chargeKey } from './event-build.js'
 import type { ChargeKind } from './event-types.js'
 
@@ -12,12 +11,8 @@ export interface TurnBillingOptions {
 export class TurnBilling {
   constructor(private readonly options: TurnBillingOptions = {}) {}
 
-  begin(
-    botId: string,
-    peer: string,
-    session = sessionKeyFor({ scope: 'p2p', target: peer }),
-    eventKey?: string,
-  ): Hold | undefined {
+  /** `session` is the key the adapter supplied, never the host's session id. */
+  begin(botId: string, session: string, eventKey?: string): Hold | undefined {
     const ledger = this.options.ledger
     if (!ledger) return undefined
     const kind = this.options.chargeKind ?? 'bot'

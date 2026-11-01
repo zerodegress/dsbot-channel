@@ -418,7 +418,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
     turns.started()
     let hold: Hold | undefined
     try {
-      hold = runtime.billing.begin(adapter.botName, message.replyTarget, sessionId, message.eventKey)
+      hold = runtime.billing.begin(adapter.botName, message.sessionKey, message.eventKey)
       const guidance = injected.claim(sessionId)
         ? transport.guidance[message.source.scope === 'group' ? 'group' : 'peer']
         : ''
@@ -542,7 +542,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
           },
           peer: message.source.peer ?? message.replyTarget,
           botId: adapter.botName,
-          session: sessionId,
+          session: message.sessionKey,
           ...(pipeline === undefined ? {} : { pipeline }),
         })
         if (!decision.allow) {
