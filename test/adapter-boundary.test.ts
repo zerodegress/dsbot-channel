@@ -138,6 +138,7 @@ describe('the package surface', () => {
       'STATUS_ROUTE',
       'hasForwardingHeaders',
       'isLoopbackPeer',
+      'registerBuiltinAdapter',
     ]
     for (const name of internals) expect(name in entry).toBe(false)
   })

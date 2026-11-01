@@ -28,7 +28,6 @@ export {
   checkAdapterKind,
   knownAdapterKinds,
   registerAdapter,
-  registerBuiltinAdapter,
 } from './adapter-registry.js'
 export type { AdapterFactory, AdapterMount, AdapterOptions } from './adapter-registry.js'
 export { CHAIN_ID_MAX, GUIDANCE_MAX, INBOUND_REJECTIONS, REFUSE_REASONS, REPLY_TARGET_MAX, REQUEST_ID_MAX, SESSION_KEY_MAX, tokenProblem } from './contract.js'
@@ -122,4 +121,4 @@ export type { AdmitInput, GateDecision, GateOptions, GateReason, LoopConfig } fr
 export { ChannelStats } from './channel-stats.js'
 export { TurnStats } from './turn-stats.js'
 export type { TurnStatsSnapshot } from './turn-stats.js'
-export type { ChannelFailure, ChannelState } from './channel-stats.js'
+export type { ChannelFailure, ChannelSnapshot, ChannelState } from './channel-stats.js'
