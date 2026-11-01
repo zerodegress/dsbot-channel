@@ -67,6 +67,27 @@ export interface SendFailure {
 
 export type SendResult = SendSuccess | SendFailure
 
+/** Why a turn is refused; closed, so every transport tells the sender the same story. */
+export const REFUSE_REASONS = ['unsupported', 'unavailable', 'unauthorized', 'too-busy', 'policy'] as const
+export type RefuseReason = (typeof REFUSE_REASONS)[number]
+
+export interface RefuseInput {
+  /** The address the refusal goes back on; the adapter supplied it with the inbound message. */
+  target: string
+  /** Who to tell inside that conversation; same meaning as in SendInput. */
+  to?: string | undefined
+  /** The message being refused, so the sender can correlate it: the inbound requestId. */
+  inReplyTo: string
+  /** The chain it belongs to, so a refusal stays inside one conversation. */
+  chainId: string
+  /** Machine-readable; the adapter turns it into its platform's own wording. */
+  reason: RefuseReason
+  /** One bounded human line, optional; the adapter may trim it for its wire. */
+  note?: string | undefined
+}
+
+export type RefuseResult = { ok: true } | { ok: false; code: SendFailureCode; reason: string }
+
 export interface SendInput {
   /** The adapter's own address for the recipient; core never parses it. */
   target: string
@@ -82,9 +103,6 @@ export interface SendInput {
   instance: string
   sentAt?: number | undefined
   timeoutMs?: number | undefined
-  status?: 'declined' | undefined
-  reason?: string | undefined
-  final?: boolean | undefined
 }
 
 export interface AdapterPorts {
@@ -127,6 +145,11 @@ export interface ChannelAdapter {
   guidance: { peer: string; group: string }
   status(): AdapterStatus
   send(input: SendInput): Promise<SendResult>
+  /**
+   * Tells the sender this turn is refused. Present only when the transport can carry a
+   * refusal; core falls back to closing silently when it is absent.
+   */
+  refuse?(input: RefuseInput): Promise<RefuseResult>
   start(ports: AdapterPorts): Promise<AdapterHandle>
 }
 

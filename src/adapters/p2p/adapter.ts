@@ -5,6 +5,8 @@ import { ChannelStats } from '../../channel-stats.js'
 import { ConfigError } from '../../config.js'
 import type {
   AdapterCheckSettings,
+  RefuseInput,
+  RefuseResult,
   AdapterHandle,
   AdapterPorts,
   ChannelAdapter,
@@ -17,13 +19,16 @@ import { GROUP_GUIDANCE, PEER_GUIDANCE } from './guidance.js'
 import { DedupeTable } from './p2p-dedupe.js'
 import type { InboundRequest } from './p2p-wire.js'
 import { DEFAULT_HOST, DEFAULT_PORT, checkListenerConfig, startListener } from './p2p-listener.js'
-import { cleanExcerpt, toP2PEvent } from './p2p-mapping.js'
+import { cleanExcerpt, oneLine, toP2PEvent } from './p2p-mapping.js'
 import { DEFAULT_SENT_AT_WINDOW_MS, MAX_BODY_BYTES } from './p2p-protocol.js'
 import type { CredentialsLike, PeerRef } from './p2p-secrets.js'
 import { sendToPeer } from './p2p-send.js'
 import type { PeerTarget } from './p2p-send.js'
 
 export const DEFAULT_INFLIGHT_TTL_MS = 300_000
+
+/** Longest note a refusal carries on the wire, one line. */
+export const REFUSE_NOTE_MAX = 200
 
 const DEFAULT_DEDUPE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const DEFAULT_DEDUPE_LIMIT = 100_000
@@ -205,14 +210,47 @@ export class P2PAdapter implements ChannelAdapter {
       instance: this.#config.instance,
       ...(input.sentAt === undefined ? {} : { sentAt: input.sentAt }),
       ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
-      ...(input.status === undefined ? {} : { status: input.status }),
-      ...(input.reason === undefined ? {} : { reason: input.reason }),
-      ...(input.final === undefined ? {} : { final: input.final }),
       ...(input.inReplyTo === undefined ? {} : { inReplyTo: input.inReplyTo }),
       ...(input.inReplyToText === undefined ? {} : { inReplyToExcerpt: cleanExcerpt(input.inReplyToText) }),
     })
     if (!result.ok) this.#stats.sendFailed(result.code)
     return result
+  }
+
+  async refuse(input: RefuseInput): Promise<RefuseResult> {
+    const ports = this.#ports
+    if (ports === undefined) {
+      return { ok: false, code: 'unreachable', reason: 'the p2p adapter is not started' }
+    }
+    const peer = this.#peer(input.target)
+    if (peer === undefined) {
+      return { ok: false, code: 'no_url', reason: `this adapter addresses no peer "${input.target}"` }
+    }
+    const to = input.to ?? peer.botName ?? ''
+    if (to.length === 0) {
+      return { ok: false, code: 'no_url', reason: `peer "${peer.instance}" names no bot, so a refusal has no recipient` }
+    }
+    const target: PeerTarget = {
+      instance: peer.instance,
+      secret: peer.secret,
+      ...(peer.url === undefined ? {} : { url: peer.url }),
+      ...(peer.host === undefined ? {} : { host: peer.host }),
+    }
+    const result = await sendToPeer({
+      peer: target,
+      credentials: this.#credentials(ports),
+      to,
+      body: '',
+      eventId: `decline:${input.inReplyTo}`,
+      chainId: input.chainId,
+      sender: this.#config.botName,
+      instance: this.#config.instance,
+      status: 'declined',
+      reason: oneLine(input.note ?? input.reason, REFUSE_NOTE_MAX),
+      final: true,
+    })
+    if (!result.ok) this.#stats.sendFailed(result.code)
+    return result.ok ? { ok: true } : { ok: false, code: result.code, reason: result.reason }
   }
 
   async start(ports: AdapterPorts): Promise<AdapterHandle> {

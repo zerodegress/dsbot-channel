@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'vitest'
 import { createDeclineTool, createNoReplyTool } from '../src/control-tools.js'
-import type { ControlPorts, PeerTurnRef } from '../src/control-tools.js'
+import type { ControlPorts, TurnRef } from '../src/control-tools.js'
 
 function harness(options: { declined?: { ok: boolean; code?: string; reason?: string } } = {}) {
   const closed: string[] = []
-  const declined: { turn: PeerTurnRef; reason: string | undefined }[] = []
+  const declined: { turn: TurnRef; reason: string | undefined }[] = []
   const concluded: number[] = []
-  const turn: PeerTurnRef = { eventId: 'probe-1', chainId: 'chain-1', channel: 'p2p:orca', target: 'seal', sender: 'seal', suppressed: false, pushed: false }
+  const turn: TurnRef = { eventId: 'probe-1', chainId: 'chain-1', channel: 'p2p:orca', target: 'seal', sender: 'seal', suppressed: false, pushed: false }
   const closedNow = new Set<string>()
   const ports: ControlPorts = {
     turnOf: (sessionId) => (sessionId === 'session-1' ? turn : undefined),
@@ -42,17 +42,33 @@ describe('no_reply', () => {
     expect(concluded).toHaveLength(1)
   })
 
-  test('is refused outside a peer turn, so a group turn cannot close a chain', async () => {
+  test('is refused outside a turn, so a session without one cannot close a chain', async () => {
     const { ports, exec } = harness()
 
     await expect(createNoReplyTool(ports).execute({}, exec('group-session'))).rejects.toThrow(
-      'this tool is only available while answering a peer message',
+      'this tool is only available while answering a message',
     )
   })
 })
 
+describe('decline on a channel that cannot tell the sender', () => {
+  test('closes the turn silently and says the refusal was not delivered', async () => {
+    const { ports, exec, concluded } = harness()
+    const unable: ControlPorts = {
+      ...ports,
+      decline: async () => ({ ok: false, supported: false, reason: 'this channel cannot carry a refusal' }),
+    }
+
+    const raw = await createDeclineTool(unable).execute({ reason: 'no' }, exec('session-1'))
+    const result = JSON.parse(raw as string) as Record<string, unknown>
+
+    expect(result).toMatchObject({ ok: true, closed: true, declined: false })
+    expect(concluded).toHaveLength(1)
+  })
+})
+
 describe('decline', () => {
-  test('tells the peer why, then keeps the turn silent', async () => {
+  test('tells the sender why, then keeps the turn silent', async () => {
     const { turn, closed, declined, concluded, ports, exec } = harness()
 
     const raw = await createDeclineTool(ports).execute({ reason: 'not my job' }, exec('session-1'))
@@ -74,7 +90,7 @@ describe('decline', () => {
     expect(closed).toEqual(['chain-1'])
   })
 
-  test('is refused outside a peer turn', async () => {
+  test('is refused outside a turn', async () => {
     const { ports, exec } = harness()
 
     await expect(createDeclineTool(ports).execute({ reason: 'no' }, exec('group-session'))).rejects.toThrow()

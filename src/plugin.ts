@@ -14,7 +14,7 @@ import type { AdapterCheckSettings, AdapterHandle, ChannelAdapter, InboundMessag
 import { CHAIN_ID_MAX, GUIDANCE_MAX, REPLY_TARGET_MAX, REQUEST_ID_MAX, SESSION_KEY_MAX, tokenProblem } from './contract.js'
 import { SOURCE_KIND_MAX } from './event-types.js'
 import { createDeclineTool, createNoReplyTool } from './control-tools.js'
-import type { ControlPorts, PeerTurnRef } from './control-tools.js'
+import type { ControlPorts, TurnRef } from './control-tools.js'
 import { ChainGuard, KeyGuard } from './event-keys.js'
 import { InboundGate } from './inbound-gate.js'
 import { InjectionLedger } from './inbound-guidance.js'
@@ -394,7 +394,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const sources = new Map<string, PushSource>()
   const chains = new ClosedChains()
   const injected = new InjectionLedger()
-  const activeTurns = new Map<string, PeerTurnRef>()
+  const activeTurns = new Map<string, TurnRef>()
   const eventKeys = new KeyGuard()
   const chainKeys = new ChainGuard()
   const turns = new TurnStats()
@@ -405,7 +405,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
 
   const runTurn = async (runtime: ChannelRuntime, message: InboundMessage, sessionId: string): Promise<void> => {
     const { config: adapter, adapter: transport } = runtime.channel
-    const turnRef: PeerTurnRef = {
+    const turnRef: TurnRef = {
       eventId: message.requestId,
       chainId: message.chainId,
       channel: adapter.channel,
@@ -622,17 +622,17 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         if (channel === undefined) {
           return { ok: false, code: 'no_url', reason: `channel "${turn.channel}" is gone` }
         }
-        const sent = await channel.adapter.send({
+        const refuse = channel.adapter.refuse?.bind(channel.adapter)
+        if (refuse === undefined) {
+          return { ok: false, supported: false, code: 'rejected', reason: 'this channel cannot carry a refusal' }
+        }
+        const sent = await refuse({
           target: turn.target,
-          to: turn.sender,
-          body: '',
-          eventId: `decline:${turn.eventId}`,
+          ...(turn.sender.length === 0 ? {} : { to: turn.sender }),
+          inReplyTo: turn.eventId,
           chainId: turn.chainId,
-          sender: channel.config.botName,
-          instance: channel.config.instance,
-          status: 'declined',
-          final: true,
-          ...(reason === undefined ? {} : { reason }),
+          reason: 'policy',
+          ...(reason === undefined ? {} : { note: reason }),
         })
         return sent.ok ? { ok: true } : { ok: false, code: sent.code, reason: sent.reason }
       },
