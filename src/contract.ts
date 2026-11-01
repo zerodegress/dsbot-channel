@@ -105,6 +105,11 @@ export interface AdapterCheckSettings {
 }
 
 export interface ChannelAdapter {
+  /**
+   * Names this transport's implementation: one kind has one factory, while many adapters may
+   * reuse it (two p2p links are two adapters of `p2p`). Every message it delivers must carry
+   * this same kind in `source.kind`.
+   */
   kind: string
   /** Checks what the transport needs at mount time and throws ConfigError on a bad profile. */
   checkConfig(settings: AdapterCheckSettings): void

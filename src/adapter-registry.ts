@@ -19,6 +19,11 @@ export interface AdapterOptions {
 
 export type AdapterFactory = (mount: AdapterMount, options: AdapterOptions) => ChannelAdapter
 
+/**
+ * A kind names one transport implementation: the registry holds one factory per kind, while any
+ * number of adapter instances may mount it. A profile names a kind, not a factory.
+ */
+
 /** Kinds the package ships and owns; a profile names them directly. */
 export const BUILTIN_KINDS = ['p2p', 'onebot'] as const
 
@@ -37,7 +42,7 @@ function add(kind: string, factory: AdapterFactory): void {
   factories.set(kind, factory)
 }
 
-/** Lets a third-party transport offer itself; its kind must stay in the `x-` namespace. */
+/** Lets a third-party transport offer itself; its kind must stay in the `x-` namespace. One call per kind. */
 export function registerAdapter(kind: string, factory: AdapterFactory): void {
   if ((BUILTIN_KINDS as readonly string[]).includes(kind)) {
     throw new ConfigError(

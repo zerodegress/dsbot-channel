@@ -94,3 +94,20 @@ describe('the p2p transport block', () => {
     ).toThrow(/listen.port/)
   })
 })
+
+describe('one kind, one implementation, many adapters', () => {
+  test('one factory serves several mounts of the same kind', () => {
+    const factory = adapterFactory('p2p')
+    const first = factory(
+      { kind: 'p2p', channel: 'p2p:a', instance: 'inst-a', botName: 'bot-a', transport: { peers: [{ instance: 'inst-b', secret: 'x' }] } },
+      { warn: () => undefined },
+    )
+    const second = factory(
+      { kind: 'p2p', channel: 'p2p:b', instance: 'inst-b', botName: 'bot-b', transport: { peers: [{ instance: 'inst-a', secret: 'x' }] } },
+      { warn: () => undefined },
+    )
+    expect(first.kind).toBe('p2p')
+    expect(second.kind).toBe('p2p')
+    expect(second).not.toBe(first)
+  })
+})

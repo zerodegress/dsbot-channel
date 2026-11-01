@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Adapter kinds: `p2p` and `onebot` are built-in names, a third-party transport registers as `x-[a-z0-9-]+` within 32 characters, and a profile naming an unknown kind fails at load.
-- A message's `source.kind` must match the kind of the adapter that carried it; a mismatch is refused with `source_kind_invalid` before a session or a charge exists.
+- A kind names one implementation: a factory registers once per kind, while several adapters may reuse it. A message's `source.kind` must match the kind of the adapter that carried it; a mismatch is refused with `source_kind_invalid` before a session or a charge exists.
 
 - Event model with four parts (source, author, body, metadata), three metadata layers, and separate `eventKey` and `contentHash` fields; the declared layer cannot be read by consumers.
 - Configuration validation that rejects unknown fields and wildcard listen addresses, reporting the offending field path.
