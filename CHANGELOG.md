@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An adapter declares the capabilities it carries at mount time, beside the sampled ones in its status.
 - A conversation's quota is counted under the key its adapter supplies (`p2p:<instance>` for a p2p link) rather than the host session id, so every turn of that conversation accumulates in one pool.
 - An adapter declares its transport in a `p2p` block; `peers`, `listen`, `dedupe`, `inflightTtlMs`, `sentAtWindowMs`, `maxBodyBytes` and `waitMs` written on the adapter itself now fail to load.
+- Core no longer exports `sessionKeyFor` or `ScopePair`, so an old import of either fails to compile. Only the adapter that saw a message knows its session key; `InboundGate.admit` takes that key as an argument instead of filling in `p2p:<peer>`.
 
 ### Fixed
 
