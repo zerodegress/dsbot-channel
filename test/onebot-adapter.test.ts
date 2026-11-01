@@ -143,8 +143,8 @@ describe('the onebot token', () => {
     expect(await post(port, '/onebot/event', event({ message_id: '11' }), 'Bearer wrong')).toEqual({ status: 401 })
     expect(await post(port, '/onebot/event', event({ message_id: '12' }), `Bearer ${TOKEN}`)).toEqual({ status: 204 })
 
-    const snapshot = (adapter as unknown as { status(): { channel: string } }).status()
-    expect(snapshot.channel).toBe('onebot:a')
+    expect(adapter.snapshot.authFailures).toBe(2)
+    expect(adapter.status()).toMatchObject({ channel: 'onebot:a' })
   })
 
   test('a profile without a token accepts an unauthenticated event', async () => {
@@ -210,6 +210,23 @@ describe('the onebot sender', () => {
     const { adapter } = await startAdapter({ accessToken: REF, api: { url: `http://127.0.0.1:${apiPort}`, timeoutMs: 1000 } })
     const failed = await adapter.send({ target: 'group:1', eventId: 'e', body: 'x', sender: 'b', instance: 'i' })
     expect(failed).toMatchObject({ ok: false, code: 'unreachable', retryable: true })
+  })
+
+  test('the api refusing the token maps to unauthorized', async () => {
+    const api = createServer((request, response) => {
+      request.resume()
+      response.writeHead(401, { 'content-type': 'application/json' })
+      response.end(JSON.stringify({ status: 'failed', retcode: 1403, message: 'bad token' }))
+    })
+    await new Promise<void>((resolve) => api.listen(0, '127.0.0.1', resolve))
+    const apiPort = (api.address() as AddressInfo).port
+    stops.push(async () => {
+      api.close()
+    })
+
+    const { adapter } = await startAdapter({ accessToken: REF, api: { url: `http://127.0.0.1:${apiPort}`, timeoutMs: 1000 } })
+    const sent = await adapter.send({ target: 'group:1', eventId: 'e', body: 'x', sender: 'b', instance: 'i' })
+    expect(sent).toMatchObject({ ok: false, code: 'unauthorized', retryable: false })
   })
 
   test('an unaddressable target is refused before any call', async () => {

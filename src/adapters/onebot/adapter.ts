@@ -4,6 +4,7 @@ import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { AdapterStatus } from '../../adapter-status.js'
 import { buildListenerHealth, buildStatus } from '../../adapter-status.js'
+import type { ChannelSnapshot } from '../../channel-stats.js'
 import { ChannelStats } from '../../channel-stats.js'
 import { ConfigError } from '../../config.js'
 import type {
@@ -271,6 +272,10 @@ export class OneBotAdapter implements ChannelAdapter {
     this.#now = options.now ?? Date.now
     this.#warn = options.warn
     this.#dedupe = new Seen(ONEBOT_DEDUPE_TTL_MS, ONEBOT_DEDUPE_LIMIT, this.#now)
+  }
+
+  get snapshot(): ChannelSnapshot {
+    return this.#stats.snapshot()
   }
 
   checkConfig(): void {
