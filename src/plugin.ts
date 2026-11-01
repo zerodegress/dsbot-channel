@@ -95,6 +95,7 @@ export const Config: any = Schema.object({
     maxTurnMs: Schema.number().default(DEFAULT_PIPELINE.maxTurnMs),
     judgeTimeoutMs: Schema.number().default(DEFAULT_PIPELINE.judgeTimeoutMs),
   }).default({}),
+  /** Nested shape, enum and regex checks live in reply-config; this schema only claims the key. */
   reply: Schema.any(),
   adapters: Schema
     .array(
@@ -358,6 +359,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const channels = mountAdapters(config, settings, warn)
   checkGuidance(channels)
   const reply = compileReply(config.reply)
+  // A guard against a future edit to the notice text, not profile validation: the block is core-owned.
   if (TOOL_MODE_NOTICE.length > TOOL_MODE_NOTICE_MAX) {
     throw new ConfigError(`the tool-mode block is longer than ${TOOL_MODE_NOTICE_MAX} characters`, ['reply'])
   }

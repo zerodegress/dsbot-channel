@@ -27,7 +27,8 @@ export class InjectionLedger {
     return true
   }
 
-  get size(): number {
+  /** Conversations that have already received the guidance block; the mode state is tracked apart. */
+  get guidanceSize(): number {
     return this.#guidance.size
   }
 

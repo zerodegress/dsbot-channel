@@ -14,7 +14,7 @@ describe('what a session is told about answering', () => {
     const ledger = new InjectionLedger()
     ledger.claim('session-1')
     ledger.clear()
-    expect(ledger.size).toBe(0)
+    expect(ledger.guidanceSize).toBe(0)
     expect(ledger.claim('session-1')).toBe(true)
   })
 })
