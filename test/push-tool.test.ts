@@ -50,7 +50,7 @@ describe('addressing a push', () => {
 
     const result = await router.push({ text: 'hi' }, 'session-1')
 
-    expect(result).toEqual({ ok: true, messageId: 'm-1', channel: 'p2p:orca', scope: 'p2p', target: 'seal' })
+    expect(result).toEqual({ ok: true, messageId: 'm-1', channel: 'p2p:orca', target: 'seal' })
     expect(deliveries).toEqual([
       { channel: 'p2p:orca', target: 'seal', to: 'seal', text: 'hi', eventId: 'push:id-1' },
     ])
@@ -99,20 +99,13 @@ describe('addressing a push', () => {
     if (!result.ok) expect(result.reason).toMatch(/addresses no peer "nobody"/)
   })
 
-  test('the scope a peer link carries is accepted', async () => {
-    const { router } = harness({ source: { channel: 'p2p:orca', replyTarget: 'seal' } })
-
-    const result = await router.push({ text: 'hi', scope: 'p2p' }, 'session-1')
-
-    expect(result).toMatchObject({ ok: true, scope: 'p2p' })
-  })
-
-  test.each(['c2c', 'group', 'nonsense'])('a scope the link does not carry is refused: %s', async (scope) => {
+  test.each(['p2p', 'c2c', 'group', 'nonsense'])('a scope argument is refused as gone: %s', async (scope) => {
     const { router, deliveries } = harness({ source: { channel: 'p2p:orca', replyTarget: 'seal' } })
 
-    const result = await router.push({ text: 'hi', scope }, 'session-1')
+    const result = await router.push({ text: 'hi', scope } as never, 'session-1')
 
-    expect(result).toMatchObject({ ok: false, code: 'unsupported_scope', retryable: false })
+    expect(result).toMatchObject({ ok: false, code: 'unsupported_argument', retryable: false })
+    if (!result.ok) expect(result.reason).toMatch(/the scope argument is gone/)
     expect(deliveries).toHaveLength(0)
   })
 })

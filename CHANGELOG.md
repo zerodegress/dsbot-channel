@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- `send_text` no longer takes a `scope` argument, and its result no longer returns one: the address in `target` already says where a message goes. A caller that still passes it gets `unsupported_argument` instead of silence.
 - `softLimit` is gone: the ledger, `policy.budget` and a pipeline node's fields no longer accept it, and a quota has only a hard limit. Nothing read the soft threshold, so a profile that set one was configuring a limit that never fired.
 - The p2p internals are no longer re-exported: signing, dedupe, mapping, the wire protocol, the listener, peer secrets, the send helper and the status route live under the adapter directory, and the package surface is the adapter contract plus the core.
 - `registerBuiltinAdapter` is gone from the entry: only the composition root registers a built-in kind, and a third-party transport uses `registerAdapter`.
