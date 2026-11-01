@@ -78,10 +78,22 @@ export interface DeclaredMeta {
   claimedIdentity: string | null
 }
 
+/**
+ * The four layers of an event, and who owns each:
+ *
+ * - `transport` carries the facts a platform can verify (message id, time, mentions, reply,
+ *   signature); core knows these field names.
+ * - `derived` is computed by core and is the only authority for identity; nobody else writes it.
+ * - `declared` is what the sender says about itself (nickname, avatar, claimed identity); it is
+ *   untrusted and exists for display only.
+ * - `adapter` is the transport's own raw payload: core never parses it and only passes it on, and
+ *   a reader may look at it. It takes no part in identity or in any decision.
+ */
 export interface EventMeta {
   transport: TransportMeta
   derived: DerivedMeta
   declared: DeclaredMeta
+  adapter: Record<string, unknown>
 }
 
 export interface Event {
@@ -97,6 +109,8 @@ export interface EventInput {
   body: Body
   transport: TransportMeta
   declared: DeclaredMeta
+  /** The transport's raw payload; core only carries it. */
+  adapter?: Record<string, unknown> | undefined
 }
 
 export interface Target {

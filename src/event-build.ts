@@ -1,3 +1,4 @@
+import { adapterMetaOf } from './adapter-meta.js'
 import { contentHash, eventKey } from './event-key.js'
 import type { ChargeKind, Event, EventInput, MediaRef, Mentioned, Source } from './event-types.js'
 import { MEDIA_HANDLE_MAX, MEDIA_TYPES } from './event-types.js'
@@ -85,6 +86,7 @@ export function buildEvent(input: EventInput): Event {
         contentHash: contentHash(input.body),
       },
       declared: { ...input.declared },
+      adapter: adapterMetaOf(input.adapter),
     },
   }
 }

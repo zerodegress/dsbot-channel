@@ -315,6 +315,7 @@ export class P2PAdapter implements ChannelAdapter {
       body: event.body,
       transport: event.meta.transport,
       declared: event.meta.declared,
+      adapter: event.meta.adapter,
       receivedAt: this.#now(),
     }
   }

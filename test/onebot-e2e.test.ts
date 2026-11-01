@@ -155,6 +155,28 @@ describe('an onebot group message through the mounted plugin', () => {
     expect(mounted.calls).toHaveLength(0)
   })
 
+  test('the raw payload never reaches the turn', async () => {
+    const mounted = await mount()
+    expect(
+      await post(
+        mounted.port,
+        event({
+          message_id: 34,
+          raw_message: '[CQ:at,qq=10001] 看图[CQ:image,file=ab12.image]',
+          message: [
+            { type: 'at', data: { qq: '10001' } },
+            { type: 'text', data: { text: ' 看图' } },
+            { type: 'image', data: { file: 'ab12.image' } },
+          ],
+        }),
+      ),
+    ).toBe(204)
+    await waitFor(() => mounted.prompted.length > 0)
+
+    expect(mounted.prompted[0]).toContain('看图')
+    expect(mounted.prompted[0]).not.toContain('[CQ:')
+  })
+
   test('a private message answers through send_private_msg', async () => {
     const mounted = await mount()
     expect(

@@ -55,6 +55,7 @@ function message(kind: string): InboundMessage {
     body: { text: 'hello', media: [], replyTo: null },
     transport: { messageId: 'msg-1', timestamp: 1, mentioned: { self: false, others: false, all: false }, isReply: false, signature: null },
     declared: { nickname: '', avatar: '', claimedIdentity: null },
+    adapter: {},
     receivedAt: 1,
   }
 }

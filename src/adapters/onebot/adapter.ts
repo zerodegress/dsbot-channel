@@ -20,6 +20,7 @@ import type {
 import { MEDIA_HANDLE_MAX } from '../../event-types.js'
 import type { AuthorKind, MediaRef, Mentioned, Scope } from '../../event-types.js'
 import { buildEvent } from '../../event-build.js'
+import { ADAPTER_META_MAX_BYTES } from '../../adapter-meta.js'
 
 export interface OneBotAdapterConfig {
   channel: string
@@ -182,6 +183,16 @@ export function mapOneBotEvent(
   const kind: AuthorKind = config.bots.includes(senderId) ? 'bot' : 'person'
   const head = `[onebot from ${nickname.length === 0 ? senderId : nickname} · ${senderId} · ${messageId}]`
   const body = rawText.length === 0 ? head : `${head} ${rawText}`
+  const rawMessage = typeof event.raw_message === 'string' ? event.raw_message : ''
+  const payload: Record<string, unknown> = {
+    rawMessage,
+    messageType: event.message_type,
+    ...(typeof event.sub_type === 'string' ? { subType: event.sub_type } : {}),
+  }
+  const oversized = Buffer.byteLength(JSON.stringify(payload), 'utf8') > ADAPTER_META_MAX_BYTES
+  if (oversized) {
+    warn?.(`dsbot-channel: kept the raw payload of onebot message ${messageId} out of the event: it is larger than ${ADAPTER_META_MAX_BYTES} bytes`)
+  }
   const built = buildEvent({
     source: { kind: 'onebot', instance: config.instance, peer: target, scope },
     author: { senderId, kind, personId: null },
@@ -194,6 +205,7 @@ export function mapOneBotEvent(
       signature: null,
     },
     declared: { nickname, avatar: '', claimedIdentity: null },
+    ...(oversized ? {} : { adapter: payload }),
   })
   return {
     eventKey: ownKey,
@@ -207,6 +219,7 @@ export function mapOneBotEvent(
     body: built.body,
     transport: built.meta.transport,
     declared: built.meta.declared,
+    adapter: built.meta.adapter,
     receivedAt: now(),
   }
 }

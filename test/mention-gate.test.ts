@@ -32,6 +32,7 @@ function message(mentioned: Mentioned, eventKey: string): InboundMessage {
     body: { text: 'hello', media: [], replyTo: null },
     transport: { messageId: eventKey, timestamp: 1, mentioned, isReply: false, signature: null },
     declared: { nickname: '', avatar: '', claimedIdentity: null },
+    adapter: {},
     receivedAt: 1,
   }
 }

@@ -50,6 +50,9 @@ export interface P2PInbound {
   sentAt: number
   inReplyTo?: string
   inReplyToExcerpt?: string
+  status?: 'declined'
+  reason?: string
+  final?: boolean
 }
 
 /** Maps a peer message onto the event model with the peer identity as the source. */
@@ -73,5 +76,13 @@ export function toP2PEvent(inbound: P2PInbound): Event {
       signature: null,
     },
     declared: { nickname: '', avatar: '', claimedIdentity: null },
+    adapter: {
+      sentAt: inbound.sentAt,
+      ...(inbound.inReplyTo === undefined ? {} : { inReplyTo: inbound.inReplyTo }),
+      ...(inbound.inReplyToExcerpt === undefined ? {} : { inReplyToExcerpt: inbound.inReplyToExcerpt }),
+      ...(inbound.status === undefined ? {} : { status: inbound.status }),
+      ...(inbound.reason === undefined ? {} : { reason: inbound.reason }),
+      ...(inbound.final === undefined ? {} : { final: inbound.final }),
+    },
   })
 }
