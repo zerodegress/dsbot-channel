@@ -3,7 +3,7 @@ import { BudgetLedger, DEFAULT_BUDGET } from '../src/budget-ledger.js'
 import { TurnBilling } from '../src/turn-billing.js'
 
 function ledger(capacity = 100, now?: () => number): BudgetLedger {
-  return new BudgetLedger({ capacity, softLimit: 0.8, hardLimit: 1 }, DEFAULT_BUDGET, now)
+  return new BudgetLedger({ capacity, hardLimit: 1 }, DEFAULT_BUDGET, now)
 }
 
 function spent(instance: BudgetLedger, peer = 'peer-a', botId = 'bot-a'): number {

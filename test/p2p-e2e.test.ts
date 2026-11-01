@@ -1816,9 +1816,9 @@ policy
     await expect(mountWith({ budget: { capacity: 2.5 } })).rejects.toThrow(/budget capacity/)
   })
 
-  test('a soft limit is refused while nothing acts on it', async () => {
+  test('a soft limit is now an unknown field', async () => {
     await expect(mountWith({ budget: { capacity: 100, softLimit: 0.8 } })).rejects.toThrow(
-      'policy.budget.softLimit is not supported in this version',
+      /unknown config fields: softLimit/,
     )
   })
 

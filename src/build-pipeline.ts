@@ -118,7 +118,6 @@ export function buildPipeline(
           run: () => {
             const verdict = budget()
             if (verdict.state === 'hard') return { kind: 'deny', reason: `hard limit: ${verdict.triggeredBy.join(', ')}` }
-            if (verdict.state === 'soft') return { kind: 'restrict', skip: ['scoring', 'judge'], reason: `soft limit: ${verdict.triggeredBy.join(', ')}` }
             return { kind: 'pass' }
           },
         }

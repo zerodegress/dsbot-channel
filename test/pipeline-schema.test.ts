@@ -55,8 +55,14 @@ const parsed = (config: unknown): ChannelConfig => (Config as (value: unknown) =
 describe('the pipeline a profile declares', () => {
   test('refuses a global pipeline that cannot load, and names the layer', async () => {
     await expect(
+      mount({ adapters: [], pipeline: { global: [{ id: 'prepare', type: 'prepare' }] } }),
+    ).rejects.toThrow(/the pipeline cannot load: node "prepare"/)
+  })
+
+  test('a soft limit on a node is an unknown field', async () => {
+    await expect(
       mount({ adapters: [], pipeline: { global: [{ id: 'budget', type: 'budget', softLimit: 0.7 }] } }),
-    ).rejects.toThrow(/the pipeline cannot load: global: node "budget"/)
+    ).rejects.toThrow(/unknown config fields: softLimit/)
   })
 
   test('refuses a bot layer that writes a node the chain cannot hold', async () => {
