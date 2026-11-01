@@ -14,7 +14,28 @@ describe('what a session is told about answering', () => {
     const ledger = new InjectionLedger()
     ledger.claim('session-1')
     ledger.clear()
-    expect(ledger.size).toBe(0)
+    expect(ledger.guidanceSize).toBe(0)
     expect(ledger.claim('session-1')).toBe(true)
+  })
+})
+
+describe('the mode block', () => {
+  test('is claimed when a conversation enters tool mode', () => {
+    const ledger = new InjectionLedger()
+    expect(ledger.claimMode('group:1', 'tool')).toBe(true)
+    expect(ledger.claimMode('group:1', 'tool')).toBe(false)
+  })
+
+  test('auto clears the state so a later tool turn repeats the block', () => {
+    const ledger = new InjectionLedger()
+    ledger.claimMode('group:1', 'tool')
+    expect(ledger.claimMode('group:1', 'auto')).toBe(false)
+    expect(ledger.claimMode('group:1', 'tool')).toBe(true)
+  })
+
+  test('conversations do not share the state', () => {
+    const ledger = new InjectionLedger()
+    ledger.claimMode('group:1', 'tool')
+    expect(ledger.claimMode('group:2', 'tool')).toBe(true)
   })
 })

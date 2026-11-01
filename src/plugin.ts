@@ -17,7 +17,7 @@ import { createDeclineTool, createNoReplyTool } from './control-tools.js'
 import type { ControlPorts, TurnRef } from './control-tools.js'
 import { ChainGuard, KeyGuard } from './event-keys.js'
 import { InboundGate } from './inbound-gate.js'
-import { InjectionLedger } from './inbound-guidance.js'
+import { InjectionLedger, TOOL_MODE_NOTICE, TOOL_MODE_NOTICE_MAX } from './inbound-guidance.js'
 import { PeerSessions } from './peer-sessions.js'
 import type { SessionControllerLike, SessionEventLike } from './peer-sessions.js'
 import { unboundReason, unboundRuleReason } from './pipeline-bindable.js'
@@ -26,6 +26,8 @@ import { DEFAULT_PIPELINE } from './pipeline-config.js'
 import type { PipelineLayer, PipelineScopes } from './pipeline-scopes.js'
 import { resolveAndCheck, resolvePipeline } from './pipeline-scopes.js'
 import { compilePolicy } from './policy-config.js'
+import { compileReply } from './reply-config.js'
+import type { ReplyFacts } from './reply-config.js'
 import type { PolicyConfig } from './policy-config.js'
 import { PushRouter, createSendText } from './push-tool.js'
 import type { PushSource, SendTextTool } from './push-tool.js'
@@ -60,6 +62,8 @@ export interface AdapterConfig {
 export interface ChannelConfig {
   adapters: AdapterConfig[]
   pipeline: PipelineSettings & { global: PipelineNodeSpec[] }
+  /** How a turn answers: auto lets it write, tool requires a tool call. */
+  reply?: unknown
 }
 
 const nodeSpecSchema = Schema.object({
@@ -91,6 +95,8 @@ export const Config: any = Schema.object({
     maxTurnMs: Schema.number().default(DEFAULT_PIPELINE.maxTurnMs),
     judgeTimeoutMs: Schema.number().default(DEFAULT_PIPELINE.judgeTimeoutMs),
   }).default({}),
+  /** Nested shape, enum and regex checks live in reply-config; this schema only claims the key. */
+  reply: Schema.any(),
   adapters: Schema
     .array(
       Schema.object({
@@ -352,6 +358,16 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const pipelines = new SessionPipelines({ bots })
   const channels = mountAdapters(config, settings, warn)
   checkGuidance(channels)
+  const reply = compileReply(config.reply)
+  // A guard against a future edit to the notice text, not profile validation: the block is core-owned.
+  if (TOOL_MODE_NOTICE.length > TOOL_MODE_NOTICE_MAX) {
+    throw new ConfigError(`the tool-mode block is longer than ${TOOL_MODE_NOTICE_MAX} characters`, ['reply'])
+  }
+  type AnyTool = SendTextTool | ReturnType<typeof createNoReplyTool> | ReturnType<typeof createDeclineTool>
+  const tools = ctx.get('tools') as { register: (definition: AnyTool) => () => void } | undefined
+  if (reply.possibleTool && (tools === undefined || typeof tools.register !== 'function')) {
+    throw new ConfigError('the tools service is required when a profile can choose tool mode', ['reply'])
+  }
   const byBot = new Map<string, MountedChannel>()
   for (const channel of channels) {
     if (!byBot.has(channel.config.botName)) byBot.set(channel.config.botName, channel)
@@ -408,13 +424,17 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
     let hold: Hold | undefined
     try {
       hold = runtime.billing.begin(adapter.botName, message.sessionKey, message.eventKey)
-      const guidance = injected.claim(sessionId)
-        ? transport.guidance[message.source.scope === 'group' ? 'group' : 'peer']
-        : ''
+      const mode = reply.modeFor(replyFactsOf(message))
+      const blocks: string[] = []
+      if (injected.claim(message.sessionKey)) {
+        const guidance = transport.guidance[message.source.scope === 'group' ? 'group' : 'peer']
+        blocks.push(`[${transport.kind}] ${guidance}`)
+      }
+      if (injected.claimMode(message.sessionKey, mode)) blocks.push(TOOL_MODE_NOTICE)
       const turn = await runtime.sessions.runTurn({
         peer: message.sessionKey,
         requestId: message.requestId,
-        text: guidance.length === 0 ? message.body.text : `${guidance}\n\n${message.body.text}`,
+        text: blocks.length === 0 ? message.body.text : `${blocks.join('\n')}\n\n${message.body.text}`,
       })
       if (turnRef.suppressed) {
         turns.suppressed()
@@ -425,6 +445,15 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
       if (turnRef.pushed) {
         turns.pushed()
         runtime.billing.accept(hold)
+        hold = undefined
+        return
+      }
+      if (mode === 'tool' && turn.text.length > 0) {
+        warn(
+          `dsbot-channel: dropped the plain text answer for ${message.requestId} from ${message.replyTarget}: tool mode requires a tool call`,
+        )
+        turns.dropped()
+        runtime.billing.reject(hold)
         hold = undefined
         return
       }
@@ -461,6 +490,18 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
       if (hold !== undefined) runtime.billing.refund(hold)
     }
   }
+
+  const replyFactsOf = (message: InboundMessage): ReplyFacts => ({
+    source: {
+      kind: message.source.kind,
+      instance: message.source.instance,
+      peer: message.source.peer,
+      scope: message.source.scope,
+    },
+    author: { kind: message.author.kind, senderId: message.author.senderId },
+    transport: { mentioned: message.transport.mentioned, isReply: message.transport.isReply },
+    body: { text: message.rawText, media: message.body.media },
+  })
 
   const reporting = new Set(channels.map((channel) => channel.adapter))
   const started: AdapterHandle[] = []
@@ -561,8 +602,6 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   ctx.set('dsbot-channel.turns', { snapshot: () => turns.snapshot() })
   ctx.provide('dsbot-channel.peers')
   ctx.set('dsbot-channel.peers', started)
-  type AnyTool = SendTextTool | ReturnType<typeof createNoReplyTool> | ReturnType<typeof createDeclineTool>
-  const tools = ctx.get('tools') as { register: (definition: AnyTool) => () => void } | undefined
   if (tools !== undefined && typeof tools.register === 'function') {
     const byChannel = new Map(channels.map((channel) => [channel.config.channel, channel]))
     const router = new PushRouter({

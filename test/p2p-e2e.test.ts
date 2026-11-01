@@ -12,8 +12,10 @@ const INCOMING = '[p2p from inst-a · bot-a · p2p-evt-1] hello'
 const credentials = staticCredentials({ [REF]: 'shared-value' })
 
 /** Drops the line a session is taught once, so a test can read the message itself. */
+const GUIDANCE_BLOCK = `[p2p] ${PEER_GUIDANCE}`
+
 function bodyOf(text: string): string {
-  return text.startsWith(PEER_GUIDANCE) ? text.slice(PEER_GUIDANCE.length + 2) : text
+  return text.startsWith(GUIDANCE_BLOCK) ? text.slice(GUIDANCE_BLOCK.length + 2) : text
 }
 
 function freePort(): Promise<number> {
@@ -152,7 +154,7 @@ p2p: {
 
     await waitFor(() => sessions.prompted.length >= 2)
 
-    expect(sessions.prompted[0]?.text.startsWith(PEER_GUIDANCE)).toBe(true)
+    expect(sessions.prompted[0]?.text.startsWith(`[p2p] ${PEER_GUIDANCE}`)).toBe(true)
     expect(bodyOf(sessions.prompted[0]?.text ?? '').startsWith('[p2p from inst-a · bot-a · p2p-evt-1] ')).toBe(true)
     expect(bodyOf(sessions.prompted[0]?.text ?? '').endsWith(' hello')).toBe(true)
     expect(bodyOf(sessions.prompted[0]?.text ?? '')).toBe(INCOMING)
