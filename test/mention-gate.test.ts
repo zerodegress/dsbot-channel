@@ -129,7 +129,7 @@ describe('a group message that names nobody', () => {
   test('is refused as not_addressed when the profile requires a mention', async () => {
     queue = [message({ self: false, others: true, all: false }, 'g-1')]
     verdicts = []
-    const { prompts } = await mount({ requireMention: true })
+    const { prompts, created } = await mount({ requireMention: true })
 
     expect(verdicts).toHaveLength(1)
     expect(verdicts[0]).toMatchObject({ ok: false, code: 'rejected' })
@@ -137,6 +137,7 @@ describe('a group message that names nobody', () => {
     if (!verdict.ok) expect(verdict.reason).toContain('not_addressed')
     await new Promise((resolve) => setTimeout(resolve, 10))
     expect(prompts).toHaveLength(0)
+    expect(created).toEqual([])
   })
 
   test('gets through when it names everyone', async () => {
