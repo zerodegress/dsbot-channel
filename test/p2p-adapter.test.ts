@@ -3,7 +3,7 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { ConfigError } from '../src/config.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
-import { P2PAdapter } from '../src/adapters/p2p/adapter.js'
+import { P2PAdapter, REFUSE_NOTE_MAX } from '../src/adapters/p2p/adapter.js'
 import type { P2PAdapterConfig } from '../src/adapters/p2p/adapter.js'
 import { sendToPeer } from '../src/adapters/p2p/p2p-send.js'
 import type { InboundMessage } from '../src/contract.js'
@@ -283,5 +283,46 @@ describe('the p2p adapter sends through its own addressing', () => {
     })
     expect(unknown.ok).toBe(false)
     if (!unknown.ok) expect(unknown.code).toBe('no_url')
+  })
+})
+
+describe('the note a refusal carries', () => {
+  test('a long note is trimmed to one bounded line before it reaches the wire', async () => {
+    const posted: Record<string, unknown>[] = []
+    const capture = createServer((request, response) => {
+      let raw = ''
+      request.on('data', (chunk: string) => {
+        raw += chunk
+      })
+      request.on('end', () => {
+        posted.push(JSON.parse(raw) as Record<string, unknown>)
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({ duplicate: false, messageId: 'p2p-x' }))
+      })
+    })
+    await new Promise<void>((resolve) => capture.listen(0, '127.0.0.1', resolve))
+    const capturePort = (capture.address() as AddressInfo).port
+    const adapter = new P2PAdapter({
+      channel: 'p2p:b',
+      instance: 'inst-b',
+      botName: 'bot-b',
+      peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}`, botName: 'bot-a' }],
+      listen: { host: '127.0.0.1', port: await freePort() },
+    })
+    adapter.checkConfig({ maxTurnMs: 120_000 })
+    const handle = await adapter.start({
+      onMessage: async () => ({ ok: true }),
+      resolveSecret: (ref) => Promise.resolve(credentials.resolve(ref).then((one) => one?.value)),
+    })
+    stops.push(handle.stop)
+    stops.push(async () => {
+      capture.close()
+    })
+
+    await adapter.refuse({ target: 'inst-a', inReplyTo: 'evt-9', chainId: 'evt-9', reason: 'policy', note: `${'x'.repeat(300)}\nnext` })
+
+    const reason = String(posted[0]?.reason ?? '')
+    expect(reason.length).toBe(REFUSE_NOTE_MAX)
+    expect(reason).not.toContain('\n')
   })
 })

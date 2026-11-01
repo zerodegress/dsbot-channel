@@ -19,13 +19,16 @@ import { GROUP_GUIDANCE, PEER_GUIDANCE } from './guidance.js'
 import { DedupeTable } from './p2p-dedupe.js'
 import type { InboundRequest } from './p2p-wire.js'
 import { DEFAULT_HOST, DEFAULT_PORT, checkListenerConfig, startListener } from './p2p-listener.js'
-import { cleanExcerpt, toP2PEvent } from './p2p-mapping.js'
+import { cleanExcerpt, oneLine, toP2PEvent } from './p2p-mapping.js'
 import { DEFAULT_SENT_AT_WINDOW_MS, MAX_BODY_BYTES } from './p2p-protocol.js'
 import type { CredentialsLike, PeerRef } from './p2p-secrets.js'
 import { sendToPeer } from './p2p-send.js'
 import type { PeerTarget } from './p2p-send.js'
 
 export const DEFAULT_INFLIGHT_TTL_MS = 300_000
+
+/** Longest note a refusal carries on the wire, one line. */
+export const REFUSE_NOTE_MAX = 200
 
 const DEFAULT_DEDUPE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const DEFAULT_DEDUPE_LIMIT = 100_000
@@ -242,7 +245,7 @@ export class P2PAdapter implements ChannelAdapter {
       sender: this.#config.botName,
       instance: this.#config.instance,
       status: 'declined',
-      reason: input.note ?? input.reason,
+      reason: oneLine(input.note ?? input.reason, REFUSE_NOTE_MAX),
       final: true,
     })
     if (!result.ok) this.#stats.sendFailed(result.code)
