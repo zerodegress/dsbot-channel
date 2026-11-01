@@ -17,7 +17,7 @@ export default plugin
 
 export * from './event-types.js'
 export { contentHash, eventKey } from './event-key.js'
-export { buildEvent, chargeKey, dedupeKeyFor, replyIdempotencyKey, unstableDedupeKey } from './event-build.js'
+export { buildEvent, chargeKey } from './event-build.js'
 export { ConfigError, WILDCARD_HOSTS, assertBindHost, strict, validateConfig } from './config.js'
 export {
   ADAPTER_KIND_MAX,

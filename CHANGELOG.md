@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - The `event-layers` module and its exports (`transportLayer`, `derivedLayer`, `declareLayer`, `readDeclared`, `LayerViolationError`, `LAYERS`): no production code called it, and an event still carries its three layers as plain fields.
+- `dedupeKeyFor`, `replyIdempotencyKey` and `unstableDedupeKey`: nothing in the package called them, and each transport already builds the key its own dedupe uses.
 
 ### Fixed
 
