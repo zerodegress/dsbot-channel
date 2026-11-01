@@ -40,9 +40,6 @@ export interface PolicySettings extends PolicyConfig {
   relayResetMs: number
   /** A group message must name this bot or everyone before it may start a turn. */
   requireMention: boolean
-  score?: unknown
-  judge?: unknown
-  prepare?: unknown
   budget?: BudgetConfig | undefined
 }
 
@@ -113,9 +110,6 @@ export const Config: any = Schema.object({
           allow: Schema.object({
             peers: Schema.array(Schema.string()).default([]),
           }).default({}),
-          score: Schema.any(),
-          judge: Schema.any(),
-          prepare: Schema.any(),
           budget: Schema.object({
             capacity: Schema.number(),
             softLimit: Schema.number(),
@@ -293,14 +287,6 @@ function checkPolicy(adapter: AdapterConfig, index: number): void {
       `budget capacity must be a whole number of points, at least 1: ${budget.capacity}`,
       path('budget.capacity'),
     )
-  }
-  for (const unsupported of ['score', 'judge', 'prepare'] as const) {
-    if (adapter.policy[unsupported] !== undefined) {
-      throw new ConfigError(
-        `policy.${unsupported} is not supported in this version: only deny and allow can be configured`,
-        path(unsupported),
-      )
-    }
   }
 }
 

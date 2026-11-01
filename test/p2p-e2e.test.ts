@@ -1758,8 +1758,8 @@ describe('policy', () => {
     expect(sessions.prompted).toHaveLength(0)
   })
 
-  test('a policy key this version cannot honour is refused at mount time', async () => {
-    await expect(pair({ unsupported: 'judge' })).rejects.toThrow(/not supported in this version/)
+  test('a policy key this version does not know is refused at mount time', async () => {
+    await expect(pair({ unsupported: 'judge' })).rejects.toThrow(/unknown config fields: judge/)
   })
 })
 
