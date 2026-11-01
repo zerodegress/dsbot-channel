@@ -132,6 +132,21 @@ export class BudgetLedger {
     for (const key of keys) this.window(key).add(points, at)
   }
 
+  /** The limits this ledger enforces, as a copy, for a read-only view. */
+  limitsView(): BudgetLimits {
+    return { ...this.limits }
+  }
+
+  /** Every session key this ledger has charged, in the order it first saw them. */
+  sessions(): string[] {
+    const keys: string[] = []
+    for (const key of this.windows.keys()) {
+      if (key === GLOBAL || key.startsWith('bot:')) continue
+      keys.push(key)
+    }
+    return keys
+  }
+
   usage(botId: string, session: string): Usage {
     const at = this.now()
     const usage: Usage = { global: this.window(GLOBAL).sum(at) }

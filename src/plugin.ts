@@ -18,6 +18,8 @@ import type { ControlPorts, TurnRef } from './control-tools.js'
 import { ChainGuard, KeyGuard } from './event-keys.js'
 import { InboundGate } from './inbound-gate.js'
 import { InjectionLedger, TOOL_MODE_NOTICE, TOOL_MODE_NOTICE_MAX } from './inbound-guidance.js'
+import { usageSnapshot } from './usage-view.js'
+import type { BotLedger } from './usage-view.js'
 import { PeerSessions } from './peer-sessions.js'
 import type { SessionControllerLike, SessionEventLike } from './peer-sessions.js'
 import { unboundReason, unboundRuleReason } from './pipeline-bindable.js'
@@ -35,6 +37,7 @@ import type { BotScope } from './session-pipeline.js'
 import { SessionPipelines } from './session-pipeline.js'
 import { TurnBilling } from './turn-billing.js'
 import { TurnStats } from './turn-stats.js'
+import type { TurnOutcome } from './turn-stats.js'
 import { createWarn } from './warn.js'
 
 export interface PolicySettings extends PolicyConfig {
@@ -437,6 +440,17 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
     }
     activeTurns.set(sessionId, turnRef)
     turns.started()
+    turns.open(message.eventKey)
+    const ended = (outcome: TurnOutcome, code?: string): void => {
+      turns.close({
+        eventKey: message.eventKey,
+        bot: adapter.botName,
+        channel: adapter.channel,
+        sessionKey: message.sessionKey,
+        outcome,
+        ...(code === undefined ? {} : { code }),
+      })
+    }
     let hold: Hold | undefined
     try {
       hold = runtime.billing.begin(adapter.botName, message.sessionKey, message.eventKey)
@@ -454,12 +468,14 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
       })
       if (turnRef.suppressed) {
         turns.suppressed()
+        ended(turnRef.declined === true ? 'refused' : 'suppressed')
         runtime.billing.refund(hold)
         hold = undefined
         return
       }
       if (turnRef.pushed) {
         turns.pushed()
+        ended('pushed')
         runtime.billing.accept(hold)
         hold = undefined
         return
@@ -469,6 +485,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
           `dsbot-channel: dropped the plain text answer for ${message.requestId} from ${message.replyTarget}: tool mode requires a tool call`,
         )
         turns.dropped()
+        ended('dropped')
         runtime.billing.reject(hold)
         hold = undefined
         return
@@ -476,6 +493,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
       if (turn.text.length === 0) {
         warn(`dsbot-channel: the turn for ${message.requestId} from ${message.replyTarget} ended with no text and no tool call`)
         turns.empty()
+        ended('empty')
         runtime.billing.reject(hold)
         hold = undefined
         return
@@ -493,12 +511,14 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
       })
       if (sent.ok) {
         turns.replied()
+        ended('replied')
         runtime.gate.recordReply(adapter.botName, message.replyTarget)
         runtime.billing.accept(hold)
         hold = undefined
         return
       }
       turns.sendFailed(sent.code)
+      ended('failed', sent.code)
       runtime.billing.reject(hold)
       hold = undefined
       warn(`dsbot-channel: reply to ${message.replyTarget} was not delivered: ${sent.code} ${sent.reason}`)
@@ -519,6 +539,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
     body: { text: message.rawText, media: message.body.media },
   })
 
+  const ledgers: BotLedger[] = []
   const reporting = new Set(channels.map((channel) => channel.adapter))
   const started: AdapterHandle[] = []
   ctx.effect(() => async () => {
@@ -537,6 +558,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
       const compiled = compilePolicy(adapter.policy)
       const budget = adapter.policy.budget
       const ledger = budget === undefined ? undefined : createLedger(budget)
+      if (!ledgers.some((one) => one.bot === adapter.botName)) ledgers.push({ bot: adapter.botName, ledger })
       const runtime: ChannelRuntime = {
         channel,
         sessions,
@@ -588,6 +610,14 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         })
         if (!decision.allow) {
           const detail = decision.detail === undefined ? '' : ` (${decision.detail})`
+          turns.close({
+            eventKey: message.eventKey,
+            bot: adapter.botName,
+            channel: adapter.channel,
+            sessionKey: message.sessionKey,
+            outcome: 'rejected',
+            code: decision.reason,
+          })
           return { ok: false, code: 'rejected', reason: `${decision.reason}${detail}` }
         }
         const sessionId = await sessions.sessionFor(message.sessionKey)
@@ -599,6 +629,13 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         setTimeout(() => {
           void runTurn(runtime, message, sessionId).catch((error: unknown) => {
             turns.failed()
+            turns.close({
+              eventKey: message.eventKey,
+              bot: adapter.botName,
+              channel: adapter.channel,
+              sessionKey: message.sessionKey,
+              outcome: 'failed',
+            })
             warn(`dsbot-channel: peer turn for ${message.replyTarget} failed: ${String(error)}`)
           })
         }, 0)
@@ -616,6 +653,8 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   })
   ctx.provide('dsbot-channel.turns')
   ctx.set('dsbot-channel.turns', { snapshot: () => turns.snapshot() })
+  ctx.provide('dsbot-channel.usage')
+  ctx.set('dsbot-channel.usage', { snapshot: () => usageSnapshot(ledgers) })
   ctx.provide('dsbot-channel.peers')
   ctx.set('dsbot-channel.peers', started)
   if (tools !== undefined && typeof tools.register === 'function') {

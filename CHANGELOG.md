@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Two read-only surfaces for a host: `dsbot-channel.usage` reports each bot's limits and what every conversation spent, and `dsbot-channel.turns` reports the recent turns with their window, outcome and duration in a bounded ring buffer. Neither is read on a decision path, and no record carries a message body.
 - A read-only status route on every listening transport: `/p2p/v1/status` and `/onebot/status` both answer an `AdapterStatus` to a loopback caller, and `AdapterStatus` gains required `counters` (auth failures, unknown paths, underruns, protocol mismatches, send failures by code, last failure).
 - An OneBot 11 transport over reverse HTTP: the implementation pushes events to a loopback listener, replies call its HTTP API, an optional access token guards both directions, and mention is reported as `self`/`others`/`all` from the message array. Media is carried in but never sent in this version.
 - A `reply` block chooses how a turn answers: `default` and `byScope` (`c2c`/`group`/`p2p`), plus ordered `rules` whose `when` matches source, author, transport and body, combined with AND, `not` and `any`. The first match wins. In `tool` mode a plain text answer is discarded with a warning and counted as `dropped`; a profile that can choose `tool` fails to load when the host has no tools service.
