@@ -81,7 +81,6 @@ class ObsAdapter implements ChannelAdapter {
     const verdicts: InboundVerdict[] = []
     for (const one of queue) {
       verdicts.push(await ports.onMessage(one))
-      // A gap between deliveries, so one turn settles before the next is admitted.
       if (queue.length > 1) await new Promise((resolve) => setTimeout(resolve, 120))
     }
     return { stop: () => Promise.resolve() }
@@ -193,7 +192,6 @@ describe('the observation surface is read-only', () => {
 
     const turns = ctx.get('dsbot-channel.turns') as { snapshot(): unknown }
     const usage = ctx.get('dsbot-channel.usage') as UsageService
-    // The sample time moves with the clock, so compare everything it stamps.
     const withoutStamp = (value: { sampledAt: number }): string =>
       JSON.stringify({ ...value, sampledAt: 0 })
     const firstTurns = withoutStamp(turns.snapshot() as { sampledAt: number })

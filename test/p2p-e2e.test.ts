@@ -1680,14 +1680,10 @@ describe('the reply ceiling', () => {
     await waitFor(() => sessions.prompted.length === 2)
     await waitFor(() => warnings.some((line) => line.includes('loop-limit')))
 
-    // The gate compares wall-clock instants, so wait until the window has really passed rather
-    // than sleeping a fixed span a busy machine can still land inside.
     const refusedAt = Date.now()
     await waitFor(() => Date.now() - refusedAt >= RELAY_RESET_WINDOW_MS + RELAY_RESET_MARGIN_MS)
     await send(portB, 'evt-2', 'again')
 
-    // The turn the reset lets through is the one carrying the new body; its index depends on how
-    // many replies the first round already produced, so find it by content rather than by position.
     await waitFor(() => sessions.prompted.some((entry) => entry.text.endsWith(' again')))
     expect(sessions.prompted.some((entry) => entry.text.endsWith(' again'))).toBe(true)
   })

@@ -85,7 +85,6 @@ describe('reading a snapshot leaves the ledger alone', () => {
     driveToHard(withoutReads)
     driveToHard(withReads)
 
-    // The reads happen while the window is still full, where a refreshing check would move the lock.
     now = T0 + 50_000
     for (let round = 0; round < 4; round += 1) {
       usageSnapshot([{ bot: 'bot-a', ledger: withReads }], () => now)

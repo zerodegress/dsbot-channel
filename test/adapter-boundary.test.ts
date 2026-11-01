@@ -160,7 +160,6 @@ describe('the observation services', () => {
     const reads = lines
       .map((line, index) => ({ line, index: index + 1 }))
       .filter(({ line }) => line.includes('usageSnapshot(') || line.includes('turns.snapshot()'))
-    // The two service registrations, and nothing inside onMessage or runTurn.
     expect(reads).toHaveLength(2)
     for (const one of reads) expect(one.line).toContain("ctx.set('dsbot-channel.")
   })
