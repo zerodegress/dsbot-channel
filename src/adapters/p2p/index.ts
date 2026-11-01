@@ -1,5 +1,5 @@
 import type { AdapterFactory, AdapterMount } from '../../adapter-registry.js'
-import { registerAdapter } from '../../adapter-registry.js'
+import { registerBuiltinAdapter } from '../../adapter-registry.js'
 import { ConfigError } from '../../config.js'
 import { P2PAdapter } from './adapter.js'
 import type { P2PAdapterConfig, P2PPeerConfig } from './adapter.js'
@@ -106,4 +106,4 @@ export function parseP2PConfig(mount: AdapterMount): P2PAdapterConfig {
 
 export const createP2PAdapter: AdapterFactory = (mount, options) => new P2PAdapter(parseP2PConfig(mount), options)
 
-registerAdapter('p2p', createP2PAdapter)
+registerBuiltinAdapter('p2p', createP2PAdapter)

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
-import { adapterFactory } from './adapter-registry.js'
+import { adapterFactory, checkAdapterKind } from './adapter-registry.js'
 import type { AdapterMount } from './adapter-registry.js'
 import { buildPipeline } from './build-pipeline.js'
 import type { PipelineDeps } from './build-pipeline.js'
@@ -12,6 +12,7 @@ import { ClosedChains } from './chain-closer.js'
 import { ConfigError, validateConfig } from './config.js'
 import type { AdapterCheckSettings, AdapterHandle, ChannelAdapter, InboundMessage, InboundVerdict } from './contract.js'
 import { CHAIN_ID_MAX, GUIDANCE_MAX, REPLY_TARGET_MAX, REQUEST_ID_MAX, SESSION_KEY_MAX, tokenProblem } from './contract.js'
+import { SOURCE_KIND_MAX } from './event-types.js'
 import { createDeclineTool, createNoReplyTool } from './control-tools.js'
 import type { ControlPorts, PeerTurnRef } from './control-tools.js'
 import { ChainGuard, KeyGuard } from './event-keys.js'
@@ -501,6 +502,15 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         deps: bots.get(adapter.botName)?.deps ?? compiled.deps,
       }
       const onMessage = async (message: InboundMessage): Promise<InboundVerdict> => {
+        const kindProblem = tokenProblem('source.kind', message.source.kind, SOURCE_KIND_MAX)
+        if (kindProblem !== undefined) return { ok: false, code: 'source_kind_invalid', reason: kindProblem }
+        if (message.source.kind !== transport.kind) {
+          return {
+            ok: false,
+            code: 'source_kind_invalid',
+            reason: `message claims source.kind "${message.source.kind}", but this adapter is "${transport.kind}"`,
+          }
+        }
         const keyProblem =
           tokenProblem('session key', message.sessionKey, SESSION_KEY_MAX) ?? transport.checkSessionKey(message.sessionKey)
         if (keyProblem !== undefined) return { ok: false, code: 'session_key_invalid', reason: keyProblem }
@@ -643,6 +653,7 @@ function mountAdapters(config: ChannelConfig, settings: AdapterCheckSettings, wa
     seen.add(adapter.channel)
     checkPolicy(adapter, index)
     const kind = adapter.kind ?? 'p2p'
+    checkAdapterKind(kind)
     const mount: AdapterMount = {
       kind,
       channel: adapter.channel,

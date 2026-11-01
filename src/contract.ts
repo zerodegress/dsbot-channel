@@ -4,6 +4,7 @@ import type { Author, Body, DeclaredMeta, Source, TransportMeta } from './event-
 /** Why core refused to take an inbound message; the adapter maps it onto its own error. */
 export const INBOUND_REJECTIONS = [
   'session_key_invalid',
+  'source_kind_invalid',
   'request_id_invalid',
   'reply_target_invalid',
   'event_key_conflict',

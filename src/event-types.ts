@@ -1,5 +1,5 @@
-export const SOURCE_KINDS = ['qqbot', 'onebot', 'p2p'] as const
-export type SourceKind = (typeof SOURCE_KINDS)[number]
+/** Longest source kind an event may carry, so a header or a key stays bounded. */
+export const SOURCE_KIND_MAX = 64
 
 export const SCOPES = ['c2c', 'group', 'p2p'] as const
 export type Scope = (typeof SCOPES)[number]
@@ -8,7 +8,8 @@ export const CHARGE_KINDS = ['judge', 'bot', 'push'] as const
 export type ChargeKind = (typeof CHARGE_KINDS)[number]
 
 export interface Source {
-  kind: SourceKind
+  /** The transport that carried the message, declared by its adapter; core checks only its shape. */
+  kind: string
   instance: string
   peer: string | null
   scope: Scope

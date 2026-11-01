@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { adapterFactory, knownAdapterKinds, registerAdapter } from '../src/adapter-registry.js'
+import { adapterFactory, checkAdapterKind, knownAdapterKinds, registerAdapter } from '../src/adapter-registry.js'
 import { createP2PAdapter, parseP2PConfig } from '../src/adapters/p2p/index.js'
 import { ConfigError } from '../src/config.js'
 import type { AdapterMount } from '../src/adapter-registry.js'
@@ -15,15 +15,39 @@ describe('the adapter registry', () => {
     expect(adapterFactory('p2p')).toBe(createP2PAdapter)
   })
 
+  test('a mount-time kind is built-in or third-party shaped', () => {
+    expect(() => checkAdapterKind('p2p')).not.toThrow()
+    expect(() => checkAdapterKind('onebot')).not.toThrow()
+    expect(() => checkAdapterKind('x-demo')).not.toThrow()
+    expect(() => checkAdapterKind('demo')).toThrow(/built-in name or match x-/)
+    expect(() => checkAdapterKind('qqbot')).toThrow(/built-in name or match x-/)
+  })
+
   test('an unknown kind names what is registered', () => {
     expect(() => adapterFactory('nope')).toThrow(ConfigError)
     expect(() => adapterFactory('nope')).toThrow(/no adapter serves kind "nope".*known: p2p/)
   })
 
-  test('a factory is replaceable under the same kind', () => {
+  test('a third-party kind registers under its own namespace', () => {
     const fake = (): ChannelAdapter => ({}) as ChannelAdapter
-    registerAdapter('probe', fake)
-    expect(adapterFactory('probe')).toBe(fake)
+    registerAdapter('x-probe', fake)
+    expect(adapterFactory('x-probe')).toBe(fake)
+    expect(knownAdapterKinds()).toContain('x-probe')
+  })
+
+  test('a third-party kind cannot take a built-in name or an unnamed shape', () => {
+    const fake = (): ChannelAdapter => ({}) as ChannelAdapter
+    expect(() => registerAdapter('p2p', fake)).toThrow(/reserved for the built-in transport/)
+    expect(() => registerAdapter('probe', fake)).toThrow(/match x-\[a-z0-9-\]+/)
+    expect(() => registerAdapter('x-Bad', fake)).toThrow(/match x-\[a-z0-9-\]+/)
+    expect(() => registerAdapter('x-', fake)).toThrow()
+    expect(() => registerAdapter(`x-${'a'.repeat(40)}`, fake)).toThrow(/at most 32/)
+  })
+
+  test('the same kind cannot be registered twice', () => {
+    const fake = (): ChannelAdapter => ({}) as ChannelAdapter
+    registerAdapter('x-twice', fake)
+    expect(() => registerAdapter('x-twice', fake)).toThrow(/already registered/)
   })
 })
 
