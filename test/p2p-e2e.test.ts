@@ -783,7 +783,7 @@ transport: {
     try {
       await send(mounted.port, 'evt-1', 'hello')
       await waitFor(() => mounted.posts.length === 1)
-      expect(mounted.posts[0]).toMatchObject({ status: 'declined', final: true, reason: 'policy', body: '' })
+      expect(mounted.posts[0]).toMatchObject({ status: 'declined', final: true, reason: 'policy', body: 'no' })
 
       await send(mounted.port, 'evt-2', 'are you there', 'bot-a', 'evt-1')
       await waitFor(() => mounted.prompted.length === 2)

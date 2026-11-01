@@ -53,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A refusal now reaches the peer it refuses: `decline` posted an empty body, which the receiving parser rejects, so every refusal came back `400` and the sender never learned it was declined. The chosen reason travels as `reason`, and the note (or `declined` when there is none) travels as `body`.
 - The reply ceiling counts per conversation on every transport now: `admit` and `recordReply` used two spellings of the peer, so on OneBot the count never matched and `relayLimit` never fired, while a person speaking never cleared it. Both go through one key, and a person's message resets it.
 - A hand off that throws before returning a promise is reported like any other failure instead of answering 500: the event stays claimed, so a peer that resends gets a duplicate rather than a second turn, and a deterministic fault can no longer put one message in a resend loop.
 - A reply carries its own `reply:<uuid>` id and names the message it answers in `inReplyTo`; the chain root travels as a signed `chainId`, so an event id no longer grows with every hop and a closed chain stays closed.
