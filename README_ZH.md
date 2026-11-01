@@ -49,27 +49,29 @@ config:
 OneBot 11 内置。事件接收地址是 `listen.path`，默认 `/onebot/event`；本版接收媒体但不出站发送媒体。
 
 ```yaml
-adapters:
-  - kind: onebot
-    channel: onebot:self
-    instance: onebot
-    botName: self-bot
-    transport:
-      listen: { host: 127.0.0.1, port: 7331 }
-      api: { url: "http://127.0.0.1:3000" }
-      accessToken: ONEBOT_TOKEN
+config:
+  adapters:
+    - kind: onebot
+      channel: onebot:self
+      instance: onebot
+      botName: self-bot
+      transport:
+        listen: { host: 127.0.0.1, port: 7331 }
+        api: { url: "http://127.0.0.1:3000" }
+        accessToken: ONEBOT_TOKEN
 ```
 
 `reply` 决定一个回合怎么作答：`auto` 允许直接写文本，`tool` 要求必须调用工具。有序规则优先于按作用域的映射，再回落到默认值：
 
 ```yaml
-reply:
-  default: auto
-  byScope:
-    group: tool
-  rules:
-    - when: { source: { kind: p2p }, body: { text: { words: [ping] } } }
-      mode: auto
+config:
+  reply:
+    default: auto
+    byScope:
+      group: tool
+    rules:
+      - when: { source: { kind: p2p }, body: { text: { words: [ping] } } }
+        mode: auto
 ```
 
 在 adapter 上设 `status: false` 可不注册它的状态路由。

@@ -49,27 +49,29 @@ Set `policy.requireMention: true` on an adapter to refuse group messages that me
 OneBot 11 is built in. It receives events on `listen.path`, which defaults to `/onebot/event`; media is received but not sent in this version.
 
 ```yaml
-adapters:
-  - kind: onebot
-    channel: onebot:self
-    instance: onebot
-    botName: self-bot
-    transport:
-      listen: { host: 127.0.0.1, port: 7331 }
-      api: { url: "http://127.0.0.1:3000" }
-      accessToken: ONEBOT_TOKEN
+config:
+  adapters:
+    - kind: onebot
+      channel: onebot:self
+      instance: onebot
+      botName: self-bot
+      transport:
+        listen: { host: 127.0.0.1, port: 7331 }
+        api: { url: "http://127.0.0.1:3000" }
+        accessToken: ONEBOT_TOKEN
 ```
 
 `reply` chooses how a turn answers: `auto` lets it write text, `tool` requires a tool call. Ordered rules win over the by-scope map, which wins over the default:
 
 ```yaml
-reply:
-  default: auto
-  byScope:
-    group: tool
-  rules:
-    - when: { source: { kind: p2p }, body: { text: { words: [ping] } } }
-      mode: auto
+config:
+  reply:
+    default: auto
+    byScope:
+      group: tool
+    rules:
+      - when: { source: { kind: p2p }, body: { text: { words: [ping] } } }
+        mode: auto
 ```
 
 Set `status: false` on an adapter to leave its status route unregistered.
