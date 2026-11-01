@@ -33,6 +33,7 @@ function message(eventKey: string, text = 'hello'): InboundMessage {
     body: { text, media: [], replyTo: null },
     transport: { messageId: eventKey, timestamp: 1, mentioned: { self: false, others: false, all: false }, isReply: false, signature: null },
     declared: { nickname: '', avatar: '', claimedIdentity: null },
+    adapter: {},
     receivedAt: 1,
   }
 }

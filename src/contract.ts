@@ -34,6 +34,8 @@ export interface InboundMessage {
   body: Body
   transport: TransportMeta
   declared: DeclaredMeta
+  /** The transport's raw payload; core carries it and never reads it. */
+  adapter: Record<string, unknown>
   receivedAt: number
 }
 

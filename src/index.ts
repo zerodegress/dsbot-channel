@@ -19,6 +19,7 @@ export default plugin
 export * from './event-types.js'
 export { contentHash, eventKey } from './event-key.js'
 export { buildEvent, chargeKey } from './event-build.js'
+export { ADAPTER_META_MAX_BYTES, ADAPTER_META_MAX_DEPTH, adapterMetaOf } from './adapter-meta.js'
 export { ConfigError, WILDCARD_HOSTS, assertBindHost, strict, validateConfig } from './config.js'
 export {
   ADAPTER_KIND_MAX,
