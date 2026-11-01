@@ -51,6 +51,22 @@ describe('no_reply', () => {
   })
 })
 
+describe('decline on a channel that cannot tell the sender', () => {
+  test('closes the turn silently and says the refusal was not delivered', async () => {
+    const { ports, exec, concluded } = harness()
+    const unable: ControlPorts = {
+      ...ports,
+      decline: async () => ({ ok: false, supported: false, reason: 'this channel cannot carry a refusal' }),
+    }
+
+    const raw = await createDeclineTool(unable).execute({ reason: 'no' }, exec('session-1'))
+    const result = JSON.parse(raw as string) as Record<string, unknown>
+
+    expect(result).toMatchObject({ ok: true, closed: true, declined: false })
+    expect(concluded).toHaveLength(1)
+  })
+})
+
 describe('decline', () => {
   test('tells the sender why, then keeps the turn silent', async () => {
     const { turn, closed, declined, concluded, ports, exec } = harness()

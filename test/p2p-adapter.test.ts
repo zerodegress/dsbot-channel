@@ -175,6 +175,60 @@ describe('the event key the adapter builds', () => {
   })
 })
 
+describe('the p2p adapter tells a peer it was refused', () => {
+  test('the refusal is deterministic, empty, and carries the chain it answers', async () => {
+    const posted: Record<string, unknown>[] = []
+    const capture = createServer((request, response) => {
+      let raw = ''
+      request.on('data', (chunk: string) => {
+        raw += chunk
+      })
+      request.on('end', () => {
+        posted.push(JSON.parse(raw) as Record<string, unknown>)
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({ duplicate: false, messageId: 'p2p-x' }))
+      })
+    })
+    await new Promise<void>((resolve) => capture.listen(0, '127.0.0.1', resolve))
+    const capturePort = (capture.address() as AddressInfo).port
+
+    const adapter = new P2PAdapter({
+      channel: 'p2p:b',
+      instance: 'inst-b',
+      botName: 'bot-b',
+      peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}`, botName: 'bot-a' }],
+      listen: { host: '127.0.0.1', port: await freePort() },
+    })
+    adapter.checkConfig({ maxTurnMs: 120_000 })
+    const handle = await adapter.start({
+      onMessage: async () => ({ ok: true }),
+      resolveSecret: (ref) => Promise.resolve(credentials.resolve(ref).then((one) => one?.value)),
+    })
+    stops.push(handle.stop)
+    stops.push(async () => {
+      capture.close()
+    })
+
+    const refused = await adapter.refuse({
+      target: 'inst-a',
+      inReplyTo: 'evt-42',
+      chainId: 'evt-42',
+      reason: 'policy',
+      note: 'no',
+    })
+
+    expect(refused).toEqual({ ok: true })
+    expect(posted[0]).toMatchObject({
+      eventId: 'decline:evt-42',
+      chainId: 'evt-42',
+      status: 'declined',
+      final: true,
+      body: '',
+      reason: 'no',
+    })
+  })
+})
+
 describe('the p2p adapter sends through its own addressing', () => {
   test('a send reaches the configured peer url with the contract fields', async () => {
     const posted: Record<string, unknown>[] = []

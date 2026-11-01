@@ -17,6 +17,8 @@ export interface TurnRef {
 
 export interface DeclinedResult {
   ok: boolean
+  /** False when the channel cannot carry a refusal at all, so the tool closes silently instead. */
+  supported?: boolean | undefined
   code?: string | undefined
   reason?: string | undefined
 }
@@ -79,6 +81,9 @@ export function createDeclineTool(ports: ControlPorts) {
       }
       const sent = await ports.decline(turn, args.reason)
       exec.concludeTurn()
+      if (sent.supported === false) {
+        return JSON.stringify({ ok: true, closed: true, declined: false, reason: sent.reason })
+      }
       if (!sent.ok) {
         return JSON.stringify({ ok: false, closed: true, declined: false, code: sent.code, reason: sent.reason })
       }

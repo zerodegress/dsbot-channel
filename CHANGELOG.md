@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- An adapter may declare `refuse(input)` to tell the sender a turn is refused; the refusal names a message and a chain, takes a closed reason and an optional one-line note, and every transport words it for its own platform.
+
 - Adapter kinds: `p2p` and `onebot` are built-in names, a third-party transport registers as `x-[a-z0-9-]+` within 32 characters, and a profile naming an unknown kind fails at load.
 - A kind names one implementation: a factory registers once per kind, while several adapters may reuse it. A message's `source.kind` must match the kind of the adapter that carried it; a mismatch is refused with `source_kind_invalid` before a session or a charge exists.
 - Event model with four parts (source, author, body, metadata), three metadata layers, and separate `eventKey` and `contentHash` fields; the declared layer cannot be read by consumers.
@@ -24,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `pipeline.maxTurnMs` and `pipeline.judgeTimeoutMs`, so a profile sets the ceiling one turn may occupy and the judging deadline inside it.
 
 ### Changed
+
+- `decline` goes through `refuse` when the transport has it and otherwise closes the conversation silently, reporting `declined: false`; `SendInput` no longer carries `status`, `reason` or `final`, because a refusal is no longer a send.
 
 - `PeerTurnRef` is now `TurnRef`, and `no_reply`/`decline` describe themselves as turn tools rather than peer ones.
 

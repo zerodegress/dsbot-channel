@@ -32,7 +32,7 @@ export {
   registerBuiltinAdapter,
 } from './adapter-registry.js'
 export type { AdapterFactory, AdapterMount, AdapterOptions } from './adapter-registry.js'
-export { CHAIN_ID_MAX, GUIDANCE_MAX, INBOUND_REJECTIONS, REPLY_TARGET_MAX, REQUEST_ID_MAX, SESSION_KEY_MAX, tokenProblem } from './contract.js'
+export { CHAIN_ID_MAX, GUIDANCE_MAX, INBOUND_REJECTIONS, REFUSE_REASONS, REPLY_TARGET_MAX, REQUEST_ID_MAX, SESSION_KEY_MAX, tokenProblem } from './contract.js'
 export type {
   AdapterCheckSettings,
   AdapterHandle,
@@ -41,6 +41,9 @@ export type {
   InboundMessage,
   InboundRejection,
   InboundVerdict,
+  RefuseInput,
+  RefuseReason,
+  RefuseResult,
   SendFailure,
   SendFailureCode,
   SendInput,

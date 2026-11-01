@@ -5,6 +5,8 @@ import { ChannelStats } from '../../channel-stats.js'
 import { ConfigError } from '../../config.js'
 import type {
   AdapterCheckSettings,
+  RefuseInput,
+  RefuseResult,
   AdapterHandle,
   AdapterPorts,
   ChannelAdapter,
@@ -204,14 +206,47 @@ export class P2PAdapter implements ChannelAdapter {
       instance: this.#config.instance,
       ...(input.sentAt === undefined ? {} : { sentAt: input.sentAt }),
       ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
-      ...(input.status === undefined ? {} : { status: input.status }),
-      ...(input.reason === undefined ? {} : { reason: input.reason }),
-      ...(input.final === undefined ? {} : { final: input.final }),
       ...(input.inReplyTo === undefined ? {} : { inReplyTo: input.inReplyTo }),
       ...(input.inReplyToText === undefined ? {} : { inReplyToExcerpt: cleanExcerpt(input.inReplyToText) }),
     })
     if (!result.ok) this.#stats.sendFailed(result.code)
     return result
+  }
+
+  async refuse(input: RefuseInput): Promise<RefuseResult> {
+    const ports = this.#ports
+    if (ports === undefined) {
+      return { ok: false, code: 'unreachable', reason: 'the p2p adapter is not started' }
+    }
+    const peer = this.#peer(input.target)
+    if (peer === undefined) {
+      return { ok: false, code: 'no_url', reason: `this adapter addresses no peer "${input.target}"` }
+    }
+    const to = input.to ?? peer.botName ?? ''
+    if (to.length === 0) {
+      return { ok: false, code: 'no_url', reason: `peer "${peer.instance}" names no bot, so a refusal has no recipient` }
+    }
+    const target: PeerTarget = {
+      instance: peer.instance,
+      secret: peer.secret,
+      ...(peer.url === undefined ? {} : { url: peer.url }),
+      ...(peer.host === undefined ? {} : { host: peer.host }),
+    }
+    const result = await sendToPeer({
+      peer: target,
+      credentials: this.#credentials(ports),
+      to,
+      body: '',
+      eventId: `decline:${input.inReplyTo}`,
+      chainId: input.chainId,
+      sender: this.#config.botName,
+      instance: this.#config.instance,
+      status: 'declined',
+      reason: input.note ?? input.reason,
+      final: true,
+    })
+    if (!result.ok) this.#stats.sendFailed(result.code)
+    return result.ok ? { ok: true } : { ok: false, code: result.code, reason: result.reason }
   }
 
   async start(ports: AdapterPorts): Promise<AdapterHandle> {

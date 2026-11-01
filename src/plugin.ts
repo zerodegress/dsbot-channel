@@ -622,17 +622,17 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         if (channel === undefined) {
           return { ok: false, code: 'no_url', reason: `channel "${turn.channel}" is gone` }
         }
-        const sent = await channel.adapter.send({
+        const refuse = channel.adapter.refuse?.bind(channel.adapter)
+        if (refuse === undefined) {
+          return { ok: false, supported: false, code: 'rejected', reason: 'this channel cannot carry a refusal' }
+        }
+        const sent = await refuse({
           target: turn.target,
-          to: turn.sender,
-          body: '',
-          eventId: `decline:${turn.eventId}`,
+          ...(turn.sender.length === 0 ? {} : { to: turn.sender }),
+          inReplyTo: turn.eventId,
           chainId: turn.chainId,
-          sender: channel.config.botName,
-          instance: channel.config.instance,
-          status: 'declined',
-          final: true,
-          ...(reason === undefined ? {} : { reason }),
+          reason: 'policy',
+          ...(reason === undefined ? {} : { note: reason }),
         })
         return sent.ok ? { ok: true } : { ok: false, code: sent.code, reason: sent.reason }
       },
