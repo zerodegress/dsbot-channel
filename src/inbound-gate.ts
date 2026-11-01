@@ -14,6 +14,8 @@ export interface LoopConfig {
 
 export interface GateOptions {
   loop?: LoopConfig | undefined
+  /** Refuse a group message that named neither this bot nor everyone. */
+  requireMention?: boolean | undefined
   pipeline?: Pipeline | undefined
   ledger?: BudgetLedger | undefined
   now?: (() => number) | undefined
@@ -30,7 +32,7 @@ export interface AdmitInput {
   pipeline?: Pipeline | undefined
 }
 
-export type GateReason = 'allowed' | 'loop-limit' | 'pipeline-deny' | 'pipeline-restrict' | 'budget-hard'
+export type GateReason = 'allowed' | 'loop-limit' | 'not_addressed' | 'pipeline-deny' | 'pipeline-restrict' | 'budget-hard'
 
 export interface GateDecision {
   allow: boolean
@@ -100,6 +102,13 @@ export class InboundGate {
 
   async admit(input: AdmitInput): Promise<GateDecision> {
     const { event, botId, peer } = input
+    if (this.options.requireMention === true && event.scope === 'group' && !event.mentioned.self && !event.mentioned.all) {
+      return {
+        allow: false,
+        reason: 'not_addressed',
+        detail: `self=${event.mentioned.self} others=${event.mentioned.others} all=${event.mentioned.all}`,
+      }
+    }
     const ledger = this.options.ledger
     const session = input.session
     let limitState: LimitLevel | undefined

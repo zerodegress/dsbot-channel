@@ -53,7 +53,7 @@ function message(kind: string): InboundMessage {
     author: { senderId: 'bot-a', kind: 'bot', personId: null },
     rawText: 'hello',
     body: { text: 'hello', media: [], replyTo: null },
-    transport: { messageId: 'msg-1', timestamp: 1, mentioned: false, isReply: false, signature: null },
+    transport: { messageId: 'msg-1', timestamp: 1, mentioned: { self: false, others: false, all: false }, isReply: false, signature: null },
     declared: { nickname: '', avatar: '', claimedIdentity: null },
     receivedAt: 1,
   }

@@ -12,7 +12,7 @@ function ledger(): BudgetLedger {
   return new BudgetLedger(LIMITS)
 }
 
-const event: PipelineEvent = { eventKey: 'inst-a:m1', scope: 'p2p', mentioned: false, text: 'hello' }
+const event: PipelineEvent = { eventKey: 'inst-a:m1', scope: 'p2p', mentioned: { self: false, others: false, all: false }, text: 'hello' }
 
 describe('the pool one peer owns', () => {
   test('two turns of one peer land in one window, whatever host session ran them', () => {

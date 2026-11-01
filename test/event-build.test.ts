@@ -9,7 +9,7 @@ const base = {
   transport: {
     messageId: 'm1',
     timestamp: 1700000000000,
-    mentioned: false,
+    mentioned: { self: false, others: false, all: false },
     isReply: false,
     signature: null,
   },
@@ -53,6 +53,32 @@ describe('a media reference the core carries', () => {
 
   test('the media type stays a closed set', () => {
     expect(() => buildEvent(media({ type: 'video', url: 'u', handle: null }))).toThrow(/type must be one of/)
+  })
+})
+
+describe('the mention report', () => {
+  const withMention = (mentioned: unknown) => ({ ...base, transport: { ...base.transport, mentioned } })
+
+  test('three booleans are kept as they came', () => {
+    const event = buildEvent(withMention({ self: true, others: true, all: true }) as never)
+    expect(event.meta.transport.mentioned).toEqual({ self: true, others: true, all: true })
+  })
+
+  test('the object is copied, not shared with the caller', () => {
+    const mentioned = { self: true, others: false, all: false }
+    const event = buildEvent(withMention(mentioned) as never)
+    mentioned.self = false
+    expect(event.meta.transport.mentioned.self).toBe(true)
+  })
+
+  test('a missing field is refused, never read as false', () => {
+    for (const partial of [{ self: true, others: false }, { self: true }, {}, null, 'yes']) {
+      expect(() => buildEvent(withMention(partial) as never)).toThrow(/transport\.mentioned/)
+    }
+  })
+
+  test('a non-boolean field is refused', () => {
+    expect(() => buildEvent(withMention({ self: 1, others: false, all: false }) as never)).toThrow(/self must be a boolean/)
   })
 })
 

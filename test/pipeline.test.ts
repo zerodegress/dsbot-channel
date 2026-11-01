@@ -3,7 +3,7 @@ import { Pipeline } from '../src/pipeline.js'
 import type { PipelineNode } from '../src/pipeline.js'
 import { DEFAULT_PIPELINE, checkPipeline, defaultPipelineNodes } from '../src/pipeline-config.js'
 
-const event = { eventKey: 'onebot:1:m1', scope: 'group' as const, mentioned: false, text: 'hello' }
+const event = { eventKey: 'onebot:1:m1', scope: 'group' as const, mentioned: { self: false, others: false, all: false }, text: 'hello' }
 
 function node(id: string, type: PipelineNode['type'], outcome: unknown, calls?: string[]): PipelineNode {
   return {

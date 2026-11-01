@@ -1,4 +1,5 @@
 import { buildEvent } from '../../event-build.js'
+import { noMention } from '../../event-types.js'
 import type { Event } from '../../event-types.js'
 
 /** How much of the message being answered travels back with the reply. */
@@ -68,7 +69,7 @@ export function toP2PEvent(inbound: P2PInbound): Event {
     transport: {
       messageId: inbound.messageId,
       timestamp: inbound.sentAt,
-      mentioned: false,
+      mentioned: noMention(),
       isReply: false,
       signature: null,
     },

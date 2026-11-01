@@ -38,6 +38,8 @@ import { createWarn } from './warn.js'
 export interface PolicySettings extends PolicyConfig {
   relayLimit: number
   relayResetMs: number
+  /** A group message must name this bot or everyone before it may start a turn. */
+  requireMention: boolean
   score?: unknown
   judge?: unknown
   prepare?: unknown
@@ -102,6 +104,7 @@ export const Config: any = Schema.object({
         session: Schema.string(),
         policy: Schema.object({
           relayLimit: Schema.number().default(3),
+          requireMention: Schema.boolean().default(false),
           relayResetMs: Schema.number().default(300_000),
           deny: Schema.object({
             words: Schema.array(Schema.string()).default([]),
@@ -496,6 +499,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         sessions,
         gate: new InboundGate({
           loop: { relayLimit: adapter.policy.relayLimit, relayResetMs: adapter.policy.relayResetMs },
+          requireMention: adapter.policy.requireMention === true,
           ledger,
         }),
         billing: new TurnBilling({ ledger }),
@@ -663,6 +667,12 @@ function mountAdapters(config: ChannelConfig, settings: AdapterCheckSettings, wa
       ...(adapter.status === undefined ? {} : { status: adapter.status }),
     }
     const transport = adapterFactory(kind)(mount, { warn })
+    if (adapter.policy.requireMention === true && transport.capabilities.mention !== true) {
+      throw new ConfigError(
+        `policy.requireMention needs a transport that can tell mentions apart; "${kind}" cannot`,
+        ['adapters', String(index), 'policy', 'requireMention'],
+      )
+    }
     if (transport.kind !== kind) {
       throw new ConfigError(
         `adapter mounted as kind "${kind}" reports kind "${transport.kind}"; a transport answers to the kind it registered`,

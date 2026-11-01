@@ -5,7 +5,7 @@ import type { PipelineNode } from '../src/pipeline.js'
 import { BudgetLedger, DEFAULT_BUDGET } from '../src/budget-ledger.js'
 import { ConfigError } from '../src/config.js'
 
-const event = { eventKey: 'peer-a:m1', scope: 'p2p' as const, mentioned: false, text: 'hello', peer: 'peer-a' }
+const event = { eventKey: 'peer-a:m1', scope: 'p2p' as const, mentioned: { self: false, others: false, all: false }, text: 'hello', peer: 'peer-a' }
 
 describe('loop guard', () => {
   test('the default ceiling is three rounds', () => {

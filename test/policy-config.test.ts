@@ -7,8 +7,8 @@ import type { PipelineEvent } from '../src/pipeline.js'
 
 function event(text: string, peer?: string): PipelineEvent {
   return peer === undefined
-    ? { eventKey: 'peer-a:m1', scope: 'p2p', mentioned: false, text }
-    : { eventKey: 'peer-a:m1', scope: 'p2p', mentioned: false, text, peer }
+    ? { eventKey: 'peer-a:m1', scope: 'p2p', mentioned: { self: false, others: false, all: false }, text }
+    : { eventKey: 'peer-a:m1', scope: 'p2p', mentioned: { self: false, others: false, all: false }, text, peer }
 }
 
 const policy = { deny: { words: ['spam'] }, allow: { peers: ['inst-b'] } }

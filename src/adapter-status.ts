@@ -15,6 +15,7 @@ export interface CapabilitySet {
   voice: boolean
   recall: boolean
   history: boolean
+  /** The platform can tell this bot's own mentions from mentions of others and of everyone. */
   mention: boolean
   reply: boolean
   stream: boolean
