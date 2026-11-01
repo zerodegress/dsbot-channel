@@ -4,7 +4,9 @@ import type { AddressInfo } from 'node:net'
 import { assertBindHost } from '../../config.js'
 import type { DedupeTable } from './p2p-dedupe.js'
 import type { ChannelStats } from '../../channel-stats.js'
-import { STATUS_ROUTE, hasForwardingHeaders, isLoopbackPeer } from './p2p-status.js'
+import { STATUS_ROUTE } from './p2p-status.js'
+import { answerStatus } from '../shared/status-route.js'
+import type { AdapterStatus } from '../../adapter-status.js'
 import { MAX_BODY_BYTES, P2P_ROUTE, handleMessage, parseRequest } from './p2p-protocol.js'
 import type { HandleResult, P2PConfig, P2PPayload } from './p2p-protocol.js'
 import type { InboundRequest } from './p2p-wire.js'
@@ -74,7 +76,7 @@ export interface ListenerOptions {
   /** Collects what this channel can report about itself. */
   stats?: ChannelStats | undefined
   /** Answers a loopback only status read; absent means the route does not exist. */
-  status?: { route?: string | undefined; report: () => unknown } | undefined
+  status?: { route?: string | undefined; report: () => AdapterStatus } | undefined
 }
 
 export interface Listener {
@@ -93,13 +95,14 @@ export async function startListener(options: ListenerOptions): Promise<Listener>
 
   const handle = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     const status = options.status
-    if (status !== undefined && request.method === 'GET' && request.url === (status.route ?? STATUS_ROUTE)) {
-      if (!isLoopbackPeer(request.socket.remoteAddress) || hasForwardingHeaders(request.headers)) {
-        options.stats?.unknownPath()
-        send(response, 404, { error: 'not found' })
-        return
-      }
-      send(response, 200, status.report())
+    if (
+      status !== undefined &&
+      answerStatus(request, response, {
+        route: status.route ?? STATUS_ROUTE,
+        report: status.report,
+        onRefused: () => options.stats?.unknownPath(),
+      })
+    ) {
       return
     }
     if (request.method !== 'POST' || request.url !== P2P_ROUTE) {
@@ -161,6 +164,7 @@ export async function startListener(options: ListenerOptions): Promise<Listener>
       send(response, 500, { error: error instanceof Error ? error.message : 'internal error' })
       return
     }
+    if (result.status === 401) options.stats?.authFailure()
     if (result.status !== 200) options.stats?.rejected(result.body.error)
     send(response, result.status, result.body)
   }

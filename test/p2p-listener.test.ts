@@ -23,6 +23,16 @@ const baseConfig = (): ListenerConfig => ({
   listen: { port: 0 },
 })
 
+
+/** Polls until the condition holds, so a slow machine does not fail a correct run. */
+async function waitFor(check: () => boolean, timeoutMs = 3000): Promise<void> {
+  const started = Date.now()
+  while (!check()) {
+    if (Date.now() - started > timeoutMs) throw new Error('timed out waiting for the listener')
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+}
+
 const open: Listener[] = []
 
 afterEach(async () => {
@@ -63,6 +73,26 @@ function post(port: number, body: unknown, headers?: Record<string, string>): Pr
     req.end(text)
   })
 }
+
+const statusFixture = () => ({
+  channel: 'p2p:self',
+  account: 'self',
+  bot: 'self-bot',
+  health: { kind: 'listener' as const, listenState: 'listening' as const, boundPort: 7123, lastAuthenticatedAt: null, lastFailure: null, queueDepth: 0 },
+  counters: {
+    authFailures: 0,
+    unknownPaths: 0,
+    underruns: 0,
+    protocolMismatches: 0,
+    sendFailures: {},
+    lastFailure: null,
+  },
+  capabilities: { text: true, image: false, file: false, voice: false, recall: false, history: false, mention: false, reply: true, stream: false },
+  attributes: { stableMessageId: true },
+  quota: { softLimit: 0, hardLimit: 0 },
+  sampledAt: 1,
+  queueDepth: 0,
+})
 
 const message = (overrides: Record<string, unknown> = {}) => ({
   eventId: 'evt-1',  chainId: 'evt-1',
@@ -247,7 +277,7 @@ describe('listener', () => {
       config: baseConfig(),
       table: table(),
       stats: channel,
-      status: { report: () => ({ allowed: true }) },
+      status: { report: () => statusFixture() },
     })
     open.push(listener)
     const reply = await new Promise<{ status: number; body: unknown }>((resolve, reject) => {
@@ -267,7 +297,7 @@ describe('listener', () => {
       req.on('error', reject)
       req.end()
     })
-    expect(reply).toEqual({ status: 200, body: { allowed: true } })
+    expect(reply).toEqual({ status: 200, body: statusFixture() })
   })
 
   test('a status read that a forwarder rewrote is refused, even from loopback', async () => {
@@ -276,7 +306,7 @@ describe('listener', () => {
       config: baseConfig(),
       table: table(),
       stats: channel,
-      status: { report: () => ({ allowed: true }) },
+      status: { report: () => statusFixture() },
     })
     open.push(listener)
     const sent: number[] = []
@@ -323,7 +353,7 @@ describe('listener', () => {
     const listener = await startListener({
       config: baseConfig(),
       table: table(),
-      status: { report: () => ({ allowed: true }) },
+      status: { report: () => statusFixture() },
     })
     open.push(listener)
     const sent: number[] = []
@@ -349,7 +379,7 @@ describe('listener', () => {
       config: baseConfig(),
       table: table(),
       stats: channel,
-      status: { report: () => ({ allowed: true }) },
+      status: { report: () => statusFixture() },
     })
     open.push(listener)
     const sent: { status: number; body: unknown }[] = []
@@ -509,8 +539,7 @@ describe('listener async hand off', () => {
     const reply = await post(listener.address().port, message())
     expect(reply.status).toBe(200)
     expect(finished).toBe(false)
-    await new Promise((resolve) => setTimeout(resolve, 60))
-    expect(finished).toBe(true)
+    await waitFor(() => finished)
   })
 
   test('reports a rejected hand off instead of letting it reach the process', async () => {
@@ -529,7 +558,7 @@ describe('listener async hand off', () => {
     const reply = await post(listener.address().port, message())
     expect(reply.status).toBe(200)
     expect(reply.body).toMatchObject({ duplicate: false })
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await waitFor(() => reported.length > 0)
     expect(reported).toHaveLength(1)
     expect((reported[0] as Error).message).toBe('turn failed')
   })
@@ -548,7 +577,7 @@ describe('listener async hand off', () => {
     open.push(listener)
     const port = listener.address().port
     await post(port, message())
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await waitFor(() => seen.length > 0)
     const second = await post(port, message())
     expect(second.body).toMatchObject({ duplicate: true })
     expect(seen).toEqual(['evt-1'])
@@ -572,7 +601,62 @@ describe('listener error handler', () => {
     open.push(listener)
     const reply = await post(listener.address().port, message())
     expect(reply.status).toBe(200)
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(reported).toBe(1)
+    await waitFor(() => reported === 1)
+  })
+})
+
+describe('the status route a profile can turn off', () => {
+  test('a route that is not registered answers 404 and counts the path', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
+    open.push(listener)
+    const reply = await new Promise<number>((resolve, reject) => {
+      const req = request(
+        { host: '127.0.0.1', port: listener.address().port, path: '/p2p/v1/status', method: 'GET' },
+        (response) => {
+          response.resume()
+          response.on('end', () => resolve(response.statusCode ?? 0))
+        },
+      )
+      req.on('error', reject)
+      req.end()
+    })
+    expect(reply).toBe(404)
+    expect(channel.snapshot().unknownPaths).toBe(1)
+  })
+})
+
+describe('the auth failure counter', () => {
+  test('a signature that does not verify counts as an auth failure', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
+    open.push(listener)
+    const payload = message()
+    const signature = signEnvelope('{{SECRET_wrongkey}}', payload as unknown as Envelope)
+    const reply = await post(listener.address().port, payload, { 'x-p2p-signature': signature })
+
+    expect(reply.status).toBe(401)
+    expect(channel.snapshot().authFailures).toBe(1)
+    expect(channel.snapshot().lastFailure?.reason).toBe('bad signature')
+  })
+
+  test('a request with no signature at all counts as an auth failure', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
+    open.push(listener)
+    const reply = await post(listener.address().port, message(), {})
+
+    expect(reply.status).toBe(401)
+    expect(channel.snapshot().authFailures).toBe(1)
+  })
+
+  test('an accepted delivery leaves the counter alone', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
+    open.push(listener)
+    const payload = message()
+    const signature = signEnvelope(secret, payload as unknown as Envelope)
+    expect((await post(listener.address().port, payload, { 'x-p2p-signature': signature })).status).toBe(200)
+    expect(channel.snapshot().authFailures).toBe(0)
   })
 })

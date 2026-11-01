@@ -122,6 +122,11 @@ const event = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 })
 
+/** Lets the pending callbacks run when a case asserts that nothing happened. */
+function drain(): Promise<void> {
+  return new Promise<void>((resolve) => setImmediate(() => setImmediate(resolve)))
+}
+
 async function waitFor(check: () => boolean, timeoutMs = 3000): Promise<void> {
   const started = Date.now()
   while (!check()) {
@@ -144,7 +149,7 @@ describe('an onebot group message through the mounted plugin', () => {
   test('requireMention refuses a group message that names nobody', async () => {
     const mounted = await mount({ requireMention: true })
     expect(await post(mounted.port, event({ message_id: 32, message: [{ type: 'text', data: { text: '随便聊聊' } }] }))).toBe(204)
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await drain()
 
     expect(mounted.prompted).toHaveLength(0)
     expect(mounted.calls).toHaveLength(0)

@@ -40,7 +40,24 @@ export interface ListenerHealth {
   listenState: ListenState
   boundPort: number | null
   lastAuthenticatedAt: number | null
+  lastFailure: { at: number; reason: string } | null
   queueDepth: number
+}
+
+/** The counters a transport keeps about itself; every field is required so a reader never guesses. */
+export interface AdapterCounters {
+  /** Requests refused because the caller did not present the right token. */
+  authFailures: number
+  /** Requests for a path this transport does not serve, which a port scan also produces. */
+  unknownPaths: number
+  /** Deliveries that ended without one having begun, which is always a bug. */
+  underruns: number
+  /** Peers that spoke a protocol version this build does not accept. */
+  protocolMismatches: number
+  /** Outbound failures by the code the send path reported. */
+  sendFailures: Record<string, number>
+  /** The last failure this transport saw, or null when it has none. */
+  lastFailure: { at: number; reason: string } | null
 }
 
 export type Health = ConnectionHealth | ListenerHealth
@@ -50,6 +67,7 @@ export interface AdapterStatus {
   account: string
   bot: string
   health: Health
+  counters: AdapterCounters
   capabilities: CapabilitySet
   attributes: PlatformAttributes
   quota: QuotaView
@@ -61,6 +79,7 @@ export interface ListenerInput {
   listenState: ListenState
   boundPort: number | null
   lastAuthenticatedAt: number | null
+  lastFailure?: { at: number; reason: string } | null | undefined
   queueDepth: number
 }
 
@@ -69,6 +88,7 @@ export interface StatusInput {
   account: string
   bot: string
   health: Health
+  counters: AdapterCounters
   capabilities: CapabilitySet
   attributes: PlatformAttributes
   quota: QuotaView
@@ -91,6 +111,7 @@ export function buildListenerHealth(input: ListenerInput): ListenerHealth {
     listenState,
     boundPort: listenState === 'listening' ? input.boundPort : null,
     lastAuthenticatedAt: input.lastAuthenticatedAt,
+    lastFailure: listenState === 'listening' ? null : input.lastFailure ?? null,
     queueDepth: input.queueDepth,
   }
 }
@@ -102,6 +123,17 @@ export function buildStatus(input: StatusInput): AdapterStatus {
     account: input.account,
     bot: input.bot,
     health: input.health,
+    counters: {
+      authFailures: input.counters.authFailures,
+      unknownPaths: input.counters.unknownPaths,
+      underruns: input.counters.underruns,
+      protocolMismatches: input.counters.protocolMismatches,
+      sendFailures: { ...input.counters.sendFailures },
+      lastFailure:
+        input.counters.lastFailure === null
+          ? null
+          : { at: input.counters.lastFailure.at, reason: input.counters.lastFailure.reason },
+    },
     capabilities: {
       text: input.capabilities.text,
       image: input.capabilities.image,
@@ -118,4 +150,20 @@ export function buildStatus(input: StatusInput): AdapterStatus {
     sampledAt: input.sampledAt,
     queueDepth: input.queueDepth,
   }
+}
+
+/** True when the connection comes from the loopback interface, which a status read requires. */
+export function isLoopbackPeer(address: string | undefined): boolean {
+  if (typeof address !== 'string') return false
+  return address === '::1' || address.startsWith('127.') || address.startsWith('::ffff:127.')
+}
+
+/** True when a proxy in front of us rewrote the request, so a loopback peer cannot be trusted. */
+export function hasForwardingHeaders(headers: Record<string, string | string[] | undefined>): boolean {
+  return (
+    headers['x-forwarded-for'] !== undefined ||
+    headers['x-forwarded-host'] !== undefined ||
+    headers['x-real-ip'] !== undefined ||
+    headers.forwarded !== undefined
+  )
 }

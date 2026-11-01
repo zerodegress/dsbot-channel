@@ -73,6 +73,21 @@ function post(port: number, path: string, body: unknown, authorization?: string)
   })
 }
 
+
+/** Polls until the condition holds, so a slow machine does not fail a correct run. */
+async function waitFor(check: () => boolean, timeoutMs = 3000): Promise<void> {
+  const started = Date.now()
+  while (!check()) {
+    if (Date.now() - started > timeoutMs) throw new Error('timed out waiting for the listener')
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+}
+
+/** Lets the pending callbacks run when a case asserts that something did not happen. */
+function drain(): Promise<void> {
+  return new Promise<void>((resolve) => setImmediate(() => setImmediate(resolve)))
+}
+
 const stops: (() => Promise<void>)[] = []
 
 afterEach(async () => {
@@ -108,7 +123,7 @@ describe('the onebot listener', () => {
   test('accepts a message with 204 and hands it over', async () => {
     const { port, seen } = await startAdapter()
     expect(await post(port, '/onebot/event', event())).toEqual({ status: 204 })
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => seen.length > 0)
     expect(seen).toHaveLength(1)
     expect(seen[0]).toMatchObject({ sessionKey: 'group:12345', rawText: 'hi' })
   })
@@ -116,14 +131,14 @@ describe('the onebot listener', () => {
   test('answers a non-message event with 204 and never hands it over', async () => {
     const { port, seen } = await startAdapter()
     expect(await post(port, '/onebot/event', { post_type: 'notice' })).toEqual({ status: 204 })
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await drain()
     expect(seen).toHaveLength(0)
   })
 
   test('an event for another account is accepted with 204 and never handed over', async () => {
     const { port, seen, warns } = await startAdapter()
     expect(await post(port, '/onebot/event', event({ message_id: '9', self_id: 99999 }))).toEqual({ status: 204 })
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => warns.some((line) => line.includes('answers for 10001')))
     expect(seen).toHaveLength(0)
     expect(warns.some((line) => line.includes('answers for 10001'))).toBe(true)
   })
@@ -132,7 +147,7 @@ describe('the onebot listener', () => {
     const { port, seen, warns } = await startAdapter()
     await post(port, '/onebot/event', event())
     await post(port, '/onebot/event', event())
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => warns.some((line) => line.includes('repeated onebot message')))
     expect(seen).toHaveLength(1)
     expect(warns.some((line) => line.includes('repeated onebot message'))).toBe(true)
   })
@@ -158,7 +173,7 @@ describe('the onebot token', () => {
   test('a profile without a token accepts an unauthenticated event', async () => {
     const { port, seen } = await startAdapter()
     expect(await post(port, '/onebot/event', event({ message_id: '20' }))).toEqual({ status: 204 })
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => seen.length > 0)
     expect(seen).toHaveLength(1)
   })
 })
@@ -257,5 +272,47 @@ describe('the onebot status', () => {
     expect(status.capabilities).toMatchObject({ text: true, mention: true, reply: true, image: false })
     expect(adapter.capabilities).toEqual(status.capabilities)
     expect('refuse' in adapter).toBe(false)
+  })
+})
+
+describe('the onebot status route', () => {
+  function get(port: number, path: string, headers: Record<string, string> = {}): Promise<{ status: number; body: unknown }> {
+    return new Promise((resolve, reject) => {
+      const req = httpRequest({ host: '127.0.0.1', port, path, method: 'GET', headers }, (response) => {
+        const chunks: Buffer[] = []
+        response.on('data', (chunk: Buffer) => chunks.push(chunk))
+        response.on('end', () => {
+          const text = Buffer.concat(chunks).toString('utf8')
+          resolve({ status: response.statusCode ?? 0, body: text.length === 0 ? undefined : JSON.parse(text) })
+        })
+      })
+      req.on('error', reject)
+      req.end()
+    })
+  }
+
+  test('answers a loopback read with the adapter status', async () => {
+    const { port } = await startAdapter()
+    const reply = await get(port, '/onebot/status')
+    expect(reply.status).toBe(200)
+    expect(reply.body).toMatchObject({
+      channel: 'onebot:a',
+      bot: 'bot-a',
+      health: { kind: 'listener', listenState: 'listening' },
+      counters: { sendFailures: {}, lastFailure: null },
+      capabilities: { text: true, mention: true },
+    })
+  })
+
+  test('a forwarded read is refused and counted as an unknown path', async () => {
+    const { port, adapter } = await startAdapter()
+    expect((await get(port, '/onebot/status', { 'x-forwarded-for': '203.0.113.9' })).status).toBe(404)
+    expect(adapter.snapshot.unknownPaths).toBe(1)
+  })
+
+  test('turning the route off makes it an unknown path', async () => {
+    const { port, adapter } = await startAdapter({ status: false })
+    expect((await get(port, '/onebot/status')).status).toBe(404)
+    expect(adapter.snapshot.unknownPaths).toBe(1)
   })
 })

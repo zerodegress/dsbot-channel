@@ -7,6 +7,12 @@ import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
 import { sendToPeer } from '../src/adapters/p2p/p2p-send.js'
 import { PEER_GUIDANCE } from '../src/adapters/p2p/guidance.js'
 
+/** The reset window the relay-ceiling cases configure. */
+const RELAY_RESET_WINDOW_MS = 20
+
+/** Slack on top of the window, so a poll that wakes early cannot send inside it. */
+const RELAY_RESET_MARGIN_MS = 30
+
 const REF = '{{SECRET_4dhhwz2n}}'
 const INCOMING = '[p2p from inst-a · bot-a · p2p-evt-1] hello'
 const credentials = staticCredentials({ [REF]: 'shared-value' })
@@ -1362,7 +1368,7 @@ transport: {
     const reply = await getStatus(port)
 
     expect(reply.status).toBe(200)
-    expect(reply.body).toMatchObject({ snapshot: { health: { emptyTurns: 0, sendFailures: {} } } })
+    expect(reply.body).toMatchObject({ channel: 'p2p:a', health: { kind: 'listener' }, counters: { sendFailures: {} } })
   })
 
   test('an empty turn is reported in the log', async () => {
@@ -1462,7 +1468,7 @@ transport: {
     expect(JSON.parse(raw as string)).toMatchObject({ ok: false, code: 'unreachable' })
 
     const reply = await getStatus(port)
-    expect(reply.body).toMatchObject({ snapshot: { health: { sendFailures: { unreachable: 1 } } } })
+    expect(reply.body).toMatchObject({ counters: { sendFailures: { unreachable: 1 } } })
   })
 
   test('a reply that never lands is counted', async () => {
@@ -1506,7 +1512,7 @@ transport: {
     await waitFor(() => warnings.some((line) => line.includes('was not delivered')))
 
     const reply = await getStatus(port)
-    expect(reply.body).toMatchObject({ snapshot: { health: { sendFailures: { unreachable: 1 } } } })
+    expect(reply.body).toMatchObject({ counters: { sendFailures: { unreachable: 1 } } })
   })
 
   test('a refusal that never lands is counted', async () => {
@@ -1573,7 +1579,7 @@ transport: {
     await new Promise((resolve) => setTimeout(resolve, 120))
 
     const reply = await getStatus(port)
-    expect(reply.body).toMatchObject({ snapshot: { health: { sendFailures: { unreachable: 1 } } } })
+    expect(reply.body).toMatchObject({ counters: { sendFailures: { unreachable: 1 } } })
   })
 
   test('the reply names the channel and the port it is really listening on', async () => {
@@ -1611,8 +1617,9 @@ status: true
     expect(reply.body).toMatchObject({
       channel: 'p2p:a',
       bot: 'bot-a',
-      instance: 'inst-a',
-      snapshot: { state: 'listening', boundPort: port, inFlight: 0, unknownPaths: 0, lastFailure: null },
+      account: 'inst-a',
+      health: { kind: 'listener', listenState: 'listening', boundPort: port },
+      counters: { unknownPaths: 0, lastFailure: null },
     })
   })
 
@@ -1673,7 +1680,10 @@ describe('the reply ceiling', () => {
     await waitFor(() => sessions.prompted.length === 2)
     await waitFor(() => warnings.some((line) => line.includes('loop-limit')))
 
-    await new Promise((resolve) => setTimeout(resolve, 60))
+    // The gate compares wall-clock instants, so wait until the window has really passed rather
+    // than sleeping a fixed span a busy machine can still land inside.
+    const refusedAt = Date.now()
+    await waitFor(() => Date.now() - refusedAt >= RELAY_RESET_WINDOW_MS + RELAY_RESET_MARGIN_MS)
     await send(portB, 'evt-2', 'again')
 
     await waitFor(() => sessions.prompted.length === 4)

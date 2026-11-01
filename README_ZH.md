@@ -60,6 +60,8 @@ adapters:
       accessToken: ONEBOT_TOKEN
 ```
 
+监听类通道会在回环地址上提供一条只读状态路由：p2p 适配器是 `/p2p/v1/status`，OneBot 适配器是 `/onebot/status`。它返回健康状态、能力与计数器；经转发器到达的请求会被拒绝。在 adapter 上设 `status: false` 即可不注册该路由。
+
 `reply` 决定一个回合怎么作答。`auto` 允许直接写文本；`tool` 要求必须调用工具，纯文本会被丢弃并记一条 warn。有序规则优先于按作用域的映射，再回落到默认值：
 
 ```yaml

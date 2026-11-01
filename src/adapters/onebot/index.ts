@@ -85,6 +85,7 @@ export function parseOneBotConfig(mount: AdapterMount): OneBotAdapterConfig {
     channel: mount.channel,
     instance: mount.instance,
     botName: mount.botName,
+    ...(mount.status === undefined ? {} : { status: mount.status }),
     ...(optionalText(raw.selfId, 'selfId') === undefined ? {} : { selfId: raw.selfId as string }),
     listen: parseListen(raw.listen),
     api: parseApi(raw.api, sendTimeoutMs),
