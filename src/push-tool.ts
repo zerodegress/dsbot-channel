@@ -202,10 +202,10 @@ export class PushRouter {
 export function createSendText(router: PushRouter) {
   return defineTool({
     name: 'send_text',
-    description: `Send a text message to a peer over a peer link. ${router.describe()} Without a channel the last peer that messaged this session is used; a target names an address on that channel.`,
+    description: `Send a text message over one channel. ${router.describe()} Without a channel the one that last messaged this session is used; a target names an address on that channel, as its describeTargets lists it.`,
     parameters: {
       text: { type: 'string', required: true, description: 'The message body to deliver' },
-      channel: { type: 'string', description: 'Adapter instance to send through, e.g. p2p:orca. Omit to answer the current peer' },
+      channel: { type: 'string', description: 'Adapter instance to send through, e.g. p2p:orca. Omit to answer where the last message came from' },
       target: { type: 'string', description: 'Address on that channel, as the channel names it' },
       idempotencyKey: { type: 'string', description: 'Repeat this call safely within ten minutes; only a delivered push holds the key' },
     },
