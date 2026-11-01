@@ -71,6 +71,17 @@ function wholeMs(field: string, value: number, atLeast: number): number {
 export class P2PAdapter implements ChannelAdapter {
   readonly kind = 'p2p'
   readonly guidance = { peer: PEER_GUIDANCE, group: GROUP_GUIDANCE }
+  readonly capabilities = {
+    text: true,
+    image: false,
+    file: false,
+    voice: false,
+    recall: false,
+    history: false,
+    mention: false,
+    reply: true,
+    stream: false,
+  }
   readonly #config: P2PAdapterConfig
   readonly #options: P2PAdapterOptions
   readonly #stats: ChannelStats
@@ -156,17 +167,7 @@ export class P2PAdapter implements ChannelAdapter {
         lastAuthenticatedAt: snapshot.lastAuthenticatedAt,
         queueDepth: snapshot.inFlight,
       }),
-      capabilities: {
-        text: true,
-        image: false,
-        file: false,
-        voice: false,
-        recall: false,
-        history: false,
-        mention: false,
-        reply: true,
-        stream: false,
-      },
+      capabilities: this.capabilities,
       attributes: { stableMessageId: true },
       quota: { softLimit: 0, hardLimit: 0 },
       sampledAt: snapshot.sampledAt,

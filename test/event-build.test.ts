@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { buildEvent, chargeKey, dedupeKeyFor, replyIdempotencyKey, unstableDedupeKey } from '../src/event-build.js'
+import type { EventInput } from '../src/event-types.js'
 
 const base = {
   source: { kind: 'onebot' as const, instance: 'onebot:10001', peer: null, scope: 'group' as const },
@@ -14,6 +15,46 @@ const base = {
   },
   declared: { nickname: 'someone', avatar: 'a', claimedIdentity: null },
 }
+
+const media = (one: unknown) => ({ ...base, body: { ...base.body, media: [one] } }) as EventInput
+
+describe('a media reference the core carries', () => {
+  test('a url alone is enough', () => {
+    expect(buildEvent(media({ type: 'image', url: 'https://example.test/a.png', handle: null })).body.media[0]).toEqual({
+      type: 'image',
+      url: 'https://example.test/a.png',
+      handle: null,
+    })
+  })
+
+  test('a platform handle alone is enough and is carried untouched', () => {
+    const handle = 'onebot:image:abc-123'
+    expect(buildEvent(media({ type: 'image', url: null, handle })).body.media[0]).toEqual({
+      type: 'image',
+      url: null,
+      handle,
+    })
+  })
+
+  test('a reference with neither is refused', () => {
+    expect(() => buildEvent(media({ type: 'image', url: null, handle: null }))).toThrow(/needs a url or a handle/)
+    expect(() => buildEvent(media({ type: 'image' }))).toThrow(/needs a url or a handle/)
+  })
+
+  test('a handle must be one bounded line', () => {
+    for (const bad of ['', 'two words', 'a\nb', 'a\tb', 'x'.repeat(257)]) {
+      expect(() => buildEvent(media({ type: 'image', url: null, handle: bad }))).toThrow(/media\[0\]/)
+    }
+  })
+
+  test('a url that is present but empty is refused', () => {
+    expect(() => buildEvent(media({ type: 'image', url: '', handle: null }))).toThrow(/url must be a non-empty string/)
+  })
+
+  test('the media type stays a closed set', () => {
+    expect(() => buildEvent(media({ type: 'video', url: 'u', handle: null }))).toThrow(/type must be one of/)
+  })
+})
 
 describe('buildEvent', () => {
   test('produces the four parts', () => {

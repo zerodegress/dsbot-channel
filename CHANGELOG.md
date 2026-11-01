@@ -9,43 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- An adapter may declare `refuse(input)` to tell the sender a turn is refused; the refusal names a message and a chain, takes a closed reason and an optional one-line note, and every transport words it for its own platform.
-
-- Adapter kinds: `p2p` and `onebot` are built-in names, a third-party transport registers as `x-[a-z0-9-]+` within 32 characters, and a profile naming an unknown kind fails at load.
-- A kind names one implementation: a factory registers once per kind, while several adapters may reuse it. A message's `source.kind` must match the kind of the adapter that carried it; a mismatch is refused with `source_kind_invalid` before a session or a charge exists.
-- Event model with four parts (source, author, body, metadata), three metadata layers, and separate `eventKey` and `contentHash` fields; the declared layer cannot be read by consumers.
-- Configuration validation that rejects unknown fields and wildcard listen addresses, reporting the offending field path.
-- p2p wire protocol v1 at `POST /p2p/v1/message`: per-peer secrets bound to an instance, signed requests via `x-p2p-signature`, `(instance, to, eventId)` deduplication with in-flight recovery, `413` for oversized bodies and `403` for misaddressed messages.
-- Self-hosted p2p listener on `127.0.0.1` by default, with its configuration checked before any socket is opened.
-- Pipeline node chain that can deny, allow, restrict scoring and judging, score, or pass an event.
-- Budget ledger over global, per-bot and per-session scopes, with two ways to charge: a synchronous check-and-charge decision, and a hold that is reserved up front and then settled or refunded.
+- Adapter kinds: `p2p` and `onebot` are built in, a third-party transport registers as `x-[a-z0-9-]+` within 32 characters and mounts through one adapter contract. A message's `source.kind` must match the adapter that carried it, and an unknown kind or a mismatch is refused before a session or a charge exists.
+- An event of four parts — source, author, body and metadata — with three metadata layers, one of them unreadable by consumers, and separate `eventKey` and `contentHash` fields.
+- Profile validation at load: unknown fields, wildcard listen addresses, an adapter without its own `instance`, a `channel` another adapter already uses, or one bot answered by adapters with different pipelines are refused with the offending field path.
+- The p2p transport: wire protocol v1 at `POST /p2p/v1/message` with signed requests, per-peer secrets bound to an instance, `(instance, to, eventId)` deduplication with in-flight recovery, `413` for oversized bodies and `403` for misaddressed messages, on a listener that binds `127.0.0.1` by default and is checked before any socket opens.
+- Adapters listed in the profile, each with its own peers and listener settings. Peer secrets are credential references, not inline values, and an empty list mounts the plugin without opening a listener.
+- Per-adapter `policy`: deny by word or regular expression, allow named peers, cap the rounds one peer holds with `relayLimit` and `relayResetMs`, and `policy.budget` with a required `capacity` and an optional `hardLimit`.
+- A session layer declared in the profile chooses the pipeline that session's next turn runs: `pipeline` nodes that deny, allow, restrict scoring and judging, score or pass an event, with `maxTurnMs` and `judgeTimeoutMs` setting the ceiling one turn may occupy and the judging deadline inside it.
 - A p2p channel that runs end to end: an accepted message starts a turn with the host session controller, and the reply is sent back to the peer that sent it.
-- Adapters are declared as a list, each with its own listener settings and its own peer list.
-- Per-adapter `policy` rules that deny a message by word or regular expression, allow named peers through, and cap how many rounds one peer may hold, tuned with `relayLimit` and `relayResetMs`.
-- Per-adapter `policy.budget` with a required `capacity` in points and an optional `hardLimit` ratio; once the window reaches the hard limit the next turn is refused.
-- `pipeline.maxTurnMs` and `pipeline.judgeTimeoutMs`, so a profile sets the ceiling one turn may occupy and the judging deadline inside it.
 
 ### Changed
 
-- `decline` goes through `refuse` when the transport has it and otherwise closes the conversation silently, reporting `declined: false`; `SendInput` no longer carries `status`, `reason` or `final`, because a refusal is no longer a send.
-
-- `PeerTurnRef` is now `TurnRef`, and `no_reply`/`decline` describe themselves as turn tools rather than peer ones.
-
+- `decline` uses the transport's `refuse` capability and closes the conversation silently, reporting `declined: false`, when a channel has none.
+- A media reference is `{ type, url, handle }`, at least one of `url` and `handle` present; `handle` is the adapter's opaque token, core carries it untouched, and both take part in the content hash.
+- An adapter declares the capabilities it carries at mount time, beside the sampled ones in its status.
 - A conversation's quota is counted under the key its adapter supplies (`p2p:<instance>` for a p2p link) rather than the host session id, so every turn of that conversation accumulates in one pool.
 - An adapter declares its transport in a `p2p` block; `peers`, `listen`, `dedupe`, `inflightTtlMs`, `sentAtWindowMs`, `maxBodyBytes` and `waitMs` written on the adapter itself now fail to load.
-- A transport mounts through one adapter contract, so the core no longer imports a transport and reports `AdapterStatus` only.
-- Every adapter requires its own `instance` and a `channel` no other adapter uses, and peer secrets are credential references resolved through the host rather than inline values. An empty adapter list mounts the plugin without opening a listener.
-
-### Removed
-
-- `sessionKeyFor` and `ScopePair`: core no longer builds a session key from a scope and a target, because only the adapter that saw the message knows it.
-- The implicit `p2p:<peer>` key in `InboundGate.admit`: a caller must pass the adapter's session key.
 
 ### Fixed
 
 - A reply carries its own `reply:<uuid>` id and names the message it answers in `inReplyTo`; the chain root travels as a signed `chainId`, so an event id no longer grows with every hop and a closed chain stays closed.
 - A peer on the previous protocol is refused with `401` and the distinct code `protocol_mismatch`, which the transport also counts with the time it last happened.
-- A session layer declared at run time now decides what that session's next turn runs; before, it was stored, readable, and never consulted.
 - A profile whose adapters answer for one bot with different pipelines or rules is refused at load time, instead of silently dropping every message on one adapter.
 - Signature verification now covers `eventId`, `sentAt` and `body`, and signatures are base64-encoded as the wire protocol specifies.
 - Stale in-flight reservations are reclaimed after their TTL, so a crashed delivery no longer blocks the same `eventId`.

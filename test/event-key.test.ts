@@ -45,14 +45,14 @@ describe('contentHash', () => {
   })
 
   test('changes when a media reference changes', () => {
-    const one = contentHash({ text: 'a', media: [{ type: 'image', url: 'u1' }] })
-    const two = contentHash({ text: 'a', media: [{ type: 'image', url: 'u2' }] })
+    const one = contentHash({ text: 'a', media: [{ type: 'image', url: 'u1', handle: null }] })
+    const two = contentHash({ text: 'a', media: [{ type: 'image', url: 'u2', handle: null }] })
     expect(one).not.toBe(two)
   })
 
   test('changes when media order changes', () => {
-    const one = contentHash({ text: '', media: [{ type: 'image', url: 'u1' }, { type: 'image', url: 'u2' }] })
-    const two = contentHash({ text: '', media: [{ type: 'image', url: 'u2' }, { type: 'image', url: 'u1' }] })
+    const one = contentHash({ text: '', media: [{ type: 'image', url: 'u1', handle: null }, { type: 'image', url: 'u2', handle: null }] })
+    const two = contentHash({ text: '', media: [{ type: 'image', url: 'u2', handle: null }, { type: 'image', url: 'u1', handle: null }] })
     expect(one).not.toBe(two)
   })
 })
