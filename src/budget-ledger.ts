@@ -1,6 +1,6 @@
 import type { ChargeKind } from './event-types.js'
 
-export type LimitLevel = 'normal' | 'soft' | 'hard'
+export type LimitLevel = 'normal' | 'hard'
 
 export interface BudgetPoints {
   judge: number
@@ -10,7 +10,6 @@ export interface BudgetPoints {
 }
 
 export interface Hysteresis {
-  softRelease: number
   hardReleaseBelow: number
   hardHoldMs: number
 }
@@ -22,11 +21,10 @@ export interface BudgetSettings {
 
 export const DEFAULT_BUDGET: BudgetSettings = {
   points: { judge: 1, accepted: 20, rejected: 10, push: 5 },
-  hysteresis: { softRelease: 0.05, hardReleaseBelow: 0.95, hardHoldMs: 60_000 },
+  hysteresis: { hardReleaseBelow: 0.95, hardHoldMs: 60_000 },
 }
 
 export interface BudgetLimits {
-  softLimit: number
   hardLimit: number
   capacity: number
 }
@@ -156,22 +154,15 @@ export class BudgetLedger {
 
   /** The level the current windows and locks imply, computed without writing anything. */
   private levelFor(key: string, ratio: number, at: number): LimitLevel {
-    const { softLimit, hardLimit } = this.limits
-    const { softRelease, hardReleaseBelow, hardHoldMs } = this.settings.hysteresis
+    const { hardLimit } = this.limits
+    const { hardReleaseBelow, hardHoldMs } = this.settings.hysteresis
     const lock = this.locks.get(key)
     if (lock?.level === 'hard') {
       if (ratio >= hardReleaseBelow) return 'hard'
       if (at - lock.since < hardHoldMs) return 'hard'
-      return ratio >= softLimit ? 'soft' : 'normal'
+      return 'normal'
     }
-    if (lock?.level === 'soft') {
-      if (ratio >= hardLimit) return 'hard'
-      if (ratio < softLimit - softRelease) return 'normal'
-      return 'soft'
-    }
-    if (ratio >= hardLimit) return 'hard'
-    if (ratio >= softLimit) return 'soft'
-    return 'normal'
+    return ratio >= hardLimit ? 'hard' : 'normal'
   }
 
   private levelOf(key: string, ratio: number, at: number): LimitLevel {
@@ -180,8 +171,6 @@ export class BudgetLedger {
     if (level === 'hard') {
       const held = lock?.level === 'hard' && ratio < this.settings.hysteresis.hardReleaseBelow
       if (!held) this.locks.set(key, { level: 'hard', since: at })
-    } else if (level === 'soft') {
-      if (lock?.level !== 'soft') this.locks.set(key, { level: 'soft', since: at })
     } else if (lock !== undefined) {
       this.locks.delete(key)
     }
@@ -200,7 +189,6 @@ export class BudgetLedger {
       byScope[key] = level
       if (level !== 'normal') triggeredBy.push(key)
       if (level === 'hard') aggregate = 'hard'
-      else if (level === 'soft' && aggregate === 'normal') aggregate = 'soft'
     }
     return { byScope, aggregate, triggeredBy }
   }
@@ -220,7 +208,6 @@ export class BudgetLedger {
       byScope[key] = level
       if (level !== 'normal') triggeredBy.push(key)
       if (level === 'hard') aggregate = 'hard'
-      else if (level === 'soft' && aggregate === 'normal') aggregate = 'soft'
     }
     return { byScope, aggregate, triggeredBy }
   }

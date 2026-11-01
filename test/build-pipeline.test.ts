@@ -126,16 +126,6 @@ describe('a node without its dependency cannot be built', () => {
 })
 
 describe('the budget node reports what the ledger says', () => {
-  test('a soft limit turns into restrict', async () => {
-    const pipeline = buildPipeline([{ id: 'b', type: 'budget' }], {
-      ...deps(),
-      budget: () => ({ state: 'soft', triggeredBy: ['global'] }),
-    })
-    const result = await pipeline.run(event)
-    expect(result.decision).toBe('deny')
-    expect(result.restricted).toBe(true)
-  })
-
   test('a hard limit denies', async () => {
     const pipeline = buildPipeline([{ id: 'b', type: 'budget' }], {
       ...deps(),

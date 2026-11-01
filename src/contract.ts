@@ -108,7 +108,13 @@ export interface SendInput {
 }
 
 export interface AdapterPorts {
-  /** Takes one inbound message; resolves once core has accepted or refused it, never when the turn ends. */
+  /**
+   * Takes one inbound message; resolves once core has accepted or refused it, never when the turn
+   * ends. A 2xx answer means the transport claimed and recorded the event, not that a turn ran:
+   * a refusal, a failed turn or a fault of ours afterwards does not change that status. Only a
+   * request that is itself unusable (credentials, address, window, size, not JSON) earns a 4xx, or
+   * a 5xx when the first delivery of the same event is still being processed and a retry may help.
+   */
   onMessage(message: InboundMessage): Promise<InboundVerdict>
   resolveSecret(ref: string): Promise<string | undefined>
 }

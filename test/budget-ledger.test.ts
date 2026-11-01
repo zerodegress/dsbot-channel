@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { BudgetLedger, DEFAULT_BUDGET } from '../src/budget-ledger.js'
 
-const limits = { softLimit: 0.8, hardLimit: 1, capacity: 100 }
+const limits = { hardLimit: 1, capacity: 100 }
 
 describe('points', () => {
   test('judge costs 1, an accepted bot call 20 and a rejected one 10', () => {
@@ -37,27 +37,21 @@ describe('three dimensions', () => {
 })
 
 describe('limit state', () => {
-  test('is normal below the soft limit', () => {
+  test('is normal below the hard limit', () => {
     const ledger = new BudgetLedger(limits, DEFAULT_BUDGET)
     ledger.settle(ledger.reserve('b', 'group:1', 'bot', 20), 'accepted')
     expect(ledger.check('b', 'group:1').aggregate).toBe('normal')
   })
 
-  test('turns soft at the soft limit and names the scope that tripped', () => {
+  test('turns hard at the limit and names the scope that tripped', () => {
     const ledger = new BudgetLedger(limits, DEFAULT_BUDGET)
-    for (let i = 0; i < 4; i += 1) ledger.settle(ledger.reserve('b', 'group:1', 'bot', 20), 'accepted')
+    for (let i = 0; i < 5; i += 1) ledger.settle(ledger.reserve('b', 'group:1', 'bot', 20), 'accepted')
     const state = ledger.check('b', 'group:1')
-    expect(state.aggregate).toBe('soft')
+    expect(state.aggregate).toBe('hard')
     expect(state.triggeredBy.length).toBeGreaterThan(0)
   })
 
-  test('turns hard at the hard limit', () => {
-    const ledger = new BudgetLedger(limits, DEFAULT_BUDGET)
-    for (let i = 0; i < 5; i += 1) ledger.settle(ledger.reserve('b', 'group:1', 'bot', 20), 'accepted')
-    expect(ledger.check('b', 'group:1').aggregate).toBe('hard')
-  })
-
-  test('any hard beats any soft', () => {
+  test('a hard in one scope is the aggregate', () => {
     const ledger = new BudgetLedger(limits, DEFAULT_BUDGET)
     for (let i = 0; i < 5; i += 1) ledger.settle(ledger.reserve('b', 'group:1', 'bot', 20), 'accepted')
     const state = ledger.check('b', 'group:2')
@@ -124,16 +118,6 @@ describe('check and charge are one synchronous step', () => {
 })
 
 describe('hysteresis', () => {
-  test('soft releases only below softLimit minus softRelease', () => {
-    const ledger = new BudgetLedger(limits, DEFAULT_BUDGET)
-    for (let i = 0; i < 4; i += 1) ledger.settle(ledger.reserve('b', 'group:1', 'bot', 20), 'accepted')
-    expect(ledger.check('b', 'group:1').aggregate).toBe('soft')
-    ledger.setUsage({ global: 79, 'bot:b': 79, 'group:1': 79 })
-    expect(ledger.check('b', 'group:1').aggregate).toBe('soft')
-    ledger.setUsage({ global: 74, 'bot:b': 74, 'group:1': 74 })
-    expect(ledger.check('b', 'group:1').aggregate).toBe('normal')
-  })
-
   test('hard releases only after it stays below the threshold for the hold time', () => {
     let now = 0
     const ledger = new BudgetLedger(limits, DEFAULT_BUDGET, () => now)
@@ -144,8 +128,6 @@ describe('hysteresis', () => {
     now = 30_000
     expect(ledger.check('b', 'group:1').aggregate).toBe('hard')
     now = 61_000
-    expect(ledger.check('b', 'group:1').aggregate).toBe('soft')
-    ledger.setUsage({ global: 70, 'bot:b': 70, 'group:1': 70 })
     expect(ledger.check('b', 'group:1').aggregate).toBe('normal')
   })
 
@@ -163,8 +145,6 @@ describe('hysteresis', () => {
     now = 60_000
     expect(ledger.check('b', 'group:1').aggregate).toBe('hard')
     now = 121_000
-    expect(ledger.check('b', 'group:1').aggregate).toBe('soft')
-    ledger.setUsage({ global: 70, 'bot:b': 70, 'group:1': 70 })
     expect(ledger.check('b', 'group:1').aggregate).toBe('normal')
   })
 

@@ -68,7 +68,7 @@ export type {
   SkipTarget,
 } from './pipeline.js'
 export { DEFAULT_PIPELINE, checkPipeline } from './pipeline-config.js'
-export { DEFAULT_HARD_LIMIT, DEFAULT_SOFT_LIMIT, createLedger } from './budget-config.js'
+export { DEFAULT_HARD_LIMIT, createLedger } from './budget-config.js'
 export type { BudgetConfig, LedgerOptions } from './budget-config.js'
 export { compilePolicy } from './policy-config.js'
 export type { CompiledPolicy, PolicyConfig } from './policy-config.js'

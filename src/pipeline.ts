@@ -3,6 +3,7 @@ import type { Mentioned, Scope } from './event-types.js'
 export const NODE_TYPES = ['deny', 'budget', 'allow', 'score', 'judge', 'prepare'] as const
 export type NodeType = (typeof NODE_TYPES)[number]
 
+/** What a node may ask the chain to skip; no built-in node produces a restrict in this version. */
 export const SKIP_TARGETS = ['scoring', 'judge'] as const
 export type SkipTarget = (typeof SKIP_TARGETS)[number]
 
@@ -49,7 +50,7 @@ export type NodeOutput = DenyOutput | AllowOutput | RestrictOutput | ScoreOutput
 export interface RuntimeView {
   consumed: number
   remaining: number
-  limitState: 'normal' | 'soft' | 'hard'
+  limitState: 'normal' | 'hard'
 }
 
 export interface NodeContext {
