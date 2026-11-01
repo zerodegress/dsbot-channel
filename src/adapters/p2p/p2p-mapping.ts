@@ -68,7 +68,7 @@ export function toP2PEvent(inbound: P2PInbound): Event {
     transport: {
       messageId: inbound.messageId,
       timestamp: inbound.sentAt,
-      mentioned: false,
+      mentioned: { self: false, others: false, all: false },
       isReply: false,
       signature: null,
     },

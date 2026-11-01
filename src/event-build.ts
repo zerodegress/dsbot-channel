@@ -1,5 +1,5 @@
 import { contentHash, eventKey } from './event-key.js'
-import type { ChargeKind, Event, EventInput, MediaRef, Source, Target } from './event-types.js'
+import type { ChargeKind, Event, EventInput, MediaRef, Mentioned, Source, Target } from './event-types.js'
 import { MEDIA_HANDLE_MAX, MEDIA_TYPES } from './event-types.js'
 import { AUTHOR_KINDS, CHARGE_KINDS, SCOPES, SOURCE_KIND_MAX } from './event-types.js'
 
@@ -55,6 +55,20 @@ function assertMedia(media: readonly MediaRef[]): MediaRef[] {
   })
 }
 
+/** Refuses a mention report that is not the three explicit booleans; a missing field is never read as false. */
+function assertMentioned(value: unknown): Mentioned {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('transport.mentioned must be an object with self, others and all')
+  }
+  const record = value as Record<string, unknown>
+  for (const field of ['self', 'others', 'all'] as const) {
+    if (typeof record[field] !== 'boolean') {
+      throw new Error(`transport.mentioned.${field} must be a boolean`)
+    }
+  }
+  return { self: record.self as boolean, others: record.others as boolean, all: record.all as boolean }
+}
+
 /** Assembles one event and derives its identity fields. */
 export function buildEvent(input: EventInput): Event {
   const kind = assertKind(input.source.kind)
@@ -65,7 +79,7 @@ export function buildEvent(input: EventInput): Event {
     author: { senderId: input.author.senderId, kind: assertEnum('author.kind', AUTHOR_KINDS, input.author.kind), personId: input.author.personId },
     body: { text: input.body.text, media: assertMedia(input.body.media), replyTo: input.body.replyTo },
     meta: {
-      transport: { ...input.transport },
+      transport: { ...input.transport, mentioned: assertMentioned(input.transport.mentioned) },
       derived: {
         eventKey: eventKey(source.instance, input.transport.messageId),
         contentHash: contentHash(input.body),

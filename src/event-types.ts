@@ -49,10 +49,20 @@ export interface Body {
   replyTo: string | null
 }
 
+/** Who a message named: the three facts a transport can report, all of them required. */
+export interface Mentioned {
+  /** The bot itself was named. */
+  self: boolean
+  /** Someone else was named. */
+  others: boolean
+  /** Everyone was named. */
+  all: boolean
+}
+
 export interface TransportMeta {
   messageId: string
   timestamp: number
-  mentioned: boolean
+  mentioned: Mentioned
   isReply: boolean
   signature: string | null
 }

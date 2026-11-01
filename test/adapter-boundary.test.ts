@@ -66,6 +66,24 @@ describe('the transport block a profile declares', () => {
   })
 })
 
+describe('the mention switch a profile sets', () => {
+  test('a transport that cannot tell mentions apart cannot require them', async () => {
+    await expect(
+      mount({
+        adapters: [
+          {
+            channel: 'p2p:a',
+            instance: 'inst-a',
+            botName: 'bot-a',
+            policy: { requireMention: true },
+            p2p: { peers: [{ instance: 'inst-b', secret: REF }], listen: { host: '127.0.0.1', port: 0 } },
+          },
+        ],
+      }),
+    ).rejects.toThrow(/policy\.requireMention needs a transport that can tell mentions apart/)
+  })
+})
+
 describe('the core does not reach into a transport', () => {
   test('no file outside src/adapters and the composition root names the adapter directory', () => {
     const root = join(import.meta.dirname, '..', 'src')

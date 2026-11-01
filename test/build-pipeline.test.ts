@@ -3,7 +3,7 @@ import { buildPipeline, BuildError } from '../src/build-pipeline.js'
 import type { PipelineDeps } from '../src/build-pipeline.js'
 import { DEFAULT_PIPELINE } from '../src/pipeline-config.js'
 
-const event = { eventKey: 'peer-a:m1', scope: 'p2p' as const, mentioned: false, text: 'hello' }
+const event = { eventKey: 'peer-a:m1', scope: 'p2p' as const, mentioned: { self: false, others: false, all: false }, text: 'hello' }
 
 const deps = (): PipelineDeps => ({
   denyRules: [{ id: 'noise', reason: 'system noise', matches: () => false }],

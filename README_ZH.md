@@ -44,6 +44,8 @@ config:
 
 `kind` 声明这条通道的传输，不写默认 `p2p`。内置 kind 是 `p2p` 和 `onebot`；第三方传输注册时必须用 `x-[a-z0-9-]+`，不超过 32 个字符。一个 kind 对应一个实现：每个 kind 只能注册一次工厂，但可以有多个 adapter 复用它（两条 p2p 链接就是 `p2p` 的两个 adapter）。消息的 `source.kind` 必须等于承载它的适配器的 kind；profile 里写未知 kind 会在加载期失败。
 
+在 adapter 上设 `policy.requireMention: true` 后，群消息如果既没有点名 bot（`self`），也没有 @ 所有人（`all`），就会被直接拒掉。该开关默认关闭，私聊不受影响；对于无法区分 `self`、`others`、`all` 的通道，不能开启这个开关，开启后会在加载期报错。
+
 patch 出厂是禁用的。把那一行的 `disabled` 改成 `false`，listener 才会启动。
 
 ## 开发

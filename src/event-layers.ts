@@ -22,7 +22,13 @@ export interface DeclaredLayer {
 }
 
 export function transportLayer(meta: TransportMeta & { kind?: string; instance?: string }): TransportMeta {
-  return { messageId: meta.messageId, timestamp: meta.timestamp, mentioned: meta.mentioned, isReply: meta.isReply, signature: meta.signature }
+  return {
+    messageId: meta.messageId,
+    timestamp: meta.timestamp,
+    mentioned: { self: meta.mentioned.self, others: meta.mentioned.others, all: meta.mentioned.all },
+    isReply: meta.isReply,
+    signature: meta.signature,
+  }
 }
 
 export function derivedLayer(meta: DerivedMeta): DerivedMeta {

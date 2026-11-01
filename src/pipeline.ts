@@ -1,4 +1,4 @@
-import type { Scope } from './event-types.js'
+import type { Mentioned, Scope } from './event-types.js'
 
 export const NODE_TYPES = ['deny', 'budget', 'allow', 'score', 'judge', 'prepare'] as const
 export type NodeType = (typeof NODE_TYPES)[number]
@@ -11,7 +11,7 @@ export type Decision = 'allow' | 'deny'
 export interface PipelineEvent {
   eventKey: string
   scope: Scope
-  mentioned: boolean
+  mentioned: Mentioned
   /** What the rules match on; empty when the adapter carries no text. */
   text: string
   /** The identity that admitted the message, when the adapter has one. */
