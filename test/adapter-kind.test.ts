@@ -28,6 +28,16 @@ function groupMessage(): InboundMessage {
   }
 }
 
+function mediaMessage(): InboundMessage {
+  return {
+    ...message('x-media'),
+    eventKey: 'inst-a:media-1',
+    chainId: 'inst-a:media-1',
+    body: { text: 'look', media: [{ type: 'image', url: null, handle: 'onebot:image:abc-123' }], replyTo: null },
+    rawText: 'look',
+  }
+}
+
 function strictMessage(): InboundMessage {
   return { ...message('x-strict'), sessionKey: 'bad key' }
 }
@@ -118,6 +128,7 @@ class StubAdapter implements ChannelAdapter {
 registerAdapter('x-demo', (mount: AdapterMount) => new StubAdapter([message(mount.transport.sourceKind as string ?? 'x-demo')]))
 registerAdapter('x-liar', (mount: AdapterMount) => new StubAdapter([message('p2p')], mount.transport.reportedKind as string))
 registerAdapter('x-group', () => new StubAdapter([groupMessage()], 'x-group'))
+registerAdapter('x-media', () => new StubAdapter([mediaMessage()], 'x-media'))
 registerAdapter('x-strict', () => new StubAdapter([strictMessage()], 'x-strict', (key) => (key === 'x-ok' ? undefined : `this adapter does not address "${key}"`)))
 
 async function mountWith(kind: string, adapterKind = 'x-demo'): Promise<Context> {
@@ -181,6 +192,18 @@ describe('the session key an adapter supplies', () => {
     expect(verdicts[0]).toMatchObject({ ok: false, code: 'session_key_invalid' })
     await new Promise((resolve) => setTimeout(resolve, 10))
     expect(prompts).toHaveLength(0)
+  })
+})
+
+describe('a media handle a third-party adapter carries', () => {
+  test('a reference with only a handle reaches a turn untouched', async () => {
+    verdicts.length = 0
+    const { prompts } = await mountPrompted('x-media', 'x-media')
+
+    expect(verdicts).toEqual([{ ok: true }])
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(prompts).toHaveLength(1)
+    expect(messages.at(-1)?.body.media[0]).toEqual({ type: 'image', url: null, handle: 'onebot:image:abc-123' })
   })
 })
 
