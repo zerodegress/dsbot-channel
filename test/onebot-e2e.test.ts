@@ -53,7 +53,7 @@ interface Mounted {
   tools: ToolLike[]
 }
 
-async function mount(policy: Record<string, unknown> = {}): Promise<Mounted> {
+async function mount(policy: Record<string, unknown> = {}, bots: string[] = []): Promise<Mounted> {
   const tools: ToolLike[] = []
   const prompted: string[] = []
   const calls: { action: string; body: Record<string, unknown> }[] = []
@@ -115,6 +115,7 @@ async function mount(policy: Record<string, unknown> = {}): Promise<Mounted> {
           listen: { host: '127.0.0.1', port },
           api: { url: `http://127.0.0.1:${apiPort}` },
           accessToken: REF,
+          bots,
         },
       },
     ],
@@ -203,6 +204,23 @@ describe('an onebot group message through the mounted plugin', () => {
 
     expect(mounted.prompted).toHaveLength(1)
     expect(mounted.calls[0]).toMatchObject({ action: 'send_private_msg', body: { user_id: '20002', message: 'onebot 回复' } })
+  })
+})
+
+describe('the reply ceiling in a group', () => {
+  test('a bot that answers twice in a row is stopped, and a person speaking frees it', async () => {
+    const mounted = await mount({ relayLimit: 1 }, ['20002'])
+
+    expect(await post(mounted.port, event({ message_id: 41 }))).toBe(204)
+    await waitFor(() => mounted.prompted.length === 1)
+
+    expect(await post(mounted.port, event({ message_id: 42 }))).toBe(204)
+    await waitFor(() => mounted.calls.length >= 1)
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    expect(mounted.prompted).toHaveLength(1)
+
+    expect(await post(mounted.port, event({ message_id: 43, user_id: 40004 }))).toBe(204)
+    await waitFor(() => mounted.prompted.length === 2)
   })
 })
 

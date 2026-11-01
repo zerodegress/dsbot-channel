@@ -504,7 +504,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
       if (sent.ok) {
         turns.replied()
         ended('replied')
-        runtime.gate.recordReply(adapter.botName, message.replyTarget)
+        runtime.gate.recordReply(adapter.botName, message.sessionKey)
         runtime.billing.accept(hold)
         hold = undefined
         return
@@ -587,6 +587,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         if (chainConflict !== undefined) return { ok: false, code: 'chain_conflict', reason: chainConflict }
         const specs = pipelines.pipelineFor(adapter.botName, message.sessionKey)
         const pipeline = specs.length > 0 ? buildPipeline(specs, runtime.deps, settings) : undefined
+        if (message.author.kind === 'person') runtime.gate.resetPeer(message.sessionKey, adapter.botName)
         const decision = await runtime.gate.admit({
           event: {
             eventKey: message.eventKey,

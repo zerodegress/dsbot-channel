@@ -64,13 +64,14 @@ export class InboundGate {
     this.now = options.now ?? Date.now
   }
 
-  private key(botId: string, peer: string): string {
-    return `${botId}|${peer}`
+  /** The one place a round is keyed: the bot and the conversation, never a second spelling of it. */
+  private roundKey(botId: string, session: string): string {
+    return `${botId}|${session}`
   }
 
   /** Counts one automatic reply so the next round can see the ceiling. */
-  recordReply(botId: string, peer: string): void {
-    const key = this.key(botId, peer)
+  recordReply(botId: string, session: string): void {
+    const key = this.roundKey(botId, session)
     const entry = this.live(key)
     this.rounds.set(key, { count: (entry?.count ?? 0) + 1, at: this.now() })
   }
@@ -85,23 +86,23 @@ export class InboundGate {
     return entry
   }
 
-  /** A person speaking again clears the ceiling for that peer. */
-  resetPeer(peer: string, botId?: string): void {
+  /** A person speaking again clears the ceiling for that conversation. */
+  resetPeer(session: string, botId?: string): void {
     if (botId !== undefined) {
-      this.rounds.delete(this.key(botId, peer))
+      this.rounds.delete(this.roundKey(botId, session))
       return
     }
     for (const key of [...this.rounds.keys()]) {
-      if (key.endsWith(`|${peer}`)) this.rounds.delete(key)
+      if (key.endsWith(`|${session}`)) this.rounds.delete(key)
     }
   }
 
-  roundsWith(botId: string, peer: string): number {
-    return this.live(this.key(botId, peer))?.count ?? 0
+  roundsWith(botId: string, session: string): number {
+    return this.live(this.roundKey(botId, session))?.count ?? 0
   }
 
   async admit(input: AdmitInput): Promise<GateDecision> {
-    const { event, botId, peer } = input
+    const { event, botId } = input
     if (this.options.requireMention === true && event.scope === 'group' && !event.mentioned.self && !event.mentioned.all) {
       return {
         allow: false,
@@ -120,8 +121,14 @@ export class InboundGate {
       if (state.aggregate === 'hard') return { allow: false, reason: 'budget-hard', limitState, triggeredBy }
     }
 
-    if (this.roundsWith(botId, peer) >= this.maxTurns) {
-      return { allow: false, reason: 'loop-limit', detail: `${this.roundsWith(botId, peer)} rounds with ${peer}`, limitState, triggeredBy }
+    if (this.roundsWith(botId, session) >= this.maxTurns) {
+      return {
+        allow: false,
+        reason: 'loop-limit',
+        detail: `${this.roundsWith(botId, session)} rounds in ${session}`,
+        limitState,
+        triggeredBy,
+      }
     }
 
     const pipeline = input.pipeline ?? this.options.pipeline

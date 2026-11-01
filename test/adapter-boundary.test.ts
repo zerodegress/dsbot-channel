@@ -164,3 +164,13 @@ describe('the observation services', () => {
     for (const one of reads) expect(one.line).toContain("ctx.set('dsbot-channel.")
   })
 })
+
+describe('the round key has one spelling', () => {
+  test('only the gate builds a bot|session key', () => {
+    const root = join(import.meta.dirname, '..', 'src')
+    const offenders = sources(root)
+      .filter((path) => !path.endsWith(join('src', 'inbound-gate.ts')))
+      .filter((path) => /`\$\{botId\}\|/.test(readFileSync(path, 'utf8')))
+    expect(offenders).toEqual([])
+  })
+})
