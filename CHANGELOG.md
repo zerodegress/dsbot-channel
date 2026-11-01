@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `turn-stats` separates a quiet end from a refusal: `suppressed` stays the sum, with `ended` and `refused` beside it, and the tools report which one they took.
 - `meta.adapter` carries the transport's own raw payload, untouched: core never parses it, it takes no part in the event key or the content hash, and a reader may look at it. OneBot stores `raw_message` there, p2p stores the envelope fields the wire carried; a payload over 8 KB is left out with a warning rather than truncated.
 - Two read-only surfaces for a host: `dsbot-channel.usage` reports each bot's limits and what every conversation spent, and `dsbot-channel.turns` reports the recent turns with their window, outcome and duration in a bounded ring buffer. Neither is read on a decision path, and no record carries a message body.
 - A read-only status route on every listening transport: `/p2p/v1/status` and `/onebot/status` both answer an `AdapterStatus` to a loopback caller, and `AdapterStatus` gains required `counters` (auth failures, unknown paths, underruns, protocol mismatches, send failures by code, last failure).
@@ -25,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `decline` takes a `reason` from the closed set a channel can tell the sender, plus an optional `note`, counts toward the reply ceiling like a reply does, and is charged at the rejected rate instead of being refunded.
 - `/p2p/v1/status` answers an `AdapterStatus` instead of the old `{channel, bot, instance, snapshot}` report; the route had never been registered in a shipped build, so nothing read it. `ListenerHealth` now carries `lastFailure`, the way `ConnectionHealth` does.
 - An adapter declares its transport in `adapters[].transport` instead of `adapters[].p2p`; the old key now fails to load with an error that names the new one.
 - Prompt injections are bracketed blocks now: `[<kind>]` for the adapter's guidance and `[tool-mode]` for the mode notice, each on its own line with a blank line before the message. The guidance still rides a conversation once; the mode block repeats only on a switch into tool mode.

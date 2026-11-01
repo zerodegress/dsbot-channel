@@ -4,7 +4,7 @@ import type { ControlPorts, TurnRef } from '../src/control-tools.js'
 
 function harness(options: { declined?: { ok: boolean; code?: string; reason?: string } } = {}) {
   const closed: string[] = []
-  const declined: { turn: TurnRef; reason: string | undefined }[] = []
+  const declined: { turn: TurnRef; reason: string; note: string | undefined }[] = []
   const concluded: number[] = []
   const turn: TurnRef = { eventId: 'probe-1', chainId: 'chain-1', channel: 'p2p:orca', target: 'seal', sender: 'seal', suppressed: false, pushed: false }
   const closedNow = new Set<string>()
@@ -15,8 +15,8 @@ function harness(options: { declined?: { ok: boolean; code?: string; reason?: st
       closed.push(eventId)
       closedNow.add(eventId)
     },
-    decline: async (target, reason) => {
-      declined.push({ turn: target, reason })
+    decline: async (target, reason, note) => {
+      declined.push({ turn: target, reason, note })
       return options.declined ?? { ok: true }
     },
   }
@@ -36,7 +36,7 @@ describe('no_reply', () => {
 
     const raw = await createNoReplyTool(ports).execute({}, exec('session-1'))
 
-    expect(JSON.parse(String(raw))).toEqual({ ok: true, closed: true })
+    expect(JSON.parse(String(raw))).toEqual({ ok: true, closed: true, outcome: 'ended' })
     expect(closed).toEqual(['chain-1'])
     expect(turn.suppressed).toBe(true)
     expect(concluded).toHaveLength(1)
@@ -59,7 +59,7 @@ describe('decline on a channel that cannot tell the sender', () => {
       decline: async () => ({ ok: false, supported: false, reason: 'this channel cannot carry a refusal' }),
     }
 
-    const raw = await createDeclineTool(unable).execute({ reason: 'no' }, exec('session-1'))
+    const raw = await createDeclineTool(unable).execute({ reason: 'policy', note: 'no' }, exec('session-1'))
     const result = JSON.parse(raw as string) as Record<string, unknown>
 
     expect(result).toMatchObject({ ok: true, closed: true, declined: false })
@@ -71,11 +71,12 @@ describe('decline', () => {
   test('tells the sender why, then keeps the turn silent', async () => {
     const { turn, closed, declined, concluded, ports, exec } = harness()
 
-    const raw = await createDeclineTool(ports).execute({ reason: 'not my job' }, exec('session-1'))
+    const raw = await createDeclineTool(ports).execute({ reason: 'policy', note: 'not my job' }, exec('session-1'))
 
-    expect(JSON.parse(String(raw))).toEqual({ ok: true, closed: true, declined: true })
+    expect(JSON.parse(String(raw))).toEqual({ ok: true, closed: true, declined: true, outcome: 'refused' })
     expect(declined).toHaveLength(1)
-    expect(declined[0]?.reason).toBe('not my job')
+    expect(declined[0]?.reason).toBe('policy')
+    expect(declined[0]?.note).toBe('not my job')
     expect(closed).toEqual(['chain-1'])
     expect(turn.suppressed).toBe(true)
     expect(concluded).toHaveLength(1)
@@ -84,15 +85,25 @@ describe('decline', () => {
   test('reports a refusal that could not be delivered, and still closes the chain', async () => {
     const { closed, ports, exec } = harness({ declined: { ok: false, code: 'unreachable', reason: 'ECONNREFUSED' } })
 
-    const raw = await createDeclineTool(ports).execute({ reason: 'no' }, exec('session-1'))
+    const raw = await createDeclineTool(ports).execute({ reason: 'policy', note: 'no' }, exec('session-1'))
 
     expect(JSON.parse(String(raw))).toMatchObject({ ok: false, closed: true, declined: false, code: 'unreachable' })
     expect(closed).toEqual(['chain-1'])
   })
 
+  test('a reason outside the closed set is refused without sending or closing', async () => {
+    const { closed, declined, ports, exec } = harness()
+
+    await expect(createDeclineTool(ports).execute({ reason: 'because' }, exec('session-1'))).rejects.toThrow(
+      /must be one of/,
+    )
+    expect(declined).toHaveLength(0)
+    expect(closed).toHaveLength(0)
+  })
+
   test('is refused outside a turn', async () => {
     const { ports, exec } = harness()
 
-    await expect(createDeclineTool(ports).execute({ reason: 'no' }, exec('group-session'))).rejects.toThrow()
+    await expect(createDeclineTool(ports).execute({ reason: 'policy' }, exec('group-session'))).rejects.toThrow()
   })
 })

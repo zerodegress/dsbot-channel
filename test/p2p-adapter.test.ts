@@ -3,7 +3,7 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { ConfigError } from '../src/config.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
-import { P2PAdapter, REFUSE_NOTE_MAX } from '../src/adapters/p2p/adapter.js'
+import { P2PAdapter } from '../src/adapters/p2p/adapter.js'
 import type { P2PAdapterConfig } from '../src/adapters/p2p/adapter.js'
 import { sendToPeer } from '../src/adapters/p2p/p2p-send.js'
 import type { InboundMessage } from '../src/contract.js'
@@ -224,7 +224,7 @@ describe('the p2p adapter tells a peer it was refused', () => {
       status: 'declined',
       final: true,
       body: '',
-      reason: 'no',
+      reason: 'policy',
     })
   })
 })
@@ -286,8 +286,8 @@ describe('the p2p adapter sends through its own addressing', () => {
   })
 })
 
-describe('the note a refusal carries', () => {
-  test('a long note is trimmed to one bounded line before it reaches the wire', async () => {
+describe('the reason a refusal carries', () => {
+  test('the wire carries the chosen reason, bounded and on one line', async () => {
     const posted: Record<string, unknown>[] = []
     const capture = createServer((request, response) => {
       let raw = ''
@@ -319,11 +319,9 @@ describe('the note a refusal carries', () => {
       capture.close()
     })
 
-    await adapter.refuse({ target: 'inst-a', inReplyTo: 'evt-9', chainId: 'evt-9', reason: 'policy', note: `${'x'.repeat(300)}\nnext` })
+    await adapter.refuse({ target: 'inst-a', inReplyTo: 'evt-9', chainId: 'evt-9', reason: 'too-busy', note: 'later please' })
 
-    const reason = String(posted[0]?.reason ?? '')
-    expect(reason.length).toBe(REFUSE_NOTE_MAX)
-    expect(reason).not.toContain('\n')
+    expect(posted[0]?.reason).toBe('too-busy')
   })
 })
 

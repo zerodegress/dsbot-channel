@@ -12,6 +12,8 @@ describe('what core counts about the turns it ran', () => {
       dropped: 0,
       pushed: 0,
       suppressed: 0,
+      ended: 0,
+      refused: 0,
       failed: 0,
       sendFailures: {},
       sampledAt: 1_000,
@@ -29,7 +31,8 @@ describe('what core counts about the turns it ran', () => {
     stats.started()
     stats.pushed()
     stats.started()
-    stats.suppressed()
+    stats.suppressed('ended')
+    stats.suppressed('refused')
     stats.started()
     stats.failed()
     stats.sendFailed('timeout')
@@ -42,7 +45,9 @@ describe('what core counts about the turns it ran', () => {
       empty: 1,
       dropped: 1,
       pushed: 1,
-      suppressed: 1,
+      suppressed: 2,
+      ended: 1,
+      refused: 1,
       failed: 1,
       sendFailures: { timeout: 2, forbidden: 1 },
     })

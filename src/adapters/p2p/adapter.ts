@@ -250,7 +250,7 @@ export class P2PAdapter implements ChannelAdapter {
       sender: this.#config.botName,
       instance: this.#config.instance,
       status: 'declined',
-      reason: oneLine(input.note ?? input.reason, REFUSE_NOTE_MAX),
+      reason: oneLine(input.reason, REFUSE_NOTE_MAX),
       final: true,
     })
     if (!result.ok) this.#stats.sendFailed(result.code)

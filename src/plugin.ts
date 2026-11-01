@@ -459,9 +459,18 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         text: blocks.length === 0 ? message.body.text : `${blocks.join('\n')}\n\n${message.body.text}`,
       })
       if (turnRef.suppressed) {
-        turns.suppressed()
-        ended(turnRef.declined === true ? 'refused' : 'suppressed')
-        runtime.billing.refund(hold)
+        if (turnRef.declined === true) {
+          turns.suppressed('refused')
+          ended('refused', turnRef.declinedCode)
+          if (turnRef.declinedCode === undefined) {
+            runtime.gate.recordReply(adapter.botName, message.sessionKey)
+          }
+          runtime.billing.reject(hold)
+        } else {
+          turns.suppressed('ended')
+          ended('ended')
+          runtime.billing.refund(hold)
+        }
         hold = undefined
         return
       }
@@ -694,7 +703,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
       closeChain: (eventId) => {
         chains.close(eventId)
       },
-      decline: async (turn, reason) => {
+      decline: async (turn, reason, note) => {
         const channel = byChannel.get(turn.channel)
         if (channel === undefined) {
           return { ok: false, code: 'no_url', reason: `channel "${turn.channel}" is gone` }
@@ -708,8 +717,8 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
           ...(turn.sender.length === 0 ? {} : { to: turn.sender }),
           inReplyTo: turn.eventId,
           chainId: turn.chainId,
-          reason: 'policy',
-          ...(reason === undefined ? {} : { note: reason }),
+          reason,
+          ...(note === undefined ? {} : { note }),
         })
         return sent.ok ? { ok: true } : { ok: false, code: sent.code, reason: sent.reason }
       },
