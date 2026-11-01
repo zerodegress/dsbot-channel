@@ -7,6 +7,12 @@ import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
 import { sendToPeer } from '../src/adapters/p2p/p2p-send.js'
 import { PEER_GUIDANCE } from '../src/adapters/p2p/guidance.js'
 
+/** The reset window the relay-ceiling cases configure. */
+const RELAY_RESET_WINDOW_MS = 20
+
+/** Slack on top of the window, so a poll that wakes early cannot send inside it. */
+const RELAY_RESET_MARGIN_MS = 30
+
 const REF = '{{SECRET_4dhhwz2n}}'
 const INCOMING = '[p2p from inst-a · bot-a · p2p-evt-1] hello'
 const credentials = staticCredentials({ [REF]: 'shared-value' })
@@ -1674,7 +1680,10 @@ describe('the reply ceiling', () => {
     await waitFor(() => sessions.prompted.length === 2)
     await waitFor(() => warnings.some((line) => line.includes('loop-limit')))
 
-    await new Promise((resolve) => setTimeout(resolve, 60))
+    // The gate compares wall-clock instants, so wait until the window has really passed rather
+    // than sleeping a fixed span a busy machine can still land inside.
+    const refusedAt = Date.now()
+    await waitFor(() => Date.now() - refusedAt >= RELAY_RESET_WINDOW_MS + RELAY_RESET_MARGIN_MS)
     await send(portB, 'evt-2', 'again')
 
     await waitFor(() => sessions.prompted.length === 4)

@@ -23,6 +23,16 @@ const baseConfig = (): ListenerConfig => ({
   listen: { port: 0 },
 })
 
+
+/** Polls until the condition holds, so a slow machine does not fail a correct run. */
+async function waitFor(check: () => boolean, timeoutMs = 3000): Promise<void> {
+  const started = Date.now()
+  while (!check()) {
+    if (Date.now() - started > timeoutMs) throw new Error('timed out waiting for the listener')
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+}
+
 const open: Listener[] = []
 
 afterEach(async () => {
@@ -529,8 +539,7 @@ describe('listener async hand off', () => {
     const reply = await post(listener.address().port, message())
     expect(reply.status).toBe(200)
     expect(finished).toBe(false)
-    await new Promise((resolve) => setTimeout(resolve, 60))
-    expect(finished).toBe(true)
+    await waitFor(() => finished)
   })
 
   test('reports a rejected hand off instead of letting it reach the process', async () => {
@@ -549,7 +558,7 @@ describe('listener async hand off', () => {
     const reply = await post(listener.address().port, message())
     expect(reply.status).toBe(200)
     expect(reply.body).toMatchObject({ duplicate: false })
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await waitFor(() => reported.length > 0)
     expect(reported).toHaveLength(1)
     expect((reported[0] as Error).message).toBe('turn failed')
   })
@@ -568,7 +577,7 @@ describe('listener async hand off', () => {
     open.push(listener)
     const port = listener.address().port
     await post(port, message())
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await waitFor(() => seen.length > 0)
     const second = await post(port, message())
     expect(second.body).toMatchObject({ duplicate: true })
     expect(seen).toEqual(['evt-1'])
@@ -592,8 +601,7 @@ describe('listener error handler', () => {
     open.push(listener)
     const reply = await post(listener.address().port, message())
     expect(reply.status).toBe(200)
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(reported).toBe(1)
+    await waitFor(() => reported === 1)
   })
 })
 

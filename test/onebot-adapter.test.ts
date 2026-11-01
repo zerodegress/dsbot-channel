@@ -73,6 +73,21 @@ function post(port: number, path: string, body: unknown, authorization?: string)
   })
 }
 
+
+/** Polls until the condition holds, so a slow machine does not fail a correct run. */
+async function waitFor(check: () => boolean, timeoutMs = 3000): Promise<void> {
+  const started = Date.now()
+  while (!check()) {
+    if (Date.now() - started > timeoutMs) throw new Error('timed out waiting for the listener')
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+}
+
+/** Lets the pending callbacks run when a case asserts that something did not happen. */
+function drain(): Promise<void> {
+  return new Promise<void>((resolve) => setImmediate(() => setImmediate(resolve)))
+}
+
 const stops: (() => Promise<void>)[] = []
 
 afterEach(async () => {
@@ -108,7 +123,7 @@ describe('the onebot listener', () => {
   test('accepts a message with 204 and hands it over', async () => {
     const { port, seen } = await startAdapter()
     expect(await post(port, '/onebot/event', event())).toEqual({ status: 204 })
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => seen.length > 0)
     expect(seen).toHaveLength(1)
     expect(seen[0]).toMatchObject({ sessionKey: 'group:12345', rawText: 'hi' })
   })
@@ -116,14 +131,14 @@ describe('the onebot listener', () => {
   test('answers a non-message event with 204 and never hands it over', async () => {
     const { port, seen } = await startAdapter()
     expect(await post(port, '/onebot/event', { post_type: 'notice' })).toEqual({ status: 204 })
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await drain()
     expect(seen).toHaveLength(0)
   })
 
   test('an event for another account is accepted with 204 and never handed over', async () => {
     const { port, seen, warns } = await startAdapter()
     expect(await post(port, '/onebot/event', event({ message_id: '9', self_id: 99999 }))).toEqual({ status: 204 })
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => warns.some((line) => line.includes('answers for 10001')))
     expect(seen).toHaveLength(0)
     expect(warns.some((line) => line.includes('answers for 10001'))).toBe(true)
   })
@@ -132,7 +147,7 @@ describe('the onebot listener', () => {
     const { port, seen, warns } = await startAdapter()
     await post(port, '/onebot/event', event())
     await post(port, '/onebot/event', event())
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => warns.some((line) => line.includes('repeated onebot message')))
     expect(seen).toHaveLength(1)
     expect(warns.some((line) => line.includes('repeated onebot message'))).toBe(true)
   })
@@ -158,7 +173,7 @@ describe('the onebot token', () => {
   test('a profile without a token accepts an unauthenticated event', async () => {
     const { port, seen } = await startAdapter()
     expect(await post(port, '/onebot/event', event({ message_id: '20' }))).toEqual({ status: 204 })
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => seen.length > 0)
     expect(seen).toHaveLength(1)
   })
 })
