@@ -139,9 +139,15 @@ describe('the source kind an adapter reports', () => {
     if (!verdict.ok) expect(verdict.reason).toMatch(/claims source.kind "p2p".*this adapter is "x-demo"/)
   })
 
-  test('a kind that is not one bounded line is refused', async () => {
+  test.each([
+    ['an empty kind', ''],
+    ['a kind with a space', 'two words'],
+    ['a kind with a line break', 'a\nb'],
+    ['a kind with a tab', 'a\tb'],
+    ['a kind longer than the shape bound', 'x'.repeat(65)],
+  ])('a kind that is not one bounded line is refused: %s', async (_label, kind) => {
     verdicts.length = 0
-    await mountWith('')
+    await mountWith(kind)
 
     expect(verdicts).toHaveLength(1)
     expect(verdicts[0]).toMatchObject({ ok: false, code: 'source_kind_invalid' })

@@ -1,4 +1,8 @@
-/** Longest source kind an event may carry, so a header or a key stays bounded. */
+/**
+ * Shape bound for any source kind, so a header or a key stays bounded. An adapter kind is
+ * shorter in practice: ADAPTER_KIND_MAX (32) caps a kind a profile may mount, and a message's
+ * kind must equal the adapter that carried it.
+ */
 export const SOURCE_KIND_MAX = 64
 
 export const SCOPES = ['c2c', 'group', 'p2p'] as const
