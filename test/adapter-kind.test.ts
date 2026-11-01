@@ -52,6 +52,17 @@ function message(kind: string): InboundMessage {
 class StubAdapter implements ChannelAdapter {
   readonly kind: string
   readonly guidance = { peer: 'peer guidance', group: 'group guidance' }
+  readonly capabilities = {
+    text: true,
+    image: false,
+    file: false,
+    voice: false,
+    recall: false,
+    history: false,
+    mention: false,
+    reply: true,
+    stream: false,
+  }
   readonly #outbound: InboundMessage[]
 
   readonly #acceptKey: (key: string) => string | undefined
@@ -82,17 +93,7 @@ class StubAdapter implements ChannelAdapter {
       account: 'inst-a',
       bot: 'bot-a',
       health: buildListenerHealth({ listenState: 'stopped', boundPort: null, lastAuthenticatedAt: null, queueDepth: 0 }),
-      capabilities: {
-        text: true,
-        image: false,
-        file: false,
-        voice: false,
-        recall: false,
-        history: false,
-        mention: false,
-        reply: true,
-        stream: false,
-      },
+      capabilities: this.capabilities,
       attributes: { stableMessageId: true },
       quota: { softLimit: 0, hardLimit: 0 },
       sampledAt: 1,
