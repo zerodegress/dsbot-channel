@@ -31,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A transport mounts through one adapter contract, so the core no longer imports a transport and reports `AdapterStatus` only.
 - Every adapter requires its own `instance` and a `channel` no other adapter uses, and peer secrets are credential references resolved through the host rather than inline values. An empty adapter list mounts the plugin without opening a listener.
 
+### Removed
+
+- `sessionKeyFor` and `ScopePair`: core no longer builds a session key from a scope and a target, because only the adapter that saw the message knows it.
+- The implicit `p2p:<peer>` key in `InboundGate.admit`: a caller must pass the adapter's session key.
+
 ### Fixed
 
 - A reply carries its own `reply:<uuid>` id and names the message it answers in `inReplyTo`; the chain root travels as a signed `chainId`, so an event id no longer grows with every hop and a closed chain stays closed.

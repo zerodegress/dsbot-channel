@@ -24,7 +24,8 @@ export interface AdmitInput {
   /** The peer this message came from. */
   peer: string
   botId: string
-  session?: string | undefined
+  /** The key the adapter supplied; core never derives one from the peer. */
+  session: string
   /** The pipeline this turn runs, when the caller resolves one per session. */
   pipeline?: Pipeline | undefined
 }
@@ -100,7 +101,7 @@ export class InboundGate {
   async admit(input: AdmitInput): Promise<GateDecision> {
     const { event, botId, peer } = input
     const ledger = this.options.ledger
-    const session = input.session ?? `p2p:${peer}`
+    const session = input.session
     let limitState: LimitLevel | undefined
     let triggeredBy: string[] = []
     if (ledger) {
