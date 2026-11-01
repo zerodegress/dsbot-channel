@@ -40,7 +40,7 @@ config:
             secret: PEER_A_REFERENCE
 ```
 
-`instance` 和 `channel` 每个 adapter 都必填，`channel` 不能重复。`secret` 填的是宿主任凭服务里的引用名，不是密钥本身。
+`instance` 和 `channel` 每个 adapter 都必填，`channel` 不能重复。`secret` 填的是宿主的凭据服务里的引用名，不是密钥本身。
 
 `kind` 声明这条通道的传输，不写默认 `p2p`；内置 `p2p` 和 `onebot`，第三方传输用 `x-[a-z0-9-]+` 的名字，不超过 32 个字符。
 
