@@ -387,7 +387,7 @@ describe('listener', () => {
       method: 'GET',
       url: '/p2p/v1/status',
       headers: {},
-      socket: { remoteAddress: '10.1.2.3' },
+      socket: { remoteAddress: '{{INTERNAL_IP}}' },
     } as unknown as Parameters<typeof listener.handle>[0]
     const fakeResponse = {
       writeHead: (status: number) => {
