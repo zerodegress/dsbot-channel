@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The `event-layers` module and its exports (`transportLayer`, `derivedLayer`, `declareLayer`, `readDeclared`, `LayerViolationError`, `LAYERS`): no production code called it, and an event still carries its three layers as plain fields.
 - `dedupeKeyFor`, `replyIdempotencyKey` and `unstableDedupeKey`: nothing in the package called them, and each transport already builds the key its own dedupe uses.
+- The connection half of the status helpers (`buildConnectionHealth`, `isFresh`, `mayInformQuota`, `statusNotification`, `ChannelRef`, `STALE_AFTER_MS`, `CONNECTION_STATES`): every transport in the package listens rather than dials, so no production path built or read one. Listener health and the status route stay.
 
 ### Fixed
 

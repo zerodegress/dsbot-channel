@@ -1,9 +1,4 @@
-import type { Scope } from './event-types.js'
-
-export const STALE_AFTER_MS = 30_000
-
-export const CONNECTION_STATES = ['online', 'reconnecting', 'offline'] as const
-export type ConnectionState = (typeof CONNECTION_STATES)[number]
+export type ConnectionState = 'online' | 'reconnecting' | 'offline'
 
 export const LISTEN_STATES = ['listening', 'failed', 'stopped'] as const
 export type ListenState = (typeof LISTEN_STATES)[number]
@@ -62,15 +57,6 @@ export interface AdapterStatus {
   queueDepth: number
 }
 
-export interface ConnectionInput {
-  state: ConnectionState
-  lastFailure?: string | null | undefined
-  lastFailureAt?: number | null | undefined
-  reconnectCount: number
-  lastConnectedAt: number | null
-  queueDepth: number
-}
-
 export interface ListenerInput {
   listenState: ListenState
   boundPort: number | null
@@ -90,39 +76,11 @@ export interface StatusInput {
   queueDepth: number
 }
 
-export interface StatusNotification {
-  kind: 'status'
-  channel: string
-  health: Health
-  at: number
-}
-
-export interface ChannelRef {
-  channel: string
-  scope: Scope
-  target: string
-}
-
 function assertMember<T extends string>(name: string, allowed: readonly T[], value: string): T {
   if (!(allowed as readonly string[]).includes(value)) {
     throw new Error(`${name} must be one of ${allowed.join(', ')}, got "${value}"`)
   }
   return value as T
-}
-
-/** Connection-typed health; an online link carries no failure details. */
-export function buildConnectionHealth(input: ConnectionInput): ConnectionHealth {
-  const state = assertMember('connection state', CONNECTION_STATES, input.state)
-  const failed = state !== 'online'
-  return {
-    kind: 'connection',
-    state,
-    lastFailure: failed ? (input.lastFailure ?? null) : null,
-    lastFailureAt: failed ? (input.lastFailureAt ?? null) : null,
-    reconnectCount: input.reconnectCount,
-    lastConnectedAt: input.lastConnectedAt,
-    queueDepth: input.queueDepth,
-  }
 }
 
 /** Listener-typed health; a stopped listener holds no port. */
@@ -160,18 +118,4 @@ export function buildStatus(input: StatusInput): AdapterStatus {
     sampledAt: input.sampledAt,
     queueDepth: input.queueDepth,
   }
-}
-
-export function isFresh(sampledAt: number, now: number): boolean {
-  return now - sampledAt < STALE_AFTER_MS
-}
-
-/** Stale samples describe the past, so they must not drive quota decisions. */
-export function mayInformQuota(status: AdapterStatus, now: number): boolean {
-  return isFresh(status.sampledAt, now)
-}
-
-/** State changes travel as their own notification, outside the event pipeline. */
-export function statusNotification(input: { channel: string; health: Health; at: number }): StatusNotification {
-  return { kind: 'status', channel: input.channel, health: input.health, at: input.at }
 }

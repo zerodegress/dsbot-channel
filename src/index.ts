@@ -107,22 +107,14 @@ export type {
   SessionMessagePart,
 } from './peer-sessions.js'
 export {
-  CONNECTION_STATES,
   LISTEN_STATES,
-  STALE_AFTER_MS,
-  buildConnectionHealth,
   buildListenerHealth,
   buildStatus,
-  isFresh,
-  mayInformQuota,
-  statusNotification,
 } from './adapter-status.js'
 export type {
   AdapterStatus,
   CapabilitySet,
-  ChannelRef,
   ConnectionHealth,
-  ConnectionInput,
   ConnectionState,
   Health,
   ListenerHealth,
@@ -131,7 +123,6 @@ export type {
   PlatformAttributes,
   QuotaView,
   StatusInput,
-  StatusNotification,
 } from './adapter-status.js'
 export { SecretRefError, assertPeersResolvable, resolvePeers, staticCredentials } from './adapters/p2p/p2p-secrets.js'
 export type { CredentialsLike, PeerRef, ResolvedSecret } from './adapters/p2p/p2p-secrets.js'
