@@ -249,3 +249,47 @@ describe('the order that makes a 2xx safe', () => {
     expect(finished).toBe(false)
   })
 })
+
+describe('a hand off that throws before it returns a promise', () => {
+  test('is reported like any other failure and still answers 200 with the event claimed', async () => {
+    const seen: string[] = []
+    const warnings: unknown[] = []
+    const listener = await listen({
+      config: config(),
+      table: table(),
+      onMessage: (request: InboundRequest) => {
+        seen.push(request.eventId)
+        throw new Error('a synchronous fault')
+      },
+      onError: (error) => {
+        warnings.push(error)
+      },
+    })
+    const port = listener.address().port
+
+    const first = await post(port, payload())
+    expect(first.status).toBe(200)
+    expect(first.body).toMatchObject({ duplicate: false })
+    await new Promise<void>((resolve) => setImmediate(() => setImmediate(resolve)))
+    expect(warnings).toHaveLength(1)
+
+    const again = await post(port, payload())
+    expect(again.status).toBe(200)
+    expect(again.body).toMatchObject({ duplicate: true })
+    expect(seen).toEqual(['evt-1'])
+  })
+
+  test('a fault before the claim still answers 500 and claims nothing', async () => {
+    const listener = await listen({
+      config: config(),
+      table: {
+        claim: () => Promise.reject(new Error('the table is broken')),
+        commit: () => undefined,
+        abort: () => undefined,
+      } as never,
+      onMessage: async () => undefined,
+    })
+    const reply = await post(listener.address().port, payload())
+    expect(reply.status).toBe(500)
+  })
+})

@@ -503,24 +503,24 @@ describe('listener hand off', () => {
     expect(seen.map((request) => request.eventId)).toEqual(['evt-1'])
   })
 
-  test('keeps a failed hand off retryable instead of losing the message', async () => {
+  test('keeps a hand off that throws retryable as a duplicate, not a second turn', async () => {
     let attempts = 0
     const listener = await startListener({
       config: baseConfig(),
       table: table(),
       onMessage: () => {
         attempts += 1
-        if (attempts === 1) throw new Error('hand off failed')
+        throw new Error('hand off failed')
       },
     })
     open.push(listener)
     const port = listener.address().port
     const first = await post(port, message())
-    expect(first.status).toBe(500)
+    expect(first.status).toBe(200)
     const second = await post(port, message())
     expect(second.status).toBe(200)
-    expect(second.body).toMatchObject({ duplicate: false })
-    expect(attempts).toBe(2)
+    expect(second.body).toMatchObject({ duplicate: true })
+    expect(attempts).toBe(1)
   })
 })
 
