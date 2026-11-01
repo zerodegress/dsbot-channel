@@ -17,9 +17,7 @@ export default plugin
 
 export * from './event-types.js'
 export { contentHash, eventKey } from './event-key.js'
-export { LAYERS, LayerViolationError, declareLayer, derivedLayer, readDeclared, transportLayer } from './event-layers.js'
-export type { DeclaredLayer, Layer } from './event-layers.js'
-export { buildEvent, chargeKey, dedupeKeyFor, replyIdempotencyKey, unstableDedupeKey } from './event-build.js'
+export { buildEvent, chargeKey } from './event-build.js'
 export { ConfigError, WILDCARD_HOSTS, assertBindHost, strict, validateConfig } from './config.js'
 export {
   ADAPTER_KIND_MAX,
@@ -50,7 +48,7 @@ export type {
   SendResult,
   SendSuccess,
 } from './contract.js'
-export { signEnvelope, canonicalEnvelope, verifyRequest, digestBody } from './adapters/p2p/p2p-auth.js'
+export { signEnvelope, canonicalEnvelope, verifyRequest } from './adapters/p2p/p2p-auth.js'
 export type { AuthInput, AuthResult, PeerSecret } from './adapters/p2p/p2p-auth.js'
 export { DedupeTable } from './adapters/p2p/p2p-dedupe.js'
 export type { DedupeEntry, DedupeOptions } from './adapters/p2p/p2p-dedupe.js'
@@ -76,7 +74,7 @@ export type {
   RuntimeView,
   SkipTarget,
 } from './pipeline.js'
-export { DEFAULT_PIPELINE, checkPipeline, defaultPipelineNodes } from './pipeline-config.js'
+export { DEFAULT_PIPELINE, checkPipeline } from './pipeline-config.js'
 export { DEFAULT_HARD_LIMIT, DEFAULT_SOFT_LIMIT, createLedger } from './budget-config.js'
 export type { BudgetConfig, LedgerOptions } from './budget-config.js'
 export { compilePolicy } from './policy-config.js'
@@ -109,22 +107,14 @@ export type {
   SessionMessagePart,
 } from './peer-sessions.js'
 export {
-  CONNECTION_STATES,
   LISTEN_STATES,
-  STALE_AFTER_MS,
-  buildConnectionHealth,
   buildListenerHealth,
   buildStatus,
-  isFresh,
-  mayInformQuota,
-  statusNotification,
 } from './adapter-status.js'
 export type {
   AdapterStatus,
   CapabilitySet,
-  ChannelRef,
   ConnectionHealth,
-  ConnectionInput,
   ConnectionState,
   Health,
   ListenerHealth,
@@ -133,7 +123,6 @@ export type {
   PlatformAttributes,
   QuotaView,
   StatusInput,
-  StatusNotification,
 } from './adapter-status.js'
 export { SecretRefError, assertPeersResolvable, resolvePeers, staticCredentials } from './adapters/p2p/p2p-secrets.js'
 export type { CredentialsLike, PeerRef, ResolvedSecret } from './adapters/p2p/p2p-secrets.js'

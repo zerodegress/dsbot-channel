@@ -1,5 +1,5 @@
 import { contentHash, eventKey } from './event-key.js'
-import type { ChargeKind, Event, EventInput, MediaRef, Mentioned, Source, Target } from './event-types.js'
+import type { ChargeKind, Event, EventInput, MediaRef, Mentioned, Source } from './event-types.js'
 import { MEDIA_HANDLE_MAX, MEDIA_TYPES } from './event-types.js'
 import { AUTHOR_KINDS, CHARGE_KINDS, SCOPES, SOURCE_KIND_MAX } from './event-types.js'
 
@@ -95,23 +95,3 @@ export function chargeKey(key: string, botId: string, chargeKind: ChargeKind): s
   return `${key}|${botId}|${chargeKind}`
 }
 
-export function replyIdempotencyKey(key: string, target: Target, hash: string): string {
-  return `${key}|${target.channel}|${target.scope}|${target.target}|${hash}`
-}
-
-export function unstableDedupeKey(senderId: string, hash: string): string {
-  return `${senderId}|${hash}`
-}
-
-export interface DedupeKeyInput {
-  stableMessageId: boolean
-  senderId: string
-  contentHash: string
-  eventKey: string
-}
-
-/** Content-only keys are used only when the platform message id is unstable. */
-export function dedupeKeyFor(input: DedupeKeyInput): string {
-  if (input.stableMessageId) return input.eventKey
-  return unstableDedupeKey(input.senderId, input.contentHash)
-}

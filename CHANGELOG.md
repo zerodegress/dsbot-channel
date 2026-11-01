@@ -28,6 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An adapter declares its transport in a `p2p` block; `peers`, `listen`, `dedupe`, `inflightTtlMs`, `sentAtWindowMs`, `maxBodyBytes` and `waitMs` written on the adapter itself now fail to load.
 - Core no longer exports `sessionKeyFor` or `ScopePair`, so an old import of either fails to compile. Only the adapter that saw a message knows its session key; `InboundGate.admit` takes that key as an argument instead of filling in `p2p:<peer>`.
 
+### Removed
+
+- The `event-layers` module and its exports (`transportLayer`, `derivedLayer`, `declareLayer`, `readDeclared`, `LayerViolationError`, `LAYERS`): no production code called it, and an event still carries its three layers as plain fields.
+- `dedupeKeyFor`, `replyIdempotencyKey` and `unstableDedupeKey`: nothing in the package called them, and each transport already builds the key its own dedupe uses.
+- `digestBody` and `defaultPipelineNodes`: nothing called the first, and the second described a template the builder cannot run, so keeping it only invited a `BuildError`.
+- The `policy.score`, `policy.judge` and `policy.prepare` keys: the profile could write them, and loading then refused them. Unknown policy keys now fail through the same unknown-field check as any other typo.
+- The connection half of the status helpers (`buildConnectionHealth`, `isFresh`, `mayInformQuota`, `statusNotification`, `ChannelRef`, `STALE_AFTER_MS`, `CONNECTION_STATES`): every transport in the package listens rather than dials, so no production path built or read one. Listener health and the status route stay.
+
 ### Fixed
 
 - A reply carries its own `reply:<uuid>` id and names the message it answers in `inReplyTo`; the chain root travels as a signed `chainId`, so an event id no longer grows with every hop and a closed chain stays closed.

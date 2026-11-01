@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { buildEvent, chargeKey, dedupeKeyFor, replyIdempotencyKey, unstableDedupeKey } from '../src/event-build.js'
+import { buildEvent, chargeKey } from '../src/event-build.js'
 import type { EventInput } from '../src/event-types.js'
 
 const base = {
@@ -149,36 +149,5 @@ describe('chargeKey', () => {
 
   test('rejects a chargeKind outside the closed set', () => {
     expect(() => chargeKey('k', 'b', 'other' as never)).toThrow()
-  })
-})
-
-describe('replyIdempotencyKey', () => {
-  test('combines eventKey, target and contentHash', () => {
-    const key = replyIdempotencyKey('onebot:1:m1', { channel: 'onebot:1', scope: 'group', target: 'g1' }, 'h')
-    expect(key).toContain('onebot:1:m1')
-    expect(key).toContain('g1')
-    expect(key).toContain('h')
-  })
-
-  test('differs per target', () => {
-    const a = replyIdempotencyKey('k', { channel: 'c', scope: 'group', target: 'g1' }, 'h')
-    const b = replyIdempotencyKey('k', { channel: 'c', scope: 'group', target: 'g2' }, 'h')
-    expect(a).not.toBe(b)
-  })
-})
-
-describe('unstable message id dedupe', () => {
-  test('uses sender and contentHash inside the window', () => {
-    expect(dedupeKeyFor({ stableMessageId: false, senderId: 'u1', contentHash: 'h', eventKey: 'k' })).toBe('u1|h')
-  })
-
-  test('falls back to the eventKey when the platform id is stable', () => {
-    expect(dedupeKeyFor({ stableMessageId: true, senderId: 'u1', contentHash: 'h', eventKey: 'k' })).toBe('k')
-  })
-
-  test('only the unstable path may merge two identical bodies', () => {
-    const one = unstableDedupeKey('u1', 'h')
-    const two = unstableDedupeKey('u1', 'h')
-    expect(one).toBe(two)
   })
 })
