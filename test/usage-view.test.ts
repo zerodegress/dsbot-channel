@@ -63,3 +63,53 @@ describe('the quota a host may read', () => {
     expect(ledger.limitsView().capacity).toBe(40)
   })
 })
+
+describe('reading a snapshot leaves the ledger alone', () => {
+  const T0 = 1_000_000
+
+  /** Fills the window to the hard limit and lets the ledger record the lock. */
+  function driveToHard(ledger: BudgetLedger): void {
+    ledger.reserve('bot-a', 'p2p:inst-b', 'bot', 40)
+    expect(ledger.check('bot-a', 'p2p:inst-b').aggregate).toBe('hard')
+  }
+
+  /** Drops the window to half capacity, which is below the soft release point. */
+  function dropToHalf(ledger: BudgetLedger): void {
+    ledger.setUsage({ global: 20, 'bot:bot-a': 20, 'p2p:inst-b': 20 })
+  }
+
+  test('a read while the window is full does not extend the hard lock', () => {
+    let now = T0
+    const withoutReads = new BudgetLedger(LIMITS, undefined, () => now)
+    const withReads = new BudgetLedger(LIMITS, undefined, () => now)
+    driveToHard(withoutReads)
+    driveToHard(withReads)
+
+    // The reads happen while the window is still full, where a refreshing check would move the lock.
+    now = T0 + 50_000
+    for (let round = 0; round < 4; round += 1) {
+      usageSnapshot([{ bot: 'bot-a', ledger: withReads }], () => now)
+    }
+
+    dropToHalf(withoutReads)
+    dropToHalf(withReads)
+    now = T0 + 100_000
+
+    expect(withReads.check('bot-a', 'p2p:inst-b').aggregate).toBe(withoutReads.check('bot-a', 'p2p:inst-b').aggregate)
+  })
+
+  test('a snapshot neither creates windows nor changes what check reports', () => {
+    const ledger = new BudgetLedger(LIMITS)
+    ledger.reserve('bot-a', 'p2p:inst-b', 'bot', 40)
+    const before = ledger.check('bot-a', 'p2p:inst-b')
+    usageSnapshot([{ bot: 'bot-a', ledger }])
+    expect(ledger.check('bot-a', 'p2p:inst-b')).toEqual(before)
+    expect(ledger.sessions()).toEqual(['p2p:inst-b'])
+  })
+
+  test('peek answers the same level as check without holding a lock', () => {
+    const ledger = new BudgetLedger(LIMITS)
+    ledger.reserve('bot-a', 'p2p:inst-b', 'bot', 40)
+    expect(ledger.peek('bot-a', 'p2p:inst-b').aggregate).toBe(ledger.check('bot-a', 'p2p:inst-b').aggregate)
+  })
+})

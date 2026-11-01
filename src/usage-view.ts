@@ -45,7 +45,7 @@ export function usageSnapshot(bots: readonly BotLedger[], now: () => number = Da
         bot,
         limits: { capacity: limits.capacity, hardLimit: limits.hardLimit },
         sessions: ledger.sessions().map((sessionKey) => {
-          const state = ledger.check(bot, sessionKey)
+          const state = ledger.peek(bot, sessionKey)
           return {
             sessionKey,
             usage: copyUsage(ledger.usage(bot, sessionKey)),
