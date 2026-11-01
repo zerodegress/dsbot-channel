@@ -125,6 +125,18 @@ describe('what an onebot event becomes', () => {
     expect(drops[0]).toMatch(/dropped 1 onebot media/)
   })
 
+  test('an event for another account is dropped with a warning', () => {
+    const drops: string[] = []
+    const message = mapOneBotEvent(event({ self_id: 99999 }), config, noChain, (line) => drops.push(line))
+    expect(message).toBeUndefined()
+    expect(drops[0]).toMatch(/dropped an onebot event for account 99999: this adapter answers for 10001/)
+  })
+
+  test('the receive time comes from the injected clock', () => {
+    const message = mapOneBotEvent(event(), config, noChain, undefined, () => 42)
+    expect(message?.receivedAt).toBe(42)
+  })
+
   test('an event that is not a message is not handed over at all', () => {
     expect(mapOneBotEvent(event({ post_type: 'notice' }), config, noChain)).toBeUndefined()
     expect(mapOneBotEvent(event({ post_type: 'meta_event' }), config, noChain)).toBeUndefined()

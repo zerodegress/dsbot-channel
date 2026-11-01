@@ -120,6 +120,14 @@ describe('the onebot listener', () => {
     expect(seen).toHaveLength(0)
   })
 
+  test('an event for another account is accepted with 204 and never handed over', async () => {
+    const { port, seen, warns } = await startAdapter()
+    expect(await post(port, '/onebot/event', event({ message_id: '9', self_id: 99999 }))).toEqual({ status: 204 })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(seen).toHaveLength(0)
+    expect(warns.some((line) => line.includes('answers for 10001'))).toBe(true)
+  })
+
   test('a repeated message id is accepted but runs once', async () => {
     const { port, seen, warns } = await startAdapter()
     await post(port, '/onebot/event', event())

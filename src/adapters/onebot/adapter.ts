@@ -143,11 +143,19 @@ export function mapOneBotEvent(
   config: OneBotAdapterConfig,
   chainOf: (messageId: string) => string | undefined,
   warn?: (message: string) => void,
+  now: () => number = Date.now,
 ): InboundMessage | undefined {
   if (event.post_type !== 'message') return undefined
   if (event.message_type !== 'group' && event.message_type !== 'private') return undefined
   const messageId = idOf(event.message_id)
-  const selfId = config.selfId ?? idOf(event.self_id)
+  const eventSelf = idOf(event.self_id)
+  if (config.selfId !== undefined && eventSelf !== undefined && eventSelf !== config.selfId) {
+    warn?.(
+      `dsbot-channel: dropped an onebot event for account ${eventSelf}: this adapter answers for ${config.selfId}`,
+    )
+    return undefined
+  }
+  const selfId = config.selfId ?? eventSelf
   if (messageId === undefined || selfId === undefined) return undefined
   const scope: Scope = event.message_type === 'group' ? 'group' : 'c2c'
   const target = scope === 'group' ? idOf(event.group_id) : idOf(event.user_id)
@@ -194,7 +202,7 @@ export function mapOneBotEvent(
     body: built.body,
     transport: built.meta.transport,
     declared: built.meta.declared,
-    receivedAt: Date.now(),
+    receivedAt: now(),
   }
 }
 
@@ -503,7 +511,13 @@ export class OneBotAdapter implements ChannelAdapter {
     // OneBot implementations resend a non-2xx answer, so every event is accepted or dropped here, not refused.
     response.writeHead(204)
     response.end()
-    const message = mapOneBotEvent(event, this.#config, (messageId) => this.#chainRoot.get(messageId), this.#warn)
+    const message = mapOneBotEvent(
+      event,
+      this.#config,
+      (messageId) => this.#chainRoot.get(messageId),
+      this.#warn,
+      this.#now,
+    )
     if (message === undefined) return
     if (this.#dedupe.claim(`${message.source.scope}:${message.replyTarget}:${message.requestId}`)) {
       this.#warn?.(`dsbot-channel: kept a repeated onebot message ${message.requestId} from ${message.replyTarget} out of a turn`)
