@@ -40,14 +40,21 @@ afterEach(async () => {
   while (disposers.length > 0) await disposers.pop()?.()
 })
 
+interface ToolLike {
+  name: string
+  execute: (args: unknown, exec: unknown) => Promise<unknown>
+}
+
 interface Mounted {
   port: number
   apiPort: number
   prompted: string[]
   calls: { action: string; body: Record<string, unknown> }[]
+  tools: ToolLike[]
 }
 
 async function mount(policy: Record<string, unknown> = {}): Promise<Mounted> {
+  const tools: ToolLike[] = []
   const prompted: string[] = []
   const calls: { action: string; body: Record<string, unknown> }[] = []
   const ctx = new Context()
@@ -72,6 +79,13 @@ async function mount(policy: Record<string, unknown> = {}): Promise<Mounted> {
     apply(scope: Context) {
       scope.provide('credentials')
       scope.set('credentials', credentials)
+      scope.provide('tools')
+      scope.set('tools', {
+        register: (tool: ToolLike) => {
+          tools.push(tool)
+          return () => undefined
+        },
+      })
       scope.provide('sessionController')
       scope.set('sessionController', {
         create: () => Promise.resolve({ sessionId: 'session-1' }),
@@ -106,7 +120,7 @@ async function mount(policy: Record<string, unknown> = {}): Promise<Mounted> {
     ],
   })
   disposers.push(() => fork.dispose())
-  return { port, apiPort, prompted, calls }
+  return { port, apiPort, prompted, calls, tools }
 }
 
 const event = (overrides: Record<string, unknown> = {}) => ({
@@ -189,5 +203,21 @@ describe('an onebot group message through the mounted plugin', () => {
 
     expect(mounted.prompted).toHaveLength(1)
     expect(mounted.calls[0]).toMatchObject({ action: 'send_private_msg', body: { user_id: '20002', message: 'onebot 回复' } })
+  })
+})
+
+describe('an address that carries its own destination', () => {
+  test('a group address and a private address each take their own api action', async () => {
+    const mounted = await mount()
+    const tool = mounted.tools.find((one) => one.name === 'send_text')
+    expect(tool).toBeDefined()
+
+    const group = JSON.parse((await tool!.execute({ text: 'to the group', channel: 'onebot:a', target: 'group:30003' }, {})) as string)
+    expect(group).toMatchObject({ ok: true, target: 'group:30003' })
+    expect(mounted.calls[0]).toMatchObject({ action: 'send_group_msg', body: { group_id: '30003', message: 'to the group' } })
+
+    const priv = JSON.parse((await tool!.execute({ text: 'to one member', channel: 'onebot:a', target: 'peer:20002' }, {})) as string)
+    expect(priv).toMatchObject({ ok: true, target: 'peer:20002' })
+    expect(mounted.calls[1]).toMatchObject({ action: 'send_private_msg', body: { user_id: '20002', message: 'to one member' } })
   })
 })

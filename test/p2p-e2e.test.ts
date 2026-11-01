@@ -630,7 +630,7 @@ transport: {
     const raw = await tools[0]?.execute({ text: 'back' }, { agent: { id: sessionId } })
     const result = JSON.parse(raw as string) as Record<string, unknown>
 
-    expect(result).toMatchObject({ ok: true, channel: 'p2p:b', scope: 'p2p', target: 'inst-a' })
+    expect(result).toMatchObject({ ok: true, channel: 'p2p:b', target: 'inst-a' })
     await waitFor(() => sessions.prompted.some((entry) => entry.text.includes('back')))
   })
 

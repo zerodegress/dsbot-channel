@@ -2,10 +2,14 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { SendFailureCode, SendResult } from './contract.js'
 
 export const PUSH_WINDOW_MS = 10 * 60 * 1000
-export const PUSH_SCOPES = ['c2c', 'group', 'p2p'] as const
-export const PUSH_SCOPE = 'p2p'
 
-export type PushCode = SendFailureCode | 'unknown_channel' | 'unknown_target' | 'no_source' | 'no_target' | 'unsupported_scope'
+export type PushCode =
+  | SendFailureCode
+  | 'unknown_channel'
+  | 'unknown_target'
+  | 'no_source'
+  | 'no_target'
+  | 'unsupported_argument'
 
 export interface PushChannel {
   channel: string
@@ -24,7 +28,6 @@ export interface PushSource {
 export interface PushRequest {
   text: string
   channel?: string
-  scope?: string
   target?: string
   idempotencyKey?: string
 }
@@ -33,7 +36,6 @@ export interface PushSent {
   ok: true
   messageId: string
   channel: string
-  scope: string
   target: string
 }
 
@@ -125,10 +127,6 @@ export class PushRouter {
     request: PushRequest,
     sessionId: string | undefined,
   ): { channel: PushChannel; target: string; to?: string } | PushFailed {
-    if (request.scope !== undefined && request.scope !== PUSH_SCOPE) {
-      const known = PUSH_SCOPES.join(', ')
-      return fail('unsupported_scope', false, `a peer link carries "${PUSH_SCOPE}" only, not "${request.scope}"; scopes: ${known}`)
-    }
     const source = this.#source(sessionId)
     let channel: PushChannel | undefined
     if (request.channel === undefined) {
@@ -163,6 +161,14 @@ export class PushRouter {
   }
 
   async push(request: PushRequest, sessionId?: string): Promise<PushResult> {
+    const legacy = (request as { scope?: unknown }).scope
+    if (legacy !== undefined) {
+      return fail(
+        'unsupported_argument',
+        false,
+        `the scope argument is gone: the address itself says where a message goes, so name it in target instead of "${String(legacy)}"`,
+      )
+    }
     const key = request.idempotencyKey
     if (key !== undefined) {
       const replay = this.#live(key)
@@ -184,7 +190,6 @@ export class PushRouter {
       ok: true,
       messageId: sent.messageId,
       channel: channel.channel,
-      scope: PUSH_SCOPE,
       target,
     }
     if (key !== undefined) this.#keys.set(key, { result, at: this.#now() })
@@ -201,7 +206,6 @@ export function createSendText(router: PushRouter) {
     parameters: {
       text: { type: 'string', required: true, description: 'The message body to deliver' },
       channel: { type: 'string', description: 'Adapter instance to send through, e.g. p2p:orca. Omit to answer the current peer' },
-      scope: { type: 'string', enum: [...PUSH_SCOPES], description: `Where the message lands; a peer link carries "${PUSH_SCOPE}" only` },
       target: { type: 'string', description: 'Address on that channel, as the channel names it' },
       idempotencyKey: { type: 'string', description: 'Repeat this call safely within ten minutes; only a delivered push holds the key' },
     },
