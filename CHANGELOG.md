@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- `softLimit` is gone: the ledger, `policy.budget` and a pipeline node's fields no longer accept it, and a quota has only a hard limit. Nothing read the soft threshold, so a profile that set one was configuring a limit that never fired.
 - The p2p internals are no longer re-exported: signing, dedupe, mapping, the wire protocol, the listener, peer secrets, the send helper and the status route live under the adapter directory, and the package surface is the adapter contract plus the core.
 - `registerBuiltinAdapter` is gone from the entry: only the composition root registers a built-in kind, and a third-party transport uses `registerAdapter`.
 - `ChannelStats`, `ChannelSnapshot`, `ChannelFailure` and `ChannelState` are gone from the entry: the status shape is `AdapterStatus` with its `counters`, and the snapshot stays a transport-side container. `AdapterCounters` is exported in their place.

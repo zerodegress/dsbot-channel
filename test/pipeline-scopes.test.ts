@@ -189,33 +189,19 @@ describe('a difference that cannot be applied refuses the load', () => {
     expect(merged.fatal).toEqual(['bot: insert "topic" must name exactly one of after or before'])
   })
 
-  test('a soft limit is refused until something acts on it', () => {
+  test('a soft limit is now a field no node has', () => {
     const checked = resolveAndCheck({
       global: templateNodes(),
-      bot: { override: { budget: { softLimit: 0.7 } } },
+      bot: { override: { budget: { softLimit: 0.7 } as never } },
     })
 
-    expect(checked.layer.fatal).toEqual([])
-    expect(checked.pipeline.fatal).toEqual([
-      'bot: node "budget": softLimit is not supported in this version: a soft limit is computed but nothing acts on it yet',
-    ])
-  })
-
-  test('a soft limit written into the global layer is refused there too', () => {
-    const nodes = templateNodes()
-    nodes[1] = { ...nodes[1]!, softLimit: 0.7 }
-
-    const checked = resolveAndCheck({ global: nodes })
-
-    expect(checked.pipeline.fatal).toEqual([
-      'global: node "budget": softLimit is not supported in this version: a soft limit is computed but nothing acts on it yet',
-    ])
+    expect(checked.layer.fatal).toEqual(['bot: override "budget" names a field a node does not have: "softLimit"'])
   })
 
   test('a field another node type owns is still a mistake here', () => {
     const checked = resolveAndCheck({
       global: templateNodes(),
-      bot: { override: { deny: { softLimit: 0.7 } } },
+      bot: { override: { deny: { softLimit: 0.7 } as never } },
     })
 
     expect(checked.layer.fatal).toEqual(['bot: override "deny" names a field a node does not have: "softLimit"'])

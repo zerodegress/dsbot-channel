@@ -154,15 +154,6 @@ describe('the budget is consulted before a turn starts', () => {
     expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot', session: 'p2p:peer-a' })).reason).toBe('budget-hard')
   })
 
-  test('a soft limit still allows the turn but reports it', async () => {
-    const ledger = new BudgetLedger(limits, DEFAULT_BUDGET)
-    for (let i = 0; i < 4; i += 1) ledger.settle(ledger.reserve('bot', 'p2p:peer-a', 'bot', 20), 'accepted')
-    const gate = new InboundGate({ ledger })
-    const decision = await gate.admit({ event, peer: 'peer-a', botId: 'bot', session: 'p2p:peer-a' })
-    expect(decision.allow).toBe(true)
-    expect(decision.limitState).toBe('soft')
-  })
-
   test('a refused turn is not charged', async () => {
     const ledger = new BudgetLedger(limits, DEFAULT_BUDGET)
     for (let i = 0; i < 5; i += 1) ledger.settle(ledger.reserve('bot', 'p2p:peer-a', 'bot', 20), 'accepted')

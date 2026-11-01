@@ -36,7 +36,7 @@ const COMMON = ['type', 'restrictSkip', 'mayRestrict'] as const
 /** What a layer may override, per node type: a field another type has is still a mistake here. */
 export const OVERRIDABLE_BY_TYPE: Record<NodeType, readonly string[]> = {
   deny: COMMON,
-  budget: [...COMMON, 'softLimit'],
+  budget: COMMON,
   allow: COMMON,
   score: COMMON,
   judge: COMMON,

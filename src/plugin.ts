@@ -74,7 +74,6 @@ const nodeSpecSchema = Schema.object({
   type: Schema.string().required(),
   restrictSkip: Schema.any(),
   mayRestrict: Schema.boolean(),
-  softLimit: Schema.number(),
 })
 
 const layerSchema = Schema.object({
@@ -121,7 +120,6 @@ export const Config: any = Schema.object({
           }).default({}),
           budget: Schema.object({
             capacity: Schema.number(),
-            softLimit: Schema.number(),
             hardLimit: Schema.number(),
           }).default(undefined as never),
         }).default({}),
@@ -284,12 +282,6 @@ function checkPolicy(adapter: AdapterConfig, index: number): void {
   const budget = adapter.policy.budget
   if (budget !== undefined && budget.capacity === undefined) {
     throw new ConfigError('policy.budget.capacity is required', path('budget.capacity'))
-  }
-  if (budget?.softLimit !== undefined) {
-    throw new ConfigError(
-      'policy.budget.softLimit is not supported in this version: a soft limit is computed but nothing acts on it yet',
-      path('budget.softLimit'),
-    )
   }
   if (budget?.capacity !== undefined && (!Number.isInteger(budget.capacity) || budget.capacity < 1)) {
     throw new ConfigError(
