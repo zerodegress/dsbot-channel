@@ -44,6 +44,8 @@ config:
 
 `kind` names the transport and defaults to `p2p`. The built-in kinds are `p2p` and `onebot`; any other transport registers as `x-[a-z0-9-]+`, at most 32 characters. A kind names one implementation: a factory registers once per kind, and several adapters may reuse it (two p2p links are two adapters of `p2p`). A message's `source.kind` must be the kind of the adapter that carried it, and a profile naming an unknown kind fails to load.
 
+Set `policy.requireMention: true` on an adapter to refuse group messages that mention neither the bot (`self`) nor everyone (`all`). It is off by default, leaves direct chats alone, and cannot be enabled on a transport that cannot tell the three apart.
+
 The patch ships disabled. Set `disabled: false` on that row to start the listener.
 
 ## Development
