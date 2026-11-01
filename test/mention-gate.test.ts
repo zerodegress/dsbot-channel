@@ -88,8 +88,9 @@ class GroupAdapter implements ChannelAdapter {
 
 registerAdapter('x-group', () => new GroupAdapter())
 
-async function mount(policy: Record<string, unknown>, adapter = 'x-group'): Promise<{ prompts: number[] }> {
+async function mount(policy: Record<string, unknown>, adapter = 'x-group'): Promise<{ prompts: number[]; created: number[] }> {
   const prompts: number[] = []
+  const created: number[] = []
   const ctx = new Context()
   await ctx.plugin({
     name: 'probe-services',
@@ -98,7 +99,10 @@ async function mount(policy: Record<string, unknown>, adapter = 'x-group'): Prom
       scope.set('credentials', credentials)
       scope.provide('sessionController')
       scope.set('sessionController', {
-        create: () => Promise.resolve({ sessionId: 'session-1' }),
+        create: () => {
+          created.push(1)
+          return Promise.resolve({ sessionId: 'session-1' })
+        },
         prompt: () => {
           prompts.push(1)
           return Promise.resolve({ accepted: true })
@@ -118,7 +122,7 @@ async function mount(policy: Record<string, unknown>, adapter = 'x-group'): Prom
       },
     ],
   })
-  return { prompts }
+  return { prompts, created }
 }
 
 describe('a group message that names nobody', () => {

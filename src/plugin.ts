@@ -528,12 +528,6 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         if (chainProblem !== undefined) return { ok: false, code: 'chain_conflict', reason: chainProblem }
         const chainConflict = chainKeys.check(message.chainId, message.eventKey)
         if (chainConflict !== undefined) return { ok: false, code: 'chain_conflict', reason: chainConflict }
-        const sessionId = await sessions.sessionFor(message.sessionKey)
-        sources.set(sessionId, {
-          channel: adapter.channel,
-          replyTarget: message.replyTarget,
-          sender: message.author.senderId,
-        })
         const specs = pipelines.pipelineFor(adapter.botName, message.sessionKey)
         const pipeline = specs.length > 0 ? buildPipeline(specs, runtime.deps, settings) : undefined
         const decision = await runtime.gate.admit({
@@ -553,6 +547,12 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
           const detail = decision.detail === undefined ? '' : ` (${decision.detail})`
           return { ok: false, code: 'rejected', reason: `${decision.reason}${detail}` }
         }
+        const sessionId = await sessions.sessionFor(message.sessionKey)
+        sources.set(sessionId, {
+          channel: adapter.channel,
+          replyTarget: message.replyTarget,
+          sender: message.author.senderId,
+        })
         setTimeout(() => {
           void runTurn(runtime, message, sessionId).catch((error: unknown) => {
             turns.failed()

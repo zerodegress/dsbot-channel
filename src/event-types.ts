@@ -59,11 +59,6 @@ export interface Mentioned {
   all: boolean
 }
 
-/** The mention state of a message that named nobody. */
-export function noMention(): Mentioned {
-  return { self: false, others: false, all: false }
-}
-
 export interface TransportMeta {
   messageId: string
   timestamp: number
