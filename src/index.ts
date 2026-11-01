@@ -102,6 +102,7 @@ export {
   buildStatus,
 } from './adapter-status.js'
 export type {
+  AdapterCounters,
   AdapterStatus,
   CapabilitySet,
   ConnectionHealth,
@@ -118,7 +119,5 @@ export { BuildError, buildPipeline } from './build-pipeline.js'
 export type { BudgetVerdict, JudgeVerdict, MatchRule, PipelineDeps } from './build-pipeline.js'
 export { DEFAULT_LOOP_IDLE_RESET_MS, DEFAULT_LOOP_MAX_TURNS, InboundGate } from './inbound-gate.js'
 export type { AdmitInput, GateDecision, GateOptions, GateReason, LoopConfig } from './inbound-gate.js'
-export { ChannelStats } from './channel-stats.js'
 export { TurnStats } from './turn-stats.js'
 export type { TurnStatsSnapshot } from './turn-stats.js'
-export type { ChannelFailure, ChannelSnapshot, ChannelState } from './channel-stats.js'

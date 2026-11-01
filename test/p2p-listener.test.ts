@@ -625,3 +625,38 @@ describe('the status route a profile can turn off', () => {
     expect(channel.snapshot().unknownPaths).toBe(1)
   })
 })
+
+describe('the auth failure counter', () => {
+  test('a signature that does not verify counts as an auth failure', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
+    open.push(listener)
+    const payload = message()
+    const signature = signEnvelope('{{SECRET_wrongkey}}', payload as unknown as Envelope)
+    const reply = await post(listener.address().port, payload, { 'x-p2p-signature': signature })
+
+    expect(reply.status).toBe(401)
+    expect(channel.snapshot().authFailures).toBe(1)
+    expect(channel.snapshot().lastFailure?.reason).toBe('bad signature')
+  })
+
+  test('a request with no signature at all counts as an auth failure', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
+    open.push(listener)
+    const reply = await post(listener.address().port, message(), {})
+
+    expect(reply.status).toBe(401)
+    expect(channel.snapshot().authFailures).toBe(1)
+  })
+
+  test('an accepted delivery leaves the counter alone', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
+    open.push(listener)
+    const payload = message()
+    const signature = signEnvelope(secret, payload as unknown as Envelope)
+    expect((await post(listener.address().port, payload, { 'x-p2p-signature': signature })).status).toBe(200)
+    expect(channel.snapshot().authFailures).toBe(0)
+  })
+})

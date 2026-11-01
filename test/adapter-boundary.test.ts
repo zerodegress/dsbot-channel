@@ -139,6 +139,8 @@ describe('the package surface', () => {
       'hasForwardingHeaders',
       'isLoopbackPeer',
       'registerBuiltinAdapter',
+      'ChannelStats',
+      'ChannelSnapshot',
     ]
     for (const name of internals) expect(name in entry).toBe(false)
   })

@@ -164,6 +164,7 @@ export async function startListener(options: ListenerOptions): Promise<Listener>
       send(response, 500, { error: error instanceof Error ? error.message : 'internal error' })
       return
     }
+    if (result.status === 401) options.stats?.authFailure()
     if (result.status !== 200) options.stats?.rejected(result.body.error)
     send(response, result.status, result.body)
   }
