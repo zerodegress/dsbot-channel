@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A media reference is `{ type, url, handle }`, at least one of `url` and `handle` present; `handle` is the adapter's opaque token, core carries it untouched, and both take part in the content hash.
+- An adapter declares the capabilities it carries at mount time, beside the sampled ones in its status.
+
 - A conversation's quota is counted under the key its adapter supplies (`p2p:<instance>` for a p2p link) rather than the host session id, so every turn of that conversation accumulates in one pool.
 - An adapter declares its transport in a `p2p` block; `peers`, `listen`, `dedupe`, `inflightTtlMs`, `sentAtWindowMs`, `maxBodyBytes` and `waitMs` written on the adapter itself now fail to load.
 - A transport mounts through one adapter contract, so the core no longer imports a transport and reports `AdapterStatus` only.
