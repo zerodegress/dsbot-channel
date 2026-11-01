@@ -58,11 +58,11 @@ describe('the transport block a profile declares', () => {
             channel: 'p2p:a',
             instance: 'inst-a',
             botName: 'bot-a',
-            p2p: { peers: [{ instance: 'inst-b', secret: REF }], bogus: true },
+            transport: { peers: [{ instance: 'inst-b', secret: REF }], bogus: true },
           },
         ],
       }),
-    ).rejects.toThrow(/p2p names a field this adapter does not read: bogus/)
+    ).rejects.toThrow(/transport names a field this adapter does not read: bogus/)
   })
 })
 
@@ -76,7 +76,7 @@ describe('the mention switch a profile sets', () => {
             instance: 'inst-a',
             botName: 'bot-a',
             policy: { requireMention: true },
-            p2p: { peers: [{ instance: 'inst-b', secret: REF }], listen: { host: '127.0.0.1', port: 0 } },
+            transport: { peers: [{ instance: 'inst-b', secret: REF }], listen: { host: '127.0.0.1', port: 0 } },
           },
         ],
       }),
@@ -91,5 +91,22 @@ describe('the core does not reach into a transport', () => {
       .filter((path) => !path.includes(`${join('src', 'adapters')}`) && !path.endsWith(join('src', 'index.ts')))
       .filter((path) => readFileSync(path, 'utf8').includes('adapters/'))
     expect(offenders).toEqual([])
+  })
+})
+
+describe('the transport block an old profile names', () => {
+  test('the old p2p key is refused and the error points at transport', async () => {
+    await expect(
+      mount({
+        adapters: [
+          {
+            channel: 'p2p:a',
+            instance: 'inst-a',
+            botName: 'bot-a',
+            p2p: { peers: [{ instance: 'inst-b', secret: REF }] },
+          },
+        ],
+      }),
+    ).rejects.toThrow(/unknown config fields: p2p.*transport block is now named "transport"/)
   })
 })

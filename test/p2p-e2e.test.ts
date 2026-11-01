@@ -127,7 +127,7 @@ describe('two adapters in one process', () => {
 channel,
 instance,
 botName,
-p2p: {
+transport: {
   peers: [{ instance: peerInstance, secret: REF, url: `http://127.0.0.1:${peerPort}` }],
   listen: { host: '127.0.0.1', port }
 }
@@ -186,7 +186,7 @@ p2p: {
 channel,
 instance,
 botName: 'bot-shared',
-p2p: {
+transport: {
   peers: [{ instance: peerInstance, secret: REF }],
   listen: { host: '127.0.0.1', port: 0 }
 },
@@ -219,7 +219,7 @@ policy
 channel,
 instance,
 botName: 'bot-shared',
-p2p: {
+transport: {
   peers: [{ instance: peerInstance, secret: REF }],
   listen: { host: '127.0.0.1', port: 0 }
 },
@@ -255,7 +255,7 @@ policy: { deny: { words } }
 channel: 'p2p:a',
 instance: 'inst-a',
 botName: 'bot-a',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-b', secret: REF }],
   listen: { host: '127.0.0.1', port: portA }
 }
@@ -264,7 +264,7 @@ p2p: {
 channel: 'p2p:b',
 instance: 'inst-b',
 botName: 'bot-b',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${portA}` }],
   listen: { host: '127.0.0.1', port: portB }
 }
@@ -316,7 +316,7 @@ p2p: {
 channel,
 instance,
 botName: 'bot-shared',
-p2p: {
+transport: {
   peers: [{ instance: peerInstance, secret: REF, url: `http://127.0.0.1:${peerPort}` }],
   listen: { host: '127.0.0.1', port }
 },
@@ -389,7 +389,7 @@ describe('reporting failures', () => {
 channel: 'p2p:a',
 instance: 'inst-a',
 botName: 'bot-a',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-b', secret: REF }],
   listen: { host: '127.0.0.1', port: portA }
 }
@@ -398,7 +398,7 @@ p2p: {
 channel: 'p2p:b',
 instance: 'inst-b',
 botName: 'bot-b',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${portA}` }],
   listen: { host: '127.0.0.1', port: portB }
 }
@@ -452,7 +452,7 @@ async function pair(
 channel,
 instance,
 botName,
-p2p: {
+transport: {
   peers: [{ instance: peerInstance, secret: REF, url: `http://127.0.0.1:${peerPort}` }],
   listen: { host: '127.0.0.1', port }
 },
@@ -523,7 +523,7 @@ channel: 'p2p:a',
 instance: 'inst-a',
 botName: 'bot-a',
 session,
-p2p: {
+transport: {
   peers: [{ instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${await freePort()}` }],
   listen: { host: '127.0.0.1', port }
 }
@@ -594,7 +594,7 @@ describe('the send_text tool', () => {
 channel,
 instance,
 botName,
-p2p: {
+transport: {
   peers: [{ instance: peerInstance, secret: REF, url: `http://127.0.0.1:${peerPort}`, botName: peerBotName }],
   listen: { host: '127.0.0.1', port }
 }
@@ -730,7 +730,7 @@ describe('closing a peer conversation', () => {
 channel: 'p2p:b',
 instance: 'inst-b',
 botName: 'bot-b',
-p2p: {
+transport: {
   peers: [
             {
               instance: 'inst-a',
@@ -876,7 +876,7 @@ describe('a reply to a peer behind a name router', () => {
 channel: 'p2p:b',
 instance: 'inst-b',
 botName: 'bot-b',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}`, host: 'peer.example' }],
   listen: { host: '127.0.0.1', port }
 }
@@ -935,7 +935,7 @@ describe('an active push to a peer behind a name router', () => {
 channel: 'p2p:b',
 instance: 'inst-b',
 botName: 'bot-b',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}`, botName: 'bot-a', host: 'peer.example' }],
   listen: { host: '127.0.0.1', port }
 }
@@ -1034,7 +1034,7 @@ describe('a turn that already pushed with send_text', () => {
 channel: 'p2p:b',
 instance: 'inst-b',
 botName: 'bot-b',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}`, botName: 'bot-a' }],
   listen: { host: '127.0.0.1', port }
 }
@@ -1146,7 +1146,7 @@ describe('a turn that answers with nothing', () => {
 channel: 'p2p:b',
 instance: 'inst-b',
 botName: 'bot-b',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}` }],
   listen: { host: '127.0.0.1', port }
 }
@@ -1206,7 +1206,7 @@ describe('a reply goes back to the sender of the inbound message', () => {
 channel: 'p2p:b',
 instance: 'inst-b',
 botName: 'bot-b',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}` }],
   listen: { host: '127.0.0.1', port }
 }
@@ -1282,7 +1282,7 @@ describe('one service reports every adapter at once', () => {
 channel: 'p2p:a',
 instance: 'inst-a',
 botName: 'bot-a',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-b', secret: REF }],
   listen: { host: '127.0.0.1', port: portA }
 }
@@ -1291,7 +1291,7 @@ p2p: {
 channel: 'p2p:b',
 instance: 'inst-b',
 botName: 'bot-b',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-a', secret: REF }],
   listen: { host: '127.0.0.1', port: portB }
 }
@@ -1350,7 +1350,7 @@ describe('a mounted adapter can report on itself', () => {
 channel: 'p2p:a',
 instance: 'inst-a',
 botName: 'bot-a',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-b', secret: REF }],
   listen: { host: '127.0.0.1', port }
 }
@@ -1397,7 +1397,7 @@ p2p: {
 channel: 'p2p:a',
 instance: 'inst-a',
 botName: 'bot-a',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-b', secret: REF, url: 'http://127.0.0.1:1' }],
   listen: { host: '127.0.0.1', port }
 }
@@ -1448,7 +1448,7 @@ p2p: {
 channel: 'p2p:a',
 instance: 'inst-a',
 botName: 'bot-a',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-b', secret: REF, url: 'http://127.0.0.1:1', botName: 'bot-b' }],
   listen: { host: '127.0.0.1', port }
 }
@@ -1485,7 +1485,7 @@ p2p: {
 channel: 'p2p:a',
 instance: 'inst-a',
 botName: 'bot-a',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-b', secret: REF, url: 'http://127.0.0.1:1' }],
   listen: { host: '127.0.0.1', port }
 }
@@ -1551,7 +1551,7 @@ p2p: {
 channel: 'p2p:a',
 instance: 'inst-a',
 botName: 'bot-a',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-b', secret: REF, url: 'http://127.0.0.1:1' }],
   listen: { host: '127.0.0.1', port }
 }
@@ -1595,7 +1595,7 @@ p2p: {
 channel: 'p2p:a',
 instance: 'inst-a',
 botName: 'bot-a',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-b', secret: REF }],
   listen: { host: '127.0.0.1', port }
 },
@@ -1635,7 +1635,7 @@ status: true
 channel: 'p2p:a',
 instance: 'inst-a',
 botName: 'bot-a',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-b', secret: REF }],
   listen: { host: '127.0.0.1', port }
 },
@@ -1700,7 +1700,7 @@ describe('the reply ceiling', () => {
 channel: 'p2p:a',
 instance: 'inst-a',
 botName: 'bot-a',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-b', secret: REF }],
   listen: { host: '127.0.0.1', port: portA }
 },
@@ -1710,7 +1710,7 @@ policy: { relayLimit: 0 }
 channel: 'p2p:b',
 instance: 'inst-b',
 botName: 'bot-b',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-a', secret: REF }],
   listen: { host: '127.0.0.1', port: portB }
 }
@@ -1785,7 +1785,7 @@ describe('policy budget', () => {
 channel: 'p2p:a',
 instance: 'inst-a',
 botName: 'bot-a',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-b', secret: REF }],
   listen: { host: '127.0.0.1', port: await freePort() }
 },
@@ -1851,7 +1851,7 @@ policy
 channel: 'p2p:a',
 instance: 'inst-a',
 botName: 'bot-b',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-a', secret: REF }],
   listen: { host: '127.0.0.1', port }
 },
@@ -1891,7 +1891,7 @@ policy: { budget: { capacity: 15 } }
 channel: 'p2p:a',
 instance: 'inst-a',
 botName: 'bot-b',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-a', secret: REF }],
   listen: { host: '127.0.0.1', port },
   dedupe: { ttlMs: 0 }
@@ -1943,7 +1943,7 @@ async function mounted(
 channel,
 instance,
 botName,
-p2p: {
+transport: {
   peers: [{ instance: peerInstance, secret: REF, url: `http://127.0.0.1:${peerPort}` }],
   listen: { host: '127.0.0.1', port }
 },
@@ -2068,7 +2068,7 @@ describe('a message that arrives while the session is busy', () => {
 channel: 'p2p:b',
 instance: 'inst-b',
 botName: 'bot-b',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}` }],
   listen: { host: '127.0.0.1', port }
 }
@@ -2155,7 +2155,7 @@ describe('an active push to another peer on the same channel', () => {
           channel: 'p2p:b',
           instance: 'inst-b',
           botName: 'bot-b',
-          p2p: {
+          transport: {
             peers: [
               { instance: 'inst-a', secret: REF },
               { instance: 'inst-c', secret: REF, url: `http://127.0.0.1:${capturePort}`, botName: 'bot-c' },

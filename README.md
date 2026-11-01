@@ -33,7 +33,7 @@ config:
       channel: p2p:self
       instance: self
       botName: self-bot
-      p2p:
+      transport:
         listen: { host: 127.0.0.1, port: 7123 }
         peers:
           - instance: peer-a

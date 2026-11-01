@@ -99,7 +99,7 @@ async function mountReceiver(): Promise<Mounted> {
 channel: 'p2p:b',
 instance: 'inst-b',
 botName: 'bot-b',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-a', secret: REF }],
   listen: { host: '127.0.0.1', port }
 },

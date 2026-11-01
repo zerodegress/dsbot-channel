@@ -35,7 +35,7 @@ const adapter = (overrides: Record<string, unknown> = {}) => {
     channel: 'p2p:self',
     instance: 'inst-a',
     botName: 'bot-a',
-    p2p: {
+    transport: {
       peers: peers ?? [{ instance: 'inst-b', secret: REF }],
       listen: listen ?? { host: '127.0.0.1', port: 0 },
       ...(dedupe === undefined ? {} : { dedupe }),

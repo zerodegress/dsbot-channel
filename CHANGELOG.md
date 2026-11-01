@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- An adapter declares its transport in `adapters[].transport` instead of `adapters[].p2p`; the old key now fails to load with an error that names the new one.
 - Prompt injections are bracketed blocks now: `[<kind>]` for the adapter's guidance and `[tool-mode]` for the mode notice, each on its own line with a blank line before the message. The guidance still rides a conversation once; the mode block repeats only on a switch into tool mode.
 - `mentioned` on an event is now `{ self, others, all }` instead of one boolean, so an adapter says whether a message names the bot, someone else, or everyone. A profile may set `policy.requireMention` to refuse group messages that name neither the bot nor everyone; it is off by default. The old boolean no longer compiles against the new field.
 - `decline` uses the transport's `refuse` capability and closes the conversation silently, reporting `declined: false`, when a channel has none.
