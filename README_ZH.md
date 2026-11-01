@@ -46,6 +46,18 @@ config:
 
 在 adapter 上设 `policy.requireMention: true` 后，群消息如果既没有点名 bot（`self`），也没有 @ 所有人（`all`），就会被直接拒掉。该开关默认关闭，私聊不受影响；对于无法区分 `self`、`others`、`all` 的通道，不能开启这个开关，开启后会在加载期报错。
 
+`reply` 决定一个回合怎么作答。`auto` 允许直接写文本；`tool` 要求必须调用工具，纯文本会被丢弃并记一条 warn。有序规则优先于按作用域的映射，再回落到默认值：
+
+```yaml
+reply:
+  default: auto
+  byScope:
+    group: tool
+  rules:
+    - when: { source: { kind: p2p }, body: { text: { words: [ping] } } }
+      mode: auto
+```
+
 patch 出厂是禁用的。把那一行的 `disabled` 改成 `false`，listener 才会启动。
 
 ## 开发

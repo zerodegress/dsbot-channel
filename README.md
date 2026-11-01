@@ -46,6 +46,18 @@ config:
 
 Set `policy.requireMention: true` on an adapter to refuse group messages that mention neither the bot (`self`) nor everyone (`all`). It is off by default, leaves direct chats alone, and cannot be enabled on a transport that cannot tell the three apart.
 
+`reply` chooses how a turn answers. `auto` lets it write text; `tool` requires a tool call and discards a plain answer with a warning. Ordered rules win over the by-scope map, which wins over the default:
+
+```yaml
+reply:
+  default: auto
+  byScope:
+    group: tool
+  rules:
+    - when: { source: { kind: p2p }, body: { text: { words: [ping] } } }
+      mode: auto
+```
+
 The patch ships disabled. Set `disabled: false` on that row to start the listener.
 
 ## Development
