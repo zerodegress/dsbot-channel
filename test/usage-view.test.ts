@@ -107,6 +107,24 @@ describe('reading a snapshot leaves the ledger alone', () => {
     expect(ledger.sessions()).toEqual(['p2p:inst-b'])
   })
 
+  test('a direct peek does not move the hard lock either', () => {
+    let now = T0
+    const withoutPeek = new BudgetLedger(LIMITS, undefined, () => now)
+    const withPeek = new BudgetLedger(LIMITS, undefined, () => now)
+    driveToHard(withoutPeek)
+    driveToHard(withPeek)
+
+    now = T0 + 50_000
+    for (let round = 0; round < 4; round += 1) withPeek.peek('bot-a', 'p2p:inst-b')
+
+    dropToHalf(withoutPeek)
+    dropToHalf(withPeek)
+    now = T0 + 100_000
+
+    expect(withPeek.peek('bot-a', 'p2p:inst-b').aggregate).toBe(withoutPeek.peek('bot-a', 'p2p:inst-b').aggregate)
+    expect(withPeek.check('bot-a', 'p2p:inst-b').aggregate).toBe(withoutPeek.check('bot-a', 'p2p:inst-b').aggregate)
+  })
+
   test('peek answers the same level as check without holding a lock', () => {
     const ledger = new BudgetLedger(LIMITS)
     ledger.reserve('bot-a', 'p2p:inst-b', 'bot', 40)
