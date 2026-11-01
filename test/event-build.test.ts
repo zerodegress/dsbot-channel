@@ -49,8 +49,21 @@ describe('buildEvent', () => {
     expect(() => buildEvent({ ...base, author: { ...base.author, kind: 'system' as never } })).toThrow()
   })
 
-  test('rejects a source kind outside the closed enum', () => {
-    expect(() => buildEvent({ ...base, source: { ...base.source, kind: 'webhook' as never } })).toThrow()
+  test('accepts a kind the adapter declares, without a closed list', () => {
+    expect(buildEvent({ ...base, source: { ...base.source, kind: 'x-demo' } }).source.kind).toBe('x-demo')
+    expect(buildEvent({ ...base, source: { ...base.source, kind: 'onebot' } }).source.kind).toBe('onebot')
+  })
+
+  test('refuses a kind that is not one bounded printable line', () => {
+    for (const bad of ['', 'two words', 'a\nb', 'a\tb', 'x'.repeat(65)]) {
+      expect(() => buildEvent({ ...base, source: { ...base.source, kind: bad } })).toThrow(/source\.kind/)
+    }
+  })
+
+  test('the kind does not reach the event key', () => {
+    const first = buildEvent({ ...base, source: { ...base.source, kind: 'p2p' } })
+    const second = buildEvent({ ...base, source: { ...base.source, kind: 'x-demo' } })
+    expect(second.meta.derived.eventKey).toBe(first.meta.derived.eventKey)
   })
 
   test('rejects a scope outside the closed enum', () => {

@@ -42,6 +42,8 @@ config:
 
 `instance` and `channel` are both required on every adapter, and `channel` must be unique. `secret` is a reference name in the host credentials service, not the secret itself.
 
+`kind` names the transport and defaults to `p2p`. The built-in kinds are `p2p` and `onebot`; any other transport registers as `x-[a-z0-9-]+`, at most 32 characters. A kind names one implementation: a factory registers once per kind, and several adapters may reuse it (two p2p links are two adapters of `p2p`). A message's `source.kind` must be the kind of the adapter that carried it, and a profile naming an unknown kind fails to load.
+
 The patch ships disabled. Set `disabled: false` on that row to start the listener.
 
 ## Development

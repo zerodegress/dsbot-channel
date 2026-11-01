@@ -1,6 +1,6 @@
 import { contentHash, eventKey } from './event-key.js'
 import type { ChargeKind, Event, EventInput, Source, Target } from './event-types.js'
-import { AUTHOR_KINDS, CHARGE_KINDS, SCOPES, SOURCE_KINDS } from './event-types.js'
+import { AUTHOR_KINDS, CHARGE_KINDS, SCOPES, SOURCE_KIND_MAX } from './event-types.js'
 
 function assertEnum<T extends string>(name: string, allowed: readonly T[], value: string): T {
   if (!(allowed as readonly string[]).includes(value)) {
@@ -9,9 +9,24 @@ function assertEnum<T extends string>(name: string, allowed: readonly T[], value
   return value as T
 }
 
+/** A source kind is one line of printable characters, not a closed list: adapters add their own. */
+function assertKind(value: unknown): string {
+  if (typeof value !== 'string' || value.length === 0) throw new Error('source.kind must be a non-empty string')
+  if (Array.from(value).length > SOURCE_KIND_MAX) {
+    throw new Error(`source.kind must be at most ${SOURCE_KIND_MAX} characters`)
+  }
+  for (const char of value) {
+    const code = char.codePointAt(0) ?? 0
+    if (code < 0x21 || code > 0x7e) {
+      throw new Error('source.kind must be one line of printable characters without spaces')
+    }
+  }
+  return value
+}
+
 /** Assembles one event and derives its identity fields. */
 export function buildEvent(input: EventInput): Event {
-  const kind = assertEnum('source.kind', SOURCE_KINDS, input.source.kind)
+  const kind = assertKind(input.source.kind)
   const scope = assertEnum('source.scope', SCOPES, input.source.scope)
   const source: Source = { kind, instance: input.source.instance, peer: input.source.peer, scope }
   return {

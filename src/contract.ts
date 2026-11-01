@@ -4,6 +4,7 @@ import type { Author, Body, DeclaredMeta, Source, TransportMeta } from './event-
 /** Why core refused to take an inbound message; the adapter maps it onto its own error. */
 export const INBOUND_REJECTIONS = [
   'session_key_invalid',
+  'source_kind_invalid',
   'request_id_invalid',
   'reply_target_invalid',
   'event_key_conflict',
@@ -104,6 +105,11 @@ export interface AdapterCheckSettings {
 }
 
 export interface ChannelAdapter {
+  /**
+   * Names this transport's implementation: one kind has one factory, while many adapters may
+   * reuse it (two p2p links are two adapters of `p2p`). Every message it delivers must carry
+   * this same kind in `source.kind`.
+   */
   kind: string
   /** Checks what the transport needs at mount time and throws ConfigError on a bad profile. */
   checkConfig(settings: AdapterCheckSettings): void

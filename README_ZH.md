@@ -42,6 +42,8 @@ config:
 
 `instance` 和 `channel` 每个 adapter 都必填，`channel` 不能重复。`secret` 填的是宿主任凭服务里的引用名，不是密钥本身。
 
+`kind` 声明这条通道的传输，不写默认 `p2p`。内置 kind 是 `p2p` 和 `onebot`；第三方传输注册时必须用 `x-[a-z0-9-]+`，不超过 32 个字符。一个 kind 对应一个实现：每个 kind 只能注册一次工厂，但可以有多个 adapter 复用它（两条 p2p 链接就是 `p2p` 的两个 adapter）。消息的 `source.kind` 必须等于承载它的适配器的 kind；profile 里写未知 kind 会在加载期失败。
+
 patch 出厂是禁用的。把那一行的 `disabled` 改成 `false`，listener 才会启动。
 
 ## 开发
