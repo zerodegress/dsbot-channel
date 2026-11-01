@@ -13,7 +13,7 @@ describe('listen host validation', () => {
   })
 
   test('accepts loopback and concrete addresses', () => {
-    for (const host of ['127.0.0.1', '::1', '{{INTERNAL_IP}}', '{{PRIVATE_HOST}}']) {
+    for (const host of ['127.0.0.1', '::1', '203.0.113.9', 'host.example.test']) {
       expect(() => assertBindHost(host)).not.toThrow()
     }
   })
