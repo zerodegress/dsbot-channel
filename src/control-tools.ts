@@ -1,6 +1,7 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
-export interface PeerTurnRef {
+/** What core knows about the turn a tool is running inside; nothing here is peer specific. */
+export interface TurnRef {
   eventId: string
   /** The chain root this turn belongs to. */
   chainId: string
@@ -21,13 +22,13 @@ export interface DeclinedResult {
 }
 
 export interface ControlPorts {
-  turnOf: (sessionId: string | undefined) => PeerTurnRef | undefined
+  turnOf: (sessionId: string | undefined) => TurnRef | undefined
   isClosed: (chainId: string) => boolean
   closeChain: (chainId: string) => void
-  decline: (turn: PeerTurnRef, reason: string | undefined) => Promise<DeclinedResult>
+  decline: (turn: TurnRef, reason: string | undefined) => Promise<DeclinedResult>
 }
 
-const NO_TURN = 'this tool is only available while answering a peer message'
+const NO_TURN = 'this tool is only available while answering a message'
 
 const output = {
   schema: { type: 'string' as const },
@@ -39,7 +40,7 @@ export function createNoReplyTool(ports: ControlPorts) {
   return defineTool({
     name: 'no_reply',
     description:
-      'Close this peer conversation without sending anything back. Use it when the message needs no answer.',
+      'Close this conversation without sending anything back. Use it when the message needs no answer.',
     parameters: {},
     output,
     async execute(_args: unknown, exec: { agent?: { id?: string }; concludeTurn: () => void }): Promise<string> {
@@ -58,7 +59,7 @@ export function createDeclineTool(ports: ControlPorts) {
   return defineTool({
     name: 'decline',
     description:
-      'Refuse this peer request and tell the peer why. The peer is not answered further and the conversation closes.',
+      'Refuse this request and tell the sender why. The conversation is not answered further and closes.',
     parameters: {
       reason: { type: 'string', required: true, description: 'Why the request is refused, in one line' },
     },
