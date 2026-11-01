@@ -231,3 +231,12 @@ describe('the p2p adapter sends through its own addressing', () => {
     if (!unknown.ok) expect(unknown.code).toBe('no_url')
   })
 })
+
+describe('what the adapter can carry', () => {
+  test('it declares text and replies at mount time, and the status agrees', () => {
+    const adapter = new P2PAdapter(config(7123))
+
+    expect(adapter.capabilities).toMatchObject({ text: true, reply: true, image: false, mention: false })
+    expect(adapter.status().capabilities).toEqual(adapter.capabilities)
+  })
+})

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 import { Context, type Plugin } from '@deepseek-ai/cordis'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
@@ -43,5 +45,18 @@ p2p: {
     expect(ctx.registry.has(plugin)).toBe(true)
     await fork.dispose()
     expect(ctx.registry.has(plugin)).toBe(false)
+  })
+})
+
+describe('the changelog lists', () => {
+  test('no blank line splits one section into two lists', () => {
+    const lines = readFileSync(join(import.meta.dirname, '..', 'CHANGELOG.md'), 'utf8').split('\n')
+    const split = lines.flatMap((line, index) => {
+      if (line.trim() !== '') return []
+      const before = lines[index - 1] ?? ''
+      const after = lines[index + 1] ?? ''
+      return before.startsWith('- ') && after.startsWith('- ') ? [`line ${index + 1}`] : []
+    })
+    expect(split).toEqual([])
   })
 })

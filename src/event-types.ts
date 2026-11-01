@@ -28,9 +28,19 @@ export interface Author {
   personId: string | null
 }
 
+export const MEDIA_TYPES = ['image', 'file', 'voice'] as const
+export type MediaType = (typeof MEDIA_TYPES)[number]
+
+/** Longest platform handle a media reference may carry; the adapter interprets it. */
+export const MEDIA_HANDLE_MAX = 256
+
+/** A media reference is either addressable (a url) or named by the transport (a handle), never neither. */
 export interface MediaRef {
-  type: 'image' | 'file' | 'voice'
-  url: string
+  type: MediaType
+  /** A public address, when the transport has one to hand out. */
+  url: string | null
+  /** The adapter's own opaque token; core carries it and never parses it. */
+  handle: string | null
 }
 
 export interface Body {

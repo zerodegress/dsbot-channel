@@ -1,4 +1,4 @@
-import type { AdapterStatus } from './adapter-status.js'
+import type { AdapterStatus, CapabilitySet } from './adapter-status.js'
 import type { Author, Body, DeclaredMeta, Source, TransportMeta } from './event-types.js'
 
 /** Why core refused to take an inbound message; the adapter maps it onto its own error. */
@@ -111,6 +111,11 @@ export interface ChannelAdapter {
    * this same kind in `source.kind`.
    */
   kind: string
+  /**
+   * What this transport can carry, known at mount time. Unlike `status().capabilities`,
+   * which samples the live link, this answers "may core rely on it" before any message.
+   */
+  readonly capabilities: CapabilitySet
   /** Checks what the transport needs at mount time and throws ConfigError on a bad profile. */
   checkConfig(settings: AdapterCheckSettings): void
   /** Returns why a session key is unusable, or undefined when it is; core never parses the key. */
