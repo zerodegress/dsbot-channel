@@ -3,7 +3,17 @@ import { BudgetLedger } from '../src/budget-ledger.js'
 import { TurnBilling } from '../src/turn-billing.js'
 import { InboundGate } from '../src/inbound-gate.js'
 import { SessionPipelines } from '../src/session-pipeline.js'
-import { defaultPipelineNodes } from '../src/pipeline-config.js'
+import type { PipelineNodeSpec } from '../src/pipeline-config.js'
+
+const templateNodes = (): PipelineNodeSpec[] => [
+  { id: 'noise', type: 'deny' },
+  { id: 'budget', type: 'budget' },
+  { id: 'deny', type: 'deny' },
+  { id: 'allow', type: 'allow' },
+  { id: 'score', type: 'score' },
+  { id: 'judge', type: 'judge' },
+  { id: 'prepare', type: 'prepare' },
+]
 import type { PipelineEvent } from '../src/pipeline.js'
 
 const LIMITS = { softLimit: 0.8, hardLimit: 1, capacity: 40 }
@@ -61,7 +71,7 @@ describe('the key one message uses everywhere', () => {
     const budget = ledger()
     const key = 'p2p:inst-b'
     const pipelines = new SessionPipelines({
-      bots: new Map([['bot-a', { base: defaultPipelineNodes(), denyRules: false, allowRules: true }]]),
+      bots: new Map([['bot-a', { base: templateNodes(), denyRules: false, allowRules: true }]]),
     })
 
     pipelines.forSession('bot-a', key, { remove: ['allow'] })

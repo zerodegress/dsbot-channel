@@ -22,18 +22,6 @@ export interface CheckReport {
   warnings: string[]
 }
 
-/** The default template order, from noise to prepare. */
-export function defaultPipelineNodes(): PipelineNodeSpec[] {
-  return [
-    { id: 'noise', type: 'deny' },
-    { id: 'budget', type: 'budget' },
-    { id: 'deny', type: 'deny' },
-    { id: 'allow', type: 'allow' },
-    { id: 'score', type: 'score' },
-    { id: 'judge', type: 'judge' },
-    { id: 'prepare', type: 'prepare' },
-  ]
-}
 
 /** Load time checks: illegal declarations refuse to load, odd orders only warn. */
 export function checkPipeline(nodes: readonly PipelineNodeSpec[]): CheckReport {

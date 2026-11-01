@@ -4,8 +4,17 @@ import type { AddressInfo } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
-import { defaultPipelineNodes } from '../src/pipeline-config.js'
 import type { PipelineNodeSpec } from '../src/pipeline-config.js'
+
+const templateNodes = (): PipelineNodeSpec[] => [
+  { id: 'noise', type: 'deny' },
+  { id: 'budget', type: 'budget' },
+  { id: 'deny', type: 'deny' },
+  { id: 'allow', type: 'allow' },
+  { id: 'score', type: 'score' },
+  { id: 'judge', type: 'judge' },
+  { id: 'prepare', type: 'prepare' },
+]
 import { resolvePipeline } from '../src/pipeline-scopes.js'
 import type { PipelineLayer, PipelineScopes } from '../src/pipeline-scopes.js'
 import type { BotScope } from '../src/session-pipeline.js'
@@ -43,7 +52,7 @@ function harness(input: Record<string, BotInput> = { orca: { peers: ['seal'] } }
   const bots = new Map<string, BotScope>(
     Object.entries(input).map(([name, one]) => {
       const scopes: PipelineScopes =
-        one.layer === undefined ? { global: defaultPipelineNodes() } : { global: defaultPipelineNodes(), bot: one.layer }
+        one.layer === undefined ? { global: templateNodes() } : { global: templateNodes(), bot: one.layer }
       return [
         name,
         {

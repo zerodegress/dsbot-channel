@@ -48,7 +48,7 @@ export type {
   SendResult,
   SendSuccess,
 } from './contract.js'
-export { signEnvelope, canonicalEnvelope, verifyRequest, digestBody } from './adapters/p2p/p2p-auth.js'
+export { signEnvelope, canonicalEnvelope, verifyRequest } from './adapters/p2p/p2p-auth.js'
 export type { AuthInput, AuthResult, PeerSecret } from './adapters/p2p/p2p-auth.js'
 export { DedupeTable } from './adapters/p2p/p2p-dedupe.js'
 export type { DedupeEntry, DedupeOptions } from './adapters/p2p/p2p-dedupe.js'
@@ -74,7 +74,7 @@ export type {
   RuntimeView,
   SkipTarget,
 } from './pipeline.js'
-export { DEFAULT_PIPELINE, checkPipeline, defaultPipelineNodes } from './pipeline-config.js'
+export { DEFAULT_PIPELINE, checkPipeline } from './pipeline-config.js'
 export { DEFAULT_HARD_LIMIT, DEFAULT_SOFT_LIMIT, createLedger } from './budget-config.js'
 export type { BudgetConfig, LedgerOptions } from './budget-config.js'
 export { compilePolicy } from './policy-config.js'

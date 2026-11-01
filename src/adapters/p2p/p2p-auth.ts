@@ -42,9 +42,6 @@ function sameSecret(a: string, b: string): boolean {
   return timingSafeEqual(left, right)
 }
 
-export function digestBody(body: string): string {
-  return createHash('sha256').update(body, 'utf8').digest('hex')
-}
 
 /** The bytes a signature covers: every field of the envelope, in one fixed order. */
 export function canonicalEnvelope(envelope: Envelope): string {
