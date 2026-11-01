@@ -144,15 +144,18 @@ export async function startListener(options: ListenerOptions): Promise<Listener>
                 const parsed = parseRequest(payload, limit)
                 if (parsed.ok && parsed.value.eventId === eventId) {
                   const request = parsed.value
-                  const dispatched = onMessage(request)
-                  if (dispatched instanceof Promise) {
-                    void dispatched.catch((error: unknown) => {
-                      const report = options.onError
-                      if (report === undefined) return
-                      void Promise.resolve()
-                        .then(() => report(error, request))
-                        .catch(() => undefined)
-                    })
+                  const report = (error: unknown): void => {
+                    const onError = options.onError
+                    if (onError === undefined) return
+                    void Promise.resolve()
+                      .then(() => onError(error, request))
+                      .catch(() => undefined)
+                  }
+                  try {
+                    const dispatched = onMessage(request)
+                    if (dispatched instanceof Promise) void dispatched.catch(report)
+                  } catch (error) {
+                    report(error)
                   }
                 }
                 return Promise.resolve(true)
