@@ -34,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- The p2p internals are no longer re-exported: signing, dedupe, mapping, the wire protocol, the listener, peer secrets, the send helper and the status route live under the adapter directory, and the package surface is the adapter contract plus the core.
+- `registerBuiltinAdapter` is gone from the entry: only the composition root registers a built-in kind, and a third-party transport uses `registerAdapter`.
 - The `event-layers` module and its exports (`transportLayer`, `derivedLayer`, `declareLayer`, `readDeclared`, `LayerViolationError`, `LAYERS`): no production code called it, and an event still carries its three layers as plain fields.
 - `dedupeKeyFor`, `replyIdempotencyKey` and `unstableDedupeKey`: nothing in the package called them, and each transport already builds the key its own dedupe uses.
 - `digestBody` and `defaultPipelineNodes`: nothing called the first, and the second described a template the builder cannot run, so keeping it only invited a `BuildError`.

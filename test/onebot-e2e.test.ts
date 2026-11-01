@@ -122,13 +122,19 @@ const event = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 })
 
-const wait = (ms = 30): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+async function waitFor(check: () => boolean, timeoutMs = 3000): Promise<void> {
+  const started = Date.now()
+  while (!check()) {
+    if (Date.now() - started > timeoutMs) throw new Error('timed out waiting for the onebot round trip')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+}
 
 describe('an onebot group message through the mounted plugin', () => {
   test('runs a turn and answers through send_group_msg', async () => {
     const mounted = await mount()
     expect(await post(mounted.port, event())).toBe(204)
-    await wait()
+    await waitFor(() => mounted.calls.length > 0)
 
     expect(mounted.prompted).toHaveLength(1)
     expect(mounted.prompted[0]).toContain('[onebot from 阿明 · 20002 · 31]  帮我看看')
@@ -138,7 +144,7 @@ describe('an onebot group message through the mounted plugin', () => {
   test('requireMention refuses a group message that names nobody', async () => {
     const mounted = await mount({ requireMention: true })
     expect(await post(mounted.port, event({ message_id: 32, message: [{ type: 'text', data: { text: '随便聊聊' } }] }))).toBe(204)
-    await wait()
+    await new Promise((resolve) => setTimeout(resolve, 50))
 
     expect(mounted.prompted).toHaveLength(0)
     expect(mounted.calls).toHaveLength(0)
@@ -152,7 +158,7 @@ describe('an onebot group message through the mounted plugin', () => {
         event({ message_id: 33, message_type: 'private', group_id: undefined, message: [{ type: 'text', data: { text: '在吗' } }] }),
       ),
     ).toBe(204)
-    await wait()
+    await waitFor(() => mounted.calls.length > 0)
 
     expect(mounted.prompted).toHaveLength(1)
     expect(mounted.calls[0]).toMatchObject({ action: 'send_private_msg', body: { user_id: '20002', message: 'onebot 回复' } })

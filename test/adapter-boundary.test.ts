@@ -110,3 +110,43 @@ describe('the transport block an old profile names', () => {
     ).rejects.toThrow(/unknown config fields: p2p.*transport block is now named "transport"/)
   })
 })
+
+describe('the package surface', () => {
+  test('does not publish the p2p internals', async () => {
+    const entry = await import('../src/index.js')
+    const internals = [
+      'signEnvelope',
+      'canonicalEnvelope',
+      'verifyRequest',
+      'DedupeTable',
+      'toP2PEvent',
+      'MAX_BODY_BYTES',
+      'P2P_ROUTE',
+      'handleMessage',
+      'parseRequest',
+      'DEFAULT_HOST',
+      'DEFAULT_PORT',
+      'SIGNATURE_HEADER',
+      'checkListenerConfig',
+      'startListener',
+      'SecretRefError',
+      'assertPeersResolvable',
+      'resolvePeers',
+      'staticCredentials',
+      'DEFAULT_SEND_TIMEOUT_MS',
+      'sendToPeer',
+      'STATUS_ROUTE',
+      'hasForwardingHeaders',
+      'isLoopbackPeer',
+      'registerBuiltinAdapter',
+    ]
+    for (const name of internals) expect(name in entry).toBe(false)
+  })
+
+  test('still publishes what a host mounts the plugin with', async () => {
+    const entry = await import('../src/index.js')
+    for (const name of ['apply', 'plugin', 'Config', 'registerAdapter', 'buildEvent', 'Pipeline', 'buildStatus']) {
+      expect(name in entry).toBe(true)
+    }
+  })
+})
