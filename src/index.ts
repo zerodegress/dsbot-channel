@@ -1,6 +1,7 @@
 import { apply } from './plugin.js'
 // Composition root: the only place a transport is named, so core never imports one.
 import './adapters/p2p/index.js'
+import './adapters/onebot/index.js'
 
 /** Multi-channel ingress gateway for ds-bot. */
 export const name = 'dsbot-channel'
