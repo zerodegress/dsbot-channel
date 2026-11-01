@@ -193,11 +193,14 @@ describe('the observation surface is read-only', () => {
 
     const turns = ctx.get('dsbot-channel.turns') as { snapshot(): unknown }
     const usage = ctx.get('dsbot-channel.usage') as UsageService
-    const firstTurns = JSON.stringify(turns.snapshot())
-    const firstUsage = JSON.stringify(usage.snapshot())
+    // The sample time moves with the clock, so compare everything it stamps.
+    const withoutStamp = (value: { sampledAt: number }): string =>
+      JSON.stringify({ ...value, sampledAt: 0 })
+    const firstTurns = withoutStamp(turns.snapshot() as { sampledAt: number })
+    const firstUsage = withoutStamp(usage.snapshot())
 
-    expect(JSON.stringify(turns.snapshot())).toBe(firstTurns)
-    expect(JSON.stringify(usage.snapshot())).toBe(firstUsage)
+    expect(withoutStamp(turns.snapshot() as { sampledAt: number })).toBe(firstTurns)
+    expect(withoutStamp(usage.snapshot())).toBe(firstUsage)
   })
 
   test('a mount that is never read behaves exactly like one that is', async () => {
