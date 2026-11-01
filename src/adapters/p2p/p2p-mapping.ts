@@ -1,5 +1,5 @@
-import { buildEvent } from './event-build.js'
-import type { Event } from './event-types.js'
+import { buildEvent } from '../../event-build.js'
+import type { Event } from '../../event-types.js'
 
 /** How much of the message being answered travels back with the reply. */
 export const EXCERPT_CHARS = 200
@@ -31,6 +31,17 @@ export function cleanExcerpt(text: string, limit = EXCERPT_CHARS): string {
   return Array.from(flat).slice(0, limit).join('').trim()
 }
 
+/** Longest handle a header line carries, so a reply's id cannot grow the line. */
+export const HANDLE_MAX = 64
+
+/**
+ * A bounded single-line handle for a header: the id is already short (42-47 characters
+ * for a reply), and the limit keeps a caller from ever pushing a whole long id through.
+ */
+export function shortHandle(value: string, limit = HANDLE_MAX): string {
+  return Array.from(oneLine(value, limit)).slice(0, limit).join('')
+}
+
 export interface P2PInbound {
   instance: string
   sender: string
@@ -43,11 +54,11 @@ export interface P2PInbound {
 
 /** Maps a peer message onto the event model with the peer identity as the source. */
 export function toP2PEvent(inbound: P2PInbound): Event {
-  const prefix = `[p2p from ${inbound.instance} · ${inbound.sender} · ${inbound.messageId}]`
+  const prefix = `[p2p from ${inbound.instance} · ${inbound.sender} · ${shortHandle(inbound.messageId)}]`
   const reference =
     inbound.inReplyTo === undefined
       ? ''
-      : ` (in reply to ${inbound.inReplyTo}${inbound.inReplyToExcerpt === undefined ? '' : `: "${cleanExcerpt(inbound.inReplyToExcerpt)}"`})`
+      : ` (in reply to ${shortHandle(inbound.inReplyTo)}${inbound.inReplyToExcerpt === undefined ? '' : `: "${cleanExcerpt(inbound.inReplyToExcerpt)}"`})`
   const head = `${prefix}${reference}`
   const text = inbound.body.length ? `${head} ${inbound.body}` : head
   return buildEvent({

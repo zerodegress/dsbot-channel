@@ -3,7 +3,7 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
-import { staticCredentials } from '../src/p2p-secrets.js'
+import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
 import { defaultPipelineNodes } from '../src/pipeline-config.js'
 import type { PipelineNodeSpec } from '../src/pipeline-config.js'
 import { resolvePipeline } from '../src/pipeline-scopes.js'
@@ -78,13 +78,15 @@ async function mount(options: { policy?: Record<string, unknown> } = {}) {
   const fork = await ctx.plugin(entry, {
     adapters: [
       {
-        channel: 'p2p:a',
-        instance: 'inst-a',
-        botName: 'bot-a',
-        peers: [{ instance: 'inst-b', secret: REF }],
-        policy: options.policy ?? bindable,
-        listen: { host: '127.0.0.1', port },
-      },
+channel: 'p2p:a',
+instance: 'inst-a',
+botName: 'bot-a',
+p2p: {
+  peers: [{ instance: 'inst-b', secret: REF }],
+  listen: { host: '127.0.0.1', port }
+},
+policy: options.policy ?? bindable
+},
     ],
   })
   forks.push(fork)
@@ -154,7 +156,7 @@ describe('the plugin offers the session API to its host', () => {
   test('a peer name the adapter does not address is refused at the call', async () => {
     const api = await mount()
 
-    expect(() => api.forSession('bot-a', 'p2p:inst-bb', {})).toThrow(/addresses no peer "inst-bb"; known: inst-b/)
+    expect(() => api.forSession('bot-a', 'p2p:inst-bb', {})).toThrow(/addresses no peer "inst-bb"/)
   })
 
   test('a session layer the host could never run is refused at the call', async () => {
@@ -203,28 +205,13 @@ describe('a session layer that could never run is refused', () => {
     )
   })
 
-  test('a key that names no scope is refused', () => {
-    const sessions = harness()
+  test('a key the adapter cannot address is refused through the plugin', async () => {
+    const api = await mount()
 
-    for (const key of ['seal', 'p2p:', 'dm:1', '']) {
-      expect(() => sessions.forSession('orca', key, {})).toThrow(/session key must look like/)
+    for (const key of ['seal', 'dm:1', '']) {
+      expect(() => api.forSession('bot-a', key, {})).toThrow(/session key/)
     }
-  })
-
-  test('a peer name no adapter of the bot addresses is refused', () => {
-    const sessions = harness({ orca: { peers: ['inst-b'] } })
-
-    for (const key of ['p2p:inst-bb', 'p2p:typo']) {
-      expect(() => sessions.forSession('orca', key, {})).toThrow(/addresses no peer .*; known: inst-b/)
-    }
-  })
-
-  test('a bot that addresses no peer says so instead of listing nothing', () => {
-    const sessions = harness({ orca: {} })
-
-    expect(() => sessions.forSession('orca', 'p2p:seal', {})).toThrow(
-      /addresses no peer "seal"; this bot addresses no peer/,
-    )
+    expect(() => api.forSession('bot-a', 'p2p:inst-zz', {})).toThrow(/addresses no peer "inst-zz"/)
   })
 
   test('a group and a peer key have no registry to check, and are accepted', () => {

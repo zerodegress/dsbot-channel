@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { buildEvent } from '../src/event-build.js'
-import { EXCERPT_CHARS, cleanExcerpt, toP2PEvent } from '../src/p2p-mapping.js'
+import { EXCERPT_CHARS, HANDLE_MAX, cleanExcerpt, shortHandle, toP2PEvent } from '../src/adapters/p2p/p2p-mapping.js'
 
 const inbound = { instance: 'peer-a', sender: 'bot-a', messageId: 'p2p-e1', body: 'hello', sentAt: 1_700_000_000_000 }
 
@@ -104,5 +104,17 @@ describe('p2p event mapping', () => {
 
   test('the transport layer keeps the peer message id', () => {
     expect(toP2PEvent(inbound).meta.transport.messageId).toBe('p2p-e1')
+  })
+})
+
+describe('the handle a header carries', () => {
+  test('a reply id longer than the handle is cut, not carried whole', () => {
+    const handle = shortHandle(`reply:${'a'.repeat(200)}`)
+    expect(handle.length).toBe(HANDLE_MAX)
+    expect(handle).not.toContain('\n')
+  })
+
+  test('a short id is left as it is', () => {
+    expect(shortHandle('p2p-evt-1')).toBe('p2p-evt-1')
   })
 })

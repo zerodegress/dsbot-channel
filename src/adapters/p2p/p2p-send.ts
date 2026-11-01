@@ -5,10 +5,10 @@ import { SecretRefError, resolvePeers } from './p2p-secrets.js'
 import type { CredentialsLike, PeerRef } from './p2p-secrets.js'
 import { P2P_ROUTE } from './p2p-protocol.js'
 import { oneLine } from './p2p-mapping.js'
+import type { SendFailure, SendFailureCode, SendResult } from '../../contract.js'
+export type { SendFailure, SendFailureCode, SendResult, SendSuccess } from '../../contract.js'
 
 export const DEFAULT_SEND_TIMEOUT_MS = 10_000
-
-export type SendFailureCode = 'no_url' | 'credential' | 'unreachable' | 'timeout' | 'unauthorized' | 'forbidden' | 'busy' | 'rejected'
 
 export interface PeerTarget extends PeerRef {
   url?: string
@@ -17,10 +17,12 @@ export interface PeerTarget extends PeerRef {
   host?: string
 }
 
-export interface SendInput {
+export interface P2PSendInput {
   peer: PeerTarget
   credentials: CredentialsLike
   to: string
+  /** The root event of the conversation; a new conversation uses its own event id. */
+  chainId?: string
   body: string
   eventId: string
   sender: string
@@ -37,21 +39,6 @@ export interface SendInput {
   inReplyTo?: string
   inReplyToExcerpt?: string
 }
-
-export interface SendSuccess {
-  ok: true
-  messageId: string
-  duplicate: boolean
-}
-
-export interface SendFailure {
-  ok: false
-  code: SendFailureCode
-  retryable: boolean
-  reason: string
-}
-
-export type SendResult = SendSuccess | SendFailure
 
 function failure(code: SendFailureCode, retryable: boolean, reason: string): SendFailure {
   return { ok: false, code, retryable, reason }
@@ -116,7 +103,7 @@ function postWithHost(
 }
 
 /** Posts one signed message to a peer; the eventId doubles as the retry key. */
-export async function sendToPeer(input: SendInput): Promise<SendResult> {
+export async function sendToPeer(input: P2PSendInput): Promise<SendResult> {
   const url = input.peer.url
   if (!url) return failure('no_url', false, `peer "${input.peer.instance}" has no url configured`)
 
@@ -132,6 +119,7 @@ export async function sendToPeer(input: SendInput): Promise<SendResult> {
   const sentAt = input.sentAt ?? Date.now()
   const envelope = {
     eventId: input.eventId,
+    chainId: input.chainId ?? input.eventId,
     to: input.to,
     sender: input.sender,
     instance: input.instance,
@@ -174,9 +162,12 @@ export async function sendToPeer(input: SendInput): Promise<SendResult> {
   }
 
   if (!('status' in answered)) return answered
-  const body = answered.body as { messageId?: string; duplicate?: boolean; error?: string }
+  const body = answered.body as { messageId?: string; duplicate?: boolean; error?: string; code?: string }
   if (answered.status === 200) {
     return { ok: true, messageId: body.messageId ?? `p2p-${input.eventId}`, duplicate: body.duplicate === true }
+  }
+  if (answered.status === 401 && body.code === 'protocol_mismatch') {
+    return failure('protocol_mismatch', false, oneLine(body.error ?? 'the peer speaks another protocol'))
   }
   if (answered.status === 401) return failure('unauthorized', false, oneLine(body.error ?? 'unauthorized'))
   if (answered.status === 403) return failure('forbidden', false, oneLine(body.error ?? 'forbidden'))

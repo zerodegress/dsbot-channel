@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, test } from 'vitest'
 import { request } from 'node:http'
-import { DedupeTable } from '../src/p2p-dedupe.js'
-import { checkListenerConfig, startListener } from '../src/p2p-listener.js'
+import { DedupeTable } from '../src/adapters/p2p/p2p-dedupe.js'
+import { checkListenerConfig, startListener } from '../src/adapters/p2p/p2p-listener.js'
 import { ChannelStats } from '../src/channel-stats.js'
-import type { Listener, ListenerConfig } from '../src/p2p-listener.js'
-import { P2P_ROUTE } from '../src/p2p-protocol.js'
-import { signEnvelope } from '../src/p2p-auth.js'
-import type { Envelope } from '../src/p2p-auth.js'
-import { staticCredentials } from '../src/p2p-secrets.js'
-import type { InboundRequest } from '../src/p2p-inbound.js'
+import type { Listener, ListenerConfig } from '../src/adapters/p2p/p2p-listener.js'
+import { P2P_ROUTE } from '../src/adapters/p2p/p2p-protocol.js'
+import { signEnvelope } from '../src/adapters/p2p/p2p-auth.js'
+import type { Envelope } from '../src/adapters/p2p/p2p-auth.js'
+import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
+import type { InboundRequest } from '../src/adapters/p2p/p2p-wire.js'
 
 const secret = 'peer-secret-1'
 const secretRef = 'PEER_SHARED_SECRET'
@@ -65,7 +65,7 @@ function post(port: number, body: unknown, headers?: Record<string, string>): Pr
 }
 
 const message = (overrides: Record<string, unknown> = {}) => ({
-  eventId: 'evt-1',
+  eventId: 'evt-1',  chainId: 'evt-1',
   to: 'bot-a',
   sender: 'bot-b',
   instance: 'inst-b',

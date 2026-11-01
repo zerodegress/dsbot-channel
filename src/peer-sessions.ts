@@ -1,18 +1,3 @@
-export interface InboundRequest {
-  eventId: string
-  to: string
-  sender: string
-  instance: string
-  body: string
-  sentAt: number
-  /** The peer refused this request, so its turn runs but answers nothing. */
-  status?: 'declined'
-  reason?: string
-  final?: boolean
-  inReplyTo?: string
-  inReplyToExcerpt?: string
-}
-
 export interface SessionMessagePart {
   type: string
   text?: string

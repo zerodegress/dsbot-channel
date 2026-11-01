@@ -1,4 +1,4 @@
-import type { ChannelSnapshot } from './channel-stats.js'
+import type { ChannelSnapshot } from '../../channel-stats.js'
 
 export const STATUS_ROUTE = '/p2p/v1/status'
 

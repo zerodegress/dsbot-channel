@@ -1,4 +1,6 @@
 import { apply } from './plugin.js'
+// Composition root: the only place a transport is named, so core never imports one.
+import './adapters/p2p/index.js'
 
 /** Multi-channel ingress gateway for ds-bot. */
 export const name = 'dsbot-channel'
@@ -19,14 +21,29 @@ export { LAYERS, LayerViolationError, declareLayer, derivedLayer, readDeclared, 
 export type { DeclaredLayer, Layer } from './event-layers.js'
 export { buildEvent, chargeKey, dedupeKeyFor, replyIdempotencyKey, unstableDedupeKey } from './event-build.js'
 export { ConfigError, WILDCARD_HOSTS, assertBindHost, strict, validateConfig } from './config.js'
-export { signEnvelope, canonicalEnvelope, verifyRequest, digestBody } from './p2p-auth.js'
-export type { AuthInput, AuthResult, PeerSecret } from './p2p-auth.js'
-export { DedupeTable } from './p2p-dedupe.js'
-export type { DedupeEntry, DedupeOptions } from './p2p-dedupe.js'
-export { toP2PEvent } from './p2p-mapping.js'
-export type { P2PInbound } from './p2p-mapping.js'
-export { MAX_BODY_BYTES, P2P_ROUTE, handleMessage, parseRequest } from './p2p-protocol.js'
-export type { HandleInput, HandleResult, P2PConfig, P2PPayload, Parsed } from './p2p-protocol.js'
+export { CHAIN_ID_MAX, GUIDANCE_MAX, INBOUND_REJECTIONS, REPLY_TARGET_MAX, REQUEST_ID_MAX, SESSION_KEY_MAX, tokenProblem } from './contract.js'
+export type {
+  AdapterCheckSettings,
+  AdapterHandle,
+  AdapterPorts,
+  ChannelAdapter,
+  InboundMessage,
+  InboundRejection,
+  InboundVerdict,
+  SendFailure,
+  SendFailureCode,
+  SendInput,
+  SendResult,
+  SendSuccess,
+} from './contract.js'
+export { signEnvelope, canonicalEnvelope, verifyRequest, digestBody } from './adapters/p2p/p2p-auth.js'
+export type { AuthInput, AuthResult, PeerSecret } from './adapters/p2p/p2p-auth.js'
+export { DedupeTable } from './adapters/p2p/p2p-dedupe.js'
+export type { DedupeEntry, DedupeOptions } from './adapters/p2p/p2p-dedupe.js'
+export { toP2PEvent } from './adapters/p2p/p2p-mapping.js'
+export type { P2PInbound } from './adapters/p2p/p2p-mapping.js'
+export { MAX_BODY_BYTES, P2P_ROUTE, handleMessage, parseRequest } from './adapters/p2p/p2p-protocol.js'
+export type { HandleInput, HandleResult, P2PConfig, P2PPayload, Parsed } from './adapters/p2p/p2p-protocol.js'
 export { Pipeline, NODE_TYPES, SKIP_TARGETS } from './pipeline.js'
 export type {
   Decision,
@@ -66,11 +83,10 @@ export type {
   ScopePair,
   Usage,
 } from './budget-ledger.js'
-export { DEFAULT_HOST, DEFAULT_PORT, SIGNATURE_HEADER, checkListenerConfig, startListener } from './p2p-listener.js'
-export type { Listener, ListenerConfig, ListenerOptions } from './p2p-listener.js'
-export { DEFAULT_TURN_TIMEOUT_MS, PeerSessions, TurnTimeoutError } from './p2p-inbound.js'
+export { DEFAULT_HOST, DEFAULT_PORT, SIGNATURE_HEADER, checkListenerConfig, startListener } from './adapters/p2p/p2p-listener.js'
+export type { Listener, ListenerConfig, ListenerOptions } from './adapters/p2p/p2p-listener.js'
+export { DEFAULT_TURN_TIMEOUT_MS, PeerSessions, TurnTimeoutError } from './peer-sessions.js'
 export type {
-  InboundRequest,
   PeerSessionsOptions,
   PeerTurn,
   PeerTurnInput,
@@ -78,7 +94,7 @@ export type {
   SessionControllerLike,
   SessionEventLike,
   SessionMessagePart,
-} from './p2p-inbound.js'
+} from './peer-sessions.js'
 export {
   CONNECTION_STATES,
   LISTEN_STATES,
@@ -106,15 +122,16 @@ export type {
   StatusInput,
   StatusNotification,
 } from './adapter-status.js'
-export { SecretRefError, assertPeersResolvable, resolvePeers, staticCredentials } from './p2p-secrets.js'
-export type { CredentialsLike, PeerRef, ResolvedSecret } from './p2p-secrets.js'
+export { SecretRefError, assertPeersResolvable, resolvePeers, staticCredentials } from './adapters/p2p/p2p-secrets.js'
+export type { CredentialsLike, PeerRef, ResolvedSecret } from './adapters/p2p/p2p-secrets.js'
 export { BuildError, buildPipeline } from './build-pipeline.js'
 export type { BudgetVerdict, JudgeVerdict, MatchRule, PipelineDeps } from './build-pipeline.js'
-export { DEFAULT_SEND_TIMEOUT_MS, sendToPeer } from './p2p-send.js'
-export type { PeerTarget, SendFailure, SendFailureCode, SendInput, SendResult, SendSuccess } from './p2p-send.js'
+export { DEFAULT_SEND_TIMEOUT_MS, sendToPeer } from './adapters/p2p/p2p-send.js'
+export type { PeerTarget, P2PSendInput } from './adapters/p2p/p2p-send.js'
 export { DEFAULT_LOOP_IDLE_RESET_MS, DEFAULT_LOOP_MAX_TURNS, InboundGate } from './inbound-gate.js'
 export type { AdmitInput, GateDecision, GateOptions, GateReason, LoopConfig } from './inbound-gate.js'
 export { ChannelStats } from './channel-stats.js'
-export type { ChannelFailure, ChannelSnapshot, ChannelState } from './channel-stats.js'
-export { STATUS_ROUTE, hasForwardingHeaders, isLoopbackPeer } from './p2p-status.js'
-export type { AdapterReport, StatusReport } from './p2p-status.js'
+export { TurnStats } from './turn-stats.js'
+export type { TurnStatsSnapshot } from './turn-stats.js'
+export type { ChannelFailure, ChannelState } from './channel-stats.js'
+export { STATUS_ROUTE, hasForwardingHeaders, isLoopbackPeer } from './adapters/p2p/p2p-status.js'

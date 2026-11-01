@@ -1,55 +1,38 @@
+import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
-import { ConfigError, assertBindHost, validateConfig } from './config.js'
-import { DedupeTable } from './p2p-dedupe.js'
-import { DEFAULT_HOST, DEFAULT_PORT, startListener } from './p2p-listener.js'
-import type { ListenerConfig } from './p2p-listener.js'
-import type { CredentialsLike, PeerRef } from './p2p-secrets.js'
-import { assertPeersResolvable } from './p2p-secrets.js'
-import { PeerSessions } from './p2p-inbound.js'
-import type { InboundRequest, SessionControllerLike, SessionEventLike } from './p2p-inbound.js'
-import { sendToPeer } from './p2p-send.js'
-import { DEFAULT_SENT_AT_WINDOW_MS } from './p2p-protocol.js'
-import type { PeerTarget } from './p2p-send.js'
-import { DEFAULT_LOOP_IDLE_RESET_MS, DEFAULT_LOOP_MAX_TURNS, InboundGate } from './inbound-gate.js'
-import type { PolicyConfig } from './policy-config.js'
+import { adapterFactory } from './adapter-registry.js'
+import type { AdapterMount } from './adapter-registry.js'
+import { buildPipeline } from './build-pipeline.js'
+import type { PipelineDeps } from './build-pipeline.js'
+import { createLedger } from './budget-config.js'
+import type { BudgetConfig } from './budget-config.js'
+import type { Hold } from './budget-ledger.js'
+import { ClosedChains } from './chain-closer.js'
+import { ConfigError, validateConfig } from './config.js'
+import type { AdapterCheckSettings, AdapterHandle, ChannelAdapter, InboundMessage, InboundVerdict } from './contract.js'
+import { CHAIN_ID_MAX, GUIDANCE_MAX, REPLY_TARGET_MAX, REQUEST_ID_MAX, SESSION_KEY_MAX, tokenProblem } from './contract.js'
+import { createDeclineTool, createNoReplyTool } from './control-tools.js'
+import type { ControlPorts, PeerTurnRef } from './control-tools.js'
+import { ChainGuard, KeyGuard } from './event-keys.js'
+import { InboundGate } from './inbound-gate.js'
+import { InjectionLedger } from './inbound-guidance.js'
+import { PeerSessions } from './peer-sessions.js'
+import type { SessionControllerLike, SessionEventLike } from './peer-sessions.js'
+import { unboundReason, unboundRuleReason } from './pipeline-bindable.js'
 import type { PipelineNodeSpec, PipelineSettings } from './pipeline-config.js'
 import { DEFAULT_PIPELINE } from './pipeline-config.js'
 import type { PipelineLayer, PipelineScopes } from './pipeline-scopes.js'
 import { resolveAndCheck, resolvePipeline } from './pipeline-scopes.js'
 import { compilePolicy } from './policy-config.js'
-import { buildPipeline } from './build-pipeline.js'
-import type { PipelineDeps } from './build-pipeline.js'
-import { createLedger } from './budget-config.js'
-import type { BudgetConfig } from './budget-config.js'
-import { TurnBilling } from './turn-billing.js'
-import type { Hold } from './budget-ledger.js'
-
-import { cleanExcerpt, toP2PEvent } from './p2p-mapping.js'
-import { createWarn } from './warn.js'
-import { ChannelStats } from './channel-stats.js'
-import { StatusRegistry } from './p2p-status.js'
-import { unboundReason, unboundRuleReason } from './pipeline-bindable.js'
-import type { BotScope } from './session-pipeline.js'
-import { SessionPipelines } from './session-pipeline.js'
+import type { PolicyConfig } from './policy-config.js'
 import { PushRouter, createSendText } from './push-tool.js'
 import type { PushSource, SendTextTool } from './push-tool.js'
-import { ClosedChains } from './chain-closer.js'
-import { InjectionLedger, guidanceFor } from './inbound-guidance.js'
-import { createDeclineTool, createNoReplyTool } from './control-tools.js'
-import type { ControlPorts, PeerTurnRef } from './control-tools.js'
-
-/** One place that turns a configured peer into a send target, so a new field reaches every path. */
-function targetOf(peer: PeerRef): PeerTarget {
-  const url = (peer as PeerRef & { url?: string }).url
-  const host = peer.host
-  return {
-    instance: peer.instance,
-    secret: peer.secret,
-    ...(url === undefined ? {} : { url }),
-    ...(host === undefined ? {} : { host }),
-  }
-}
+import type { BotScope } from './session-pipeline.js'
+import { SessionPipelines } from './session-pipeline.js'
+import { TurnBilling } from './turn-billing.js'
+import { TurnStats } from './turn-stats.js'
+import { createWarn } from './warn.js'
 
 export interface PolicySettings extends PolicyConfig {
   relayLimit: number
@@ -60,16 +43,18 @@ export interface PolicySettings extends PolicyConfig {
   budget?: BudgetConfig | undefined
 }
 
-export interface AdapterConfig extends ListenerConfig {
-  kind?: 'p2p'
+export interface AdapterConfig {
+  kind?: string
   channel: string
   instance: string
-  /** Runs every peer turn in this existing session instead of one created per peer. */
+  botName: string
+  /** Runs every turn of this adapter in one existing session instead of one per address. */
   session?: string
   policy: PolicySettings
   pipeline?: PipelineLayer | undefined
-  dedupe?: { ttlMs?: number; limit?: number }
   status?: boolean
+  /** The transport block; only the adapter of this kind reads it. */
+  p2p?: Record<string, unknown>
 }
 
 export interface ChannelConfig {
@@ -109,23 +94,14 @@ export const Config: any = Schema.object({
   adapters: Schema
     .array(
       Schema.object({
-        kind: Schema.const('p2p').default('p2p'),
+        kind: Schema.string().default('p2p'),
         channel: Schema.string().required(),
         instance: Schema.string().required(),
         botName: Schema.string().required(),
         session: Schema.string(),
-        peers: Schema.array(
-          Schema.object({
-            instance: Schema.string().required(),
-            secret: Schema.string().required(),
-            url: Schema.string(),
-            botName: Schema.string(),
-            host: Schema.string(),
-          }),
-        ).default([]),
         policy: Schema.object({
-          relayLimit: Schema.number().default(DEFAULT_LOOP_MAX_TURNS),
-          relayResetMs: Schema.number().default(DEFAULT_LOOP_IDLE_RESET_MS),
+          relayLimit: Schema.number().default(3),
+          relayResetMs: Schema.number().default(300_000),
           deny: Schema.object({
             words: Schema.array(Schema.string()).default([]),
             regexes: Schema.array(Schema.string()).default([]),
@@ -143,86 +119,13 @@ export const Config: any = Schema.object({
           }).default(undefined as never),
         }).default({}),
         pipeline: (layerSchema as any).default(undefined),
-        inflightTtlMs: Schema.number().default(300_000),
-        sentAtWindowMs: Schema.number().default(DEFAULT_SENT_AT_WINDOW_MS),
-        maxBodyBytes: Schema.number().default(64 * 1024),
-        waitMs: Schema.number(),
-        listen: Schema.object({
-          host: Schema.string().default(DEFAULT_HOST),
-          port: Schema.number().default(DEFAULT_PORT),
-        }).default({}),
-        /** Loopback only, and refused once a forwarder rewrites the request; on unless turned off. */
         status: Schema.boolean().default(true),
-        dedupe: Schema.object({
-          ttlMs: Schema.number().default(7 * 24 * 60 * 60 * 1000),
-          limit: Schema.number().default(100_000),
-        }).default({}),
+        p2p: Schema.any(),
       }),
     )
     .default([]),
 })
 /* eslint-enable @typescript-eslint/no-explicit-any */
-
-function prepareAdapter(adapter: AdapterConfig, index: number, maxTurnMs: number): DedupeTable {
-  const path = (field: string): string[] => ['adapters', String(index), field]
-  assertBindHost(adapter.listen.host ?? DEFAULT_HOST, path('listen'))
-  const { relayLimit, relayResetMs } = adapter.policy
-  if (!Number.isInteger(relayLimit) || relayLimit < 1) {
-    throw new ConfigError(
-      `relayLimit must be a whole number of rounds, at least 1: ${relayLimit}`,
-      path('policy'),
-    )
-  }
-  if (!Number.isInteger(relayResetMs) || relayResetMs < 1) {
-    throw new ConfigError(
-      `relayResetMs must be a whole number of milliseconds, at least 1: ${relayResetMs}`,
-      path('policy'),
-    )
-  }
-  const budget = adapter.policy.budget
-  if (budget !== undefined && budget.capacity === undefined) {
-    throw new ConfigError('policy.budget.capacity is required', [...path('policy'), 'budget', 'capacity'])
-  }
-  if (budget?.softLimit !== undefined) {
-    throw new ConfigError(
-      'policy.budget.softLimit is not supported in this version: a soft limit is computed but nothing acts on it yet',
-      [...path('policy'), 'budget', 'softLimit'],
-    )
-  }
-  if (budget?.capacity !== undefined && (!Number.isInteger(budget.capacity) || budget.capacity < 1)) {
-    throw new ConfigError(
-      `budget capacity must be a whole number of points, at least 1: ${budget.capacity}`,
-      [...path('policy'), 'budget', 'capacity'],
-    )
-  }
-  for (const unsupported of ['score', 'judge', 'prepare'] as const) {
-    if (adapter.policy[unsupported] !== undefined) {
-      throw new ConfigError(
-        `policy.${unsupported} is not supported in this version: only deny and allow can be configured`,
-        [...path('policy'), unsupported],
-      )
-    }
-  }
-  const window = adapter.sentAtWindowMs ?? DEFAULT_SENT_AT_WINDOW_MS
-  if (!Number.isInteger(window) || window < 1) {
-    throw new ConfigError(
-      `sentAtWindowMs must be a whole number of milliseconds, at least 1: ${window}`,
-      path('sentAtWindowMs'),
-    )
-  }
-  if (adapter.inflightTtlMs <= maxTurnMs) {
-    throw new ConfigError(
-      `inflightTtlMs must exceed maxTurnMs: ${adapter.inflightTtlMs} <= ${maxTurnMs}`,
-      path('inflightTtlMs'),
-    )
-  }
-  return new DedupeTable({
-    ttlMs: adapter.dedupe?.ttlMs ?? 7 * 24 * 60 * 60 * 1000,
-    limit: adapter.dedupe?.limit ?? 100_000,
-    inflightTtlMs: adapter.inflightTtlMs,
-    maxTurnMs,
-  })
-}
 
 function stable(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`
@@ -322,7 +225,7 @@ export function checkPipelineScopes(config: ChannelConfig, warn: (message: strin
   for (const warning of warnings) warn(`dsbot-channel: pipeline warning: ${warning}`)
 }
 
-/** Collects what the host knows per bot: the pipeline it runs, the rules it can match, and the peers it addresses. */
+/** Collects what the host knows per bot: the pipeline it runs and the rules it can match. */
 interface BotFacts extends BotScope {
   /** The dependencies the base pipeline is bound with, taken from the adapter that supplied it. */
   deps: PipelineDeps
@@ -335,10 +238,9 @@ function botScopes(config: ChannelConfig): Map<string, BotFacts> {
     const compiled = compilePolicy(adapter.policy)
     const deny = (compiled.deps.denyRules ?? []).length > 0
     const allow = (compiled.deps.allowRules ?? []).length > 0
-    const peers = adapter.peers.map((peer) => peer.instance)
     const base = declaredNodes(config, adapter) ?? compiled.specs
     if (seen === undefined) {
-      bots.set(adapter.botName, { base, denyRules: deny, allowRules: allow, peers, deps: compiled.deps })
+      bots.set(adapter.botName, { base, denyRules: deny, allowRules: allow, deps: compiled.deps })
       continue
     }
     if (stable(seen.base) !== stable(base)) {
@@ -355,49 +257,132 @@ function botScopes(config: ChannelConfig): Map<string, BotFacts> {
     }
     seen.denyRules &&= deny
     seen.allowRules &&= allow
-    seen.peers = [...new Set([...seen.peers, ...peers])]
   }
   return bots
+}
+
+/** Refuses a transport that takes its own policy out of the core block. */
+function checkPolicy(adapter: AdapterConfig, index: number): void {
+  const path = (field: string): string[] => ['adapters', String(index), 'policy', field]
+  const { relayLimit, relayResetMs } = adapter.policy
+  if (!Number.isInteger(relayLimit) || relayLimit < 1) {
+    throw new ConfigError(`relayLimit must be a whole number of rounds, at least 1: ${relayLimit}`, path('relayLimit'))
+  }
+  if (!Number.isInteger(relayResetMs) || relayResetMs < 1) {
+    throw new ConfigError(
+      `relayResetMs must be a whole number of milliseconds, at least 1: ${relayResetMs}`,
+      path('relayResetMs'),
+    )
+  }
+  const budget = adapter.policy.budget
+  if (budget !== undefined && budget.capacity === undefined) {
+    throw new ConfigError('policy.budget.capacity is required', path('budget.capacity'))
+  }
+  if (budget?.softLimit !== undefined) {
+    throw new ConfigError(
+      'policy.budget.softLimit is not supported in this version: a soft limit is computed but nothing acts on it yet',
+      path('budget.softLimit'),
+    )
+  }
+  if (budget?.capacity !== undefined && (!Number.isInteger(budget.capacity) || budget.capacity < 1)) {
+    throw new ConfigError(
+      `budget capacity must be a whole number of points, at least 1: ${budget.capacity}`,
+      path('budget.capacity'),
+    )
+  }
+  for (const unsupported of ['score', 'judge', 'prepare'] as const) {
+    if (adapter.policy[unsupported] !== undefined) {
+      throw new ConfigError(
+        `policy.${unsupported} is not supported in this version: only deny and allow can be configured`,
+        path(unsupported),
+      )
+    }
+  }
+}
+
+/** One bot speaks with one voice: every adapter answering for it hands core the same guidance. */
+function checkGuidance(channels: readonly MountedChannel[]): void {
+  const byBot = new Map<string, { peer: string; group: string }>()
+  for (const { config, adapter } of channels) {
+    const guidance = adapter.guidance
+    for (const [field, text] of [
+      ['peer', guidance.peer],
+      ['group', guidance.group],
+    ] as const) {
+      if (typeof text !== 'string' || text.length === 0) {
+        throw new ConfigError(`guidance.${field} must be a non-empty string`, ['adapters', 'guidance', field])
+      }
+      if (Array.from(text).length > GUIDANCE_MAX) {
+        throw new ConfigError(`guidance.${field} is longer than ${GUIDANCE_MAX} characters`, [
+          'adapters',
+          'guidance',
+          field,
+        ])
+      }
+    }
+    const seen = byBot.get(config.botName)
+    if (seen === undefined) {
+      byBot.set(config.botName, { peer: guidance.peer, group: guidance.group })
+      continue
+    }
+    if (seen.peer !== guidance.peer || seen.group !== guidance.group) {
+      throw new ConfigError(
+        `two adapters answer for bot "${config.botName}" with different guidance; one bot speaks with one voice`,
+        ['adapters'],
+      )
+    }
+  }
+}
+
+interface MountedChannel {
+  config: AdapterConfig
+  adapter: ChannelAdapter
+  index: number
+}
+
+interface ChannelRuntime {
+  channel: MountedChannel
+  sessions: PeerSessions
+  gate: InboundGate
+  billing: TurnBilling
+  deps: PipelineDeps
 }
 
 /** Starts only the adapters the profile declares; an empty list starts nothing. */
 export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const config = validateConfig<ChannelConfig>(Config, raw)
   const warn = createWarn(ctx)
-  const settings: PipelineSettings = { maxTurnMs: config.pipeline.maxTurnMs, judgeTimeoutMs: config.pipeline.judgeTimeoutMs }
+  const settings: PipelineSettings = {
+    maxTurnMs: config.pipeline.maxTurnMs,
+    judgeTimeoutMs: config.pipeline.judgeTimeoutMs,
+  }
   checkPipelineSettings(settings)
   checkPipelineScopes(config, warn)
   const bots = botScopes(config)
   const pipelines = new SessionPipelines({ bots })
+  const channels = mountAdapters(config, settings, warn)
+  checkGuidance(channels)
+  const byBot = new Map<string, MountedChannel>()
+  for (const channel of channels) {
+    if (!byBot.has(channel.config.botName)) byBot.set(channel.config.botName, channel)
+  }
   ctx.provide('dsbot-channel.pipeline')
   ctx.set('dsbot-channel.pipeline', {
-    forSession: (botName: string, key: string, layer: PipelineLayer) => pipelines.forSession(botName, key, layer),
+    forSession: (botName: string, key: string, layer: PipelineLayer) => {
+      const channel = byBot.get(botName)
+      const problem = channel === undefined ? `no adapter answers for bot "${botName}"` : channel.adapter.checkSessionKey(key)
+      if (problem !== undefined) throw new ConfigError(problem, ['pipeline'])
+      pipelines.forSession(botName, key, layer)
+    },
     forgetSession: (botName: string, key: string) => pipelines.forgetSession(botName, key),
     pipelineFor: (botName: string, key?: string) => pipelines.pipelineFor(botName, key),
   })
   if (config.adapters.length === 0) return
-  const credentials = ctx.get('credentials') as CredentialsLike | undefined
-  if (!credentials?.resolve) {
+  const credentials = ctx.get('credentials') as
+    | { resolve?: (reference: string) => Promise<{ value: string } | undefined> }
+    | undefined
+  if (typeof credentials?.resolve !== 'function') {
     throw new ConfigError('the credentials service is required to resolve peer secrets', ['adapters'])
-  }
-  const seen = new Set<string>()
-  const pairs = config.adapters.map((adapter, index) => {
-    if (!adapter.botName) throw new ConfigError('botName is required for each adapter', ['adapters', String(index)])
-    if (seen.has(adapter.channel)) {
-      throw new ConfigError(`duplicate adapter channel: ${adapter.channel}`, [
-        'adapters',
-        String(index),
-        'channel',
-      ])
-    }
-    seen.add(adapter.channel)
-    return { adapter, index, table: prepareAdapter(adapter, index, settings.maxTurnMs) }
-  })
-  for (const { adapter, index } of pairs) {
-    if (adapter.peers.length === 0) {
-      throw new ConfigError('at least one peer is required for each adapter', ['adapters', String(index), 'peers'])
-    }
-    await assertPeersResolvable(adapter.peers, credentials)
   }
   const controller = ctx.get('sessionController') as SessionControllerLike | undefined
   if (controller === undefined || typeof controller.create !== 'function' || typeof controller.prompt !== 'function') {
@@ -405,207 +390,214 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   }
   const observe = (listener: (sessionId: string, event: SessionEventLike) => void): (() => void) =>
     ctx.on('session/event', (session, event) => listener(session.id, event as unknown as SessionEventLike))
-  const registry = new StatusRegistry()
   const sources = new Map<string, PushSource>()
-  const statsByChannel = new Map<string, ChannelStats>()
   const chains = new ClosedChains()
   const injected = new InjectionLedger()
   const activeTurns = new Map<string, PeerTurnRef>()
-  const started = await Promise.all(
-    pairs.map(({ adapter, table }) => {
+  const eventKeys = new KeyGuard()
+  const chainKeys = new ChainGuard()
+  const turns = new TurnStats()
+  const resolveSecret = async (reference: string): Promise<string | undefined> => {
+    const found = await credentials.resolve?.(reference)
+    return found?.value
+  }
+
+  const runTurn = async (runtime: ChannelRuntime, message: InboundMessage, sessionId: string): Promise<void> => {
+    const { config: adapter, adapter: transport } = runtime.channel
+    const turnRef: PeerTurnRef = {
+      eventId: message.requestId,
+      chainId: message.chainId,
+      channel: adapter.channel,
+      target: message.replyTarget,
+      sender: message.author.senderId,
+      suppressed: message.suppressed === true || chains.isClosed(message.chainId),
+      pushed: false,
+    }
+    activeTurns.set(sessionId, turnRef)
+    turns.started()
+    let hold: Hold | undefined
+    try {
+      hold = runtime.billing.begin(adapter.botName, message.replyTarget, sessionId, message.eventKey)
+      const guidance = injected.claim(sessionId)
+        ? transport.guidance[message.source.scope === 'group' ? 'group' : 'peer']
+        : ''
+      const turn = await runtime.sessions.runTurn({
+        peer: message.sessionKey,
+        requestId: message.requestId,
+        text: guidance.length === 0 ? message.body.text : `${guidance}\n\n${message.body.text}`,
+      })
+      if (turnRef.suppressed) {
+        turns.suppressed()
+        runtime.billing.refund(hold)
+        hold = undefined
+        return
+      }
+      if (turnRef.pushed) {
+        turns.pushed()
+        runtime.billing.accept(hold)
+        hold = undefined
+        return
+      }
+      if (turn.text.length === 0) {
+        warn(`dsbot-channel: the turn for ${message.requestId} from ${message.replyTarget} ended with no text and no tool call`)
+        turns.empty()
+        runtime.billing.reject(hold)
+        hold = undefined
+        return
+      }
+      const sent = await transport.send({
+        target: message.replyTarget,
+        to: message.author.senderId,
+        body: turn.text,
+        eventId: `reply:${randomUUID()}`,
+        chainId: message.chainId,
+        sender: adapter.botName,
+        instance: adapter.instance,
+        inReplyTo: message.requestId,
+        inReplyToText: message.rawText,
+      })
+      if (sent.ok) {
+        turns.replied()
+        runtime.gate.recordReply(adapter.botName, message.replyTarget)
+        runtime.billing.accept(hold)
+        hold = undefined
+        return
+      }
+      turns.sendFailed(sent.code)
+      runtime.billing.reject(hold)
+      hold = undefined
+      warn(`dsbot-channel: reply to ${message.replyTarget} was not delivered: ${sent.code} ${sent.reason}`)
+    } finally {
+      if (hold !== undefined) runtime.billing.refund(hold)
+    }
+  }
+
+  const reporting = new Set(channels.map((channel) => channel.adapter))
+  const started: AdapterHandle[] = []
+  ctx.effect(() => async () => {
+    await Promise.allSettled(started.map((handle) => handle.stop()))
+    reporting.clear()
+    started.length = 0
+  }, 'dsbot-channel: peer listeners')
+  try {
+    for (const channel of channels) {
+      const { config: adapter, adapter: transport } = channel
       const sessions = new PeerSessions({
         controller,
         observe,
         ...(adapter.session === undefined ? {} : { session: adapter.session }),
       })
-      const stats = new ChannelStats()
-      statsByChannel.set(adapter.channel, stats)
-      registry.register(adapter.channel, () => ({
-        channel: adapter.channel,
-        bot: adapter.botName,
-        instance: adapter.instance,
-        snapshot: stats.snapshot(),
-      }))
       const compiled = compilePolicy(adapter.policy)
       const budget = adapter.policy.budget
-      const ledger =
-        budget === undefined
-          ? undefined
-          : createLedger(budget, { charges: { ttlMs: adapter.sentAtWindowMs ?? DEFAULT_SENT_AT_WINDOW_MS } })
-      const billing = new TurnBilling({ ledger })
-      const gate = new InboundGate({
-        loop: { relayLimit: adapter.policy.relayLimit, relayResetMs: adapter.policy.relayResetMs },
-        ledger,
-      })
-      const handOff = (request: InboundRequest): void => {
-        const event = toP2PEvent({ ...request, messageId: `p2p-${request.eventId}` })
-        let hold: Hold | undefined
-        const reply = async (): Promise<void> => {
-          const sessionId = await sessions.sessionFor(request.instance)
-          sources.set(sessionId, { channel: adapter.channel, peer: request.instance })
-          const specs = pipelines.pipelineFor(adapter.botName, `p2p:${request.instance}`)
-          const deps = bots.get(adapter.botName)?.deps ?? compiled.deps
-          const pipeline = specs.length > 0 ? buildPipeline(specs, deps, settings) : undefined
-          const decision = await gate.admit({
-            event: {
-              eventKey: event.meta.derived.eventKey,
-              scope: event.source.scope,
-              mentioned: event.meta.transport.mentioned,
-              text: request.body,
-              peer: request.instance,
-            },
-            peer: request.instance,
-            botId: adapter.botName,
-            session: sessionId,
-            ...(pipeline === undefined ? {} : { pipeline }),
-          })
-          if (!decision.allow) {
-            const detail = decision.detail === undefined ? '' : ` (${decision.detail})`
-            warn(
-              `dsbot-channel: kept ${request.eventId} from ${request.instance} out of a turn: ${decision.reason}${detail}`,
-            )
-            return
-          }
-          const turnRef: PeerTurnRef = {
-            eventId: request.eventId,
-            channel: adapter.channel,
-            peer: request.instance,
-            sender: request.sender,
-            suppressed: request.status === 'declined' || chains.isClosed(request.eventId),
-            pushed: false,
-          }
-          activeTurns.set(sessionId, turnRef)
-          hold = billing.begin(adapter.botName, request.instance, sessionId, event.meta.derived.eventKey)
-          const guidance = injected.claim(sessionId) ? guidanceFor(event.source.scope) : ''
-          const turn = await sessions.runTurn({
-            peer: request.instance,
-            requestId: request.eventId,
-            text: guidance.length === 0 ? event.body.text : `${guidance}\n\n${event.body.text}`,
-          })
-          if (turnRef.suppressed) {
-            billing.refund(hold)
-            hold = undefined
-            return
-          }
-          if (turnRef.pushed) {
-            billing.accept(hold)
-            hold = undefined
-            return
-          }
-          if (turn.text.length === 0) {
-            warn(
-              `dsbot-channel: the turn for ${request.eventId} from ${request.instance} ended with no text and no tool call`,
-            )
-            stats.emptyTurn()
-            billing.reject(hold)
-            hold = undefined
-            return
-          }
-          const configured = adapter.peers.find((candidate) => candidate.instance === request.instance)
-          if (configured === undefined) {
-            billing.reject(hold)
-            hold = undefined
-            return
-          }
-          const peer = targetOf(configured)
-          const sent = await sendToPeer({
-            peer,
-            credentials,
-            to: request.sender,
-            body: turn.text,
-            eventId: `reply:${request.eventId}`,
-            sender: adapter.botName,
-            instance: adapter.instance,
-            inReplyTo: request.eventId,
-            inReplyToExcerpt: cleanExcerpt(request.body),
-          })
-          if (!sent.ok) stats.sendFailed(sent.code)
-          if (sent.ok) {
-            gate.recordReply(adapter.botName, request.instance)
-            billing.accept(hold)
-            hold = undefined
-            return
-          }
-          billing.reject(hold)
-          hold = undefined
-          warn(`dsbot-channel: reply to ${request.instance} was not delivered: ${sent.code} ${sent.reason}`)
-        }
-        void reply().catch((error: unknown) => {
-          billing.refund(hold)
-          warn(`dsbot-channel: peer turn for ${request.instance} failed: ${String(error)}`)
-        })
+      const ledger = budget === undefined ? undefined : createLedger(budget)
+      const runtime: ChannelRuntime = {
+        channel,
+        sessions,
+        gate: new InboundGate({
+          loop: { relayLimit: adapter.policy.relayLimit, relayResetMs: adapter.policy.relayResetMs },
+          ledger,
+        }),
+        billing: new TurnBilling({ ledger }),
+        deps: bots.get(adapter.botName)?.deps ?? compiled.deps,
       }
-      return startListener({
-        config: { ...adapter, credentials },
-        table,
-        onMessage: handOff,
-        stats,
-        ...(adapter.status === true
-          ? {
-              status: {
-                report: () => ({
-                  channel: adapter.channel,
-                  bot: adapter.botName,
-                  instance: adapter.instance,
-                  snapshot: stats.snapshot(),
-                }),
-              },
-            }
-          : {}),
-        onError: (error, request) => {
-          warn(`dsbot-channel: handing off ${request.eventId} from ${request.instance} failed: ${String(error)}`)
-        },
-      })
-    }),
-  )
+      const onMessage = async (message: InboundMessage): Promise<InboundVerdict> => {
+        const keyProblem =
+          tokenProblem('session key', message.sessionKey, SESSION_KEY_MAX) ?? transport.checkSessionKey(message.sessionKey)
+        if (keyProblem !== undefined) return { ok: false, code: 'session_key_invalid', reason: keyProblem }
+        const requestProblem = tokenProblem('requestId', message.requestId, REQUEST_ID_MAX)
+        if (requestProblem !== undefined) return { ok: false, code: 'request_id_invalid', reason: requestProblem }
+        const targetProblem = tokenProblem('replyTarget', message.replyTarget, REPLY_TARGET_MAX)
+        if (targetProblem !== undefined) return { ok: false, code: 'reply_target_invalid', reason: targetProblem }
+        const conflict = eventKeys.check(message.eventKey, message.body.text)
+        if (conflict !== undefined) return { ok: false, code: 'event_key_conflict', reason: conflict }
+        const chainProblem = tokenProblem('chainId', message.chainId, CHAIN_ID_MAX)
+        if (chainProblem !== undefined) return { ok: false, code: 'chain_conflict', reason: chainProblem }
+        const chainConflict = chainKeys.check(message.chainId, message.eventKey)
+        if (chainConflict !== undefined) return { ok: false, code: 'chain_conflict', reason: chainConflict }
+        const sessionId = await sessions.sessionFor(message.sessionKey)
+        sources.set(sessionId, {
+          channel: adapter.channel,
+          replyTarget: message.replyTarget,
+          sender: message.author.senderId,
+        })
+        const specs = pipelines.pipelineFor(adapter.botName, message.sessionKey)
+        const pipeline = specs.length > 0 ? buildPipeline(specs, runtime.deps, settings) : undefined
+        const decision = await runtime.gate.admit({
+          event: {
+            eventKey: message.eventKey,
+            scope: message.source.scope,
+            mentioned: message.transport.mentioned,
+            text: message.rawText,
+            ...(message.source.peer === null ? {} : { peer: message.source.peer }),
+          },
+          peer: message.source.peer ?? message.replyTarget,
+          botId: adapter.botName,
+          session: sessionId,
+          ...(pipeline === undefined ? {} : { pipeline }),
+        })
+        if (!decision.allow) {
+          const detail = decision.detail === undefined ? '' : ` (${decision.detail})`
+          return { ok: false, code: 'rejected', reason: `${decision.reason}${detail}` }
+        }
+        setTimeout(() => {
+          void runTurn(runtime, message, sessionId).catch((error: unknown) => {
+            turns.failed()
+            warn(`dsbot-channel: peer turn for ${message.replyTarget} failed: ${String(error)}`)
+          })
+        }, 0)
+        return { ok: true }
+      }
+      started.push(await transport.start({ onMessage, resolveSecret }))
+    }
+  } catch (error) {
+    await Promise.allSettled(started.map((handle) => handle.stop()))
+    throw error
+  }
   ctx.provide('dsbot-channel.status')
-  ctx.set('dsbot-channel.status', { snapshot: () => registry.snapshot() })
+  ctx.set('dsbot-channel.status', {
+    snapshot: () => ({ sampledAt: Date.now(), adapters: [...reporting].map((adapter) => adapter.status()) }),
+  })
+  ctx.provide('dsbot-channel.turns')
+  ctx.set('dsbot-channel.turns', { snapshot: () => turns.snapshot() })
   ctx.provide('dsbot-channel.peers')
   ctx.set('dsbot-channel.peers', started)
   type AnyTool = SendTextTool | ReturnType<typeof createNoReplyTool> | ReturnType<typeof createDeclineTool>
   const tools = ctx.get('tools') as { register: (definition: AnyTool) => () => void } | undefined
   if (tools !== undefined && typeof tools.register === 'function') {
-    const byChannel = new Map(pairs.map(({ adapter }) => [adapter.channel, adapter]))
+    const byChannel = new Map(channels.map((channel) => [channel.config.channel, channel]))
     const router = new PushRouter({
-      channels: pairs.map(({ adapter }) => ({
-        channel: adapter.channel,
-        instance: adapter.instance,
-        botName: adapter.botName,
-        peers: adapter.peers.map((peer) => ({
-          instance: peer.instance,
-          ...(peer.botName === undefined ? {} : { botName: peer.botName }),
-          ...(peer.host === undefined ? {} : { host: peer.host }),
-        })),
+      channels: channels.map((channel) => ({
+        channel: channel.config.channel,
+        instance: channel.config.instance,
+        botName: channel.config.botName,
       })),
       source: (sessionId) => (sessionId === undefined ? undefined : sources.get(sessionId)),
+      checkTarget: (channel, target) => byChannel.get(channel)?.adapter.checkTarget(target),
+      describeTargets: (channel) => byChannel.get(channel)?.adapter.describeTargets() ?? '',
       delivered: (sessionId) => {
         if (sessionId === undefined) return
         const turn = activeTurns.get(sessionId)
         if (turn !== undefined) turn.pushed = true
       },
       send: async (delivery) => {
-        const adapter = byChannel.get(delivery.channel)
-        const peer = adapter?.peers.find((candidate) => candidate.instance === delivery.peer)
-        if (adapter === undefined || peer === undefined) {
-          statsByChannel.get(delivery.channel)?.sendFailed('no_url')
+        const channel = byChannel.get(delivery.channel)
+        if (channel === undefined) {
           return {
             ok: false,
             code: 'no_url',
             retryable: false,
-            reason: `peer "${delivery.peer}" is gone from channel "${delivery.channel}"`,
+            reason: `channel "${delivery.channel}" is no longer configured`,
           }
         }
-        const answered = await sendToPeer({
-          peer: targetOf(peer),
-          credentials,
+        return channel.adapter.send({
+          target: delivery.target,
           to: delivery.to,
           body: delivery.text,
           eventId: delivery.eventId,
-          sender: adapter.botName,
-          instance: adapter.instance,
+          chainId: delivery.eventId,
+          sender: channel.config.botName,
+          instance: channel.config.instance,
         })
-        if (!answered.ok) statsByChannel.get(delivery.channel)?.sendFailed(answered.code)
-        return answered
       },
     })
     ctx.effect(() => tools.register(createSendText(router)), 'dsbot-channel: send_text tool')
@@ -616,33 +608,51 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         chains.close(eventId)
       },
       decline: async (turn, reason) => {
-        const adapter = byChannel.get(turn.channel)
-        const peer = adapter?.peers.find((candidate) => candidate.instance === turn.peer)
-        if (adapter === undefined || peer === undefined) {
-          return { ok: false, code: 'no_url', reason: `peer "${turn.peer}" is gone from channel "${turn.channel}"` }
+        const channel = byChannel.get(turn.channel)
+        if (channel === undefined) {
+          return { ok: false, code: 'no_url', reason: `channel "${turn.channel}" is gone` }
         }
-        const sent = await sendToPeer({
-          peer: targetOf(peer),
-          credentials,
+        const sent = await channel.adapter.send({
+          target: turn.target,
           to: turn.sender,
           body: '',
           eventId: `decline:${turn.eventId}`,
-          sender: adapter.botName,
-          instance: adapter.instance,
+          chainId: turn.chainId,
+          sender: channel.config.botName,
+          instance: channel.config.instance,
           status: 'declined',
           final: true,
           ...(reason === undefined ? {} : { reason }),
         })
-        if (!sent.ok) statsByChannel.get(turn.channel)?.sendFailed(sent.code)
         return sent.ok ? { ok: true } : { ok: false, code: sent.code, reason: sent.reason }
       },
     }
     ctx.effect(() => tools.register(createNoReplyTool(ports)), 'dsbot-channel: no_reply tool')
     ctx.effect(() => tools.register(createDeclineTool(ports)), 'dsbot-channel: decline tool')
   }
-  ctx.effect(() => async () => {
-    registry.clear()
-    ctx.set('dsbot-channel.peers', [])
-    await Promise.all(started.map((listener) => listener.close()))
-  }, 'dsbot-channel: peer listeners')
+}
+
+/** Creates every adapter the profile declares, before any of them opens a socket. */
+function mountAdapters(config: ChannelConfig, settings: AdapterCheckSettings, warn: (message: string) => void): MountedChannel[] {
+  const seen = new Set<string>()
+  return config.adapters.map((adapter, index) => {
+    if (!adapter.botName) throw new ConfigError('botName is required for each adapter', ['adapters', String(index)])
+    if (seen.has(adapter.channel)) {
+      throw new ConfigError(`duplicate adapter channel: ${adapter.channel}`, ['adapters', String(index), 'channel'])
+    }
+    seen.add(adapter.channel)
+    checkPolicy(adapter, index)
+    const kind = adapter.kind ?? 'p2p'
+    const mount: AdapterMount = {
+      kind,
+      channel: adapter.channel,
+      instance: adapter.instance,
+      botName: adapter.botName,
+      transport: adapter.p2p ?? {},
+      ...(adapter.status === undefined ? {} : { status: adapter.status }),
+    }
+    const transport = adapterFactory(kind)(mount, { warn })
+    transport.checkConfig(settings)
+    return { config: adapter, adapter: transport, index }
+  })
 }

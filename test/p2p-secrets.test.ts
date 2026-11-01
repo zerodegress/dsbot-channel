@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'vitest'
-import { SecretRefError, assertPeersResolvable, resolvePeers } from '../src/p2p-secrets.js'
-import type { CredentialsLike } from '../src/p2p-secrets.js'
-import { DedupeTable } from '../src/p2p-dedupe.js'
-import { handleMessage } from '../src/p2p-protocol.js'
-import { signEnvelope } from '../src/p2p-auth.js'
-import type { Envelope } from '../src/p2p-auth.js'
+import { SecretRefError, assertPeersResolvable, resolvePeers } from '../src/adapters/p2p/p2p-secrets.js'
+import type { CredentialsLike } from '../src/adapters/p2p/p2p-secrets.js'
+import { DedupeTable } from '../src/adapters/p2p/p2p-dedupe.js'
+import { handleMessage } from '../src/adapters/p2p/p2p-protocol.js'
+import { signEnvelope } from '../src/adapters/p2p/p2p-auth.js'
+import type { Envelope } from '../src/adapters/p2p/p2p-auth.js'
 
 const refs = [
   { instance: 'peer-a', secret: 'P2P_A_SECRET' },
@@ -97,7 +97,7 @@ const signed = (secretValue: string, body: Record<string, unknown>) => ({
 
 describe('the wire protocol resolves at request time', () => {
   const table = () => new DedupeTable({ ttlMs: 604_800_000, limit: 100_000 })
-  const payload = { eventId: 'e1', to: 'self-bot', sender: 'bot-a', instance: 'peer-a', body: 'hi', sentAt: 1_700_000_000_000 }
+  const payload = { eventId: 'e1', chainId: 'e1', to: 'self-bot', sender: 'bot-a', instance: 'peer-a', body: 'hi', sentAt: 1_700_000_000_000 }
   const base = { botName: 'self-bot', peers: refs, inflightTtlMs: 300_000, maxBodyBytes: 64 * 1024, now: () => 1_700_000_000_000 }
 
   test('authenticates with the resolved value', async () => {

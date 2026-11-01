@@ -1,5 +1,5 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { SendFailureCode, SendResult } from './p2p-send.js'
+import type { SendFailureCode, SendResult } from './contract.js'
 
 export const PUSH_WINDOW_MS = 10 * 60 * 1000
 export const PUSH_SCOPES = ['c2c', 'group', 'p2p'] as const
@@ -7,22 +7,18 @@ export const PUSH_SCOPE = 'p2p'
 
 export type PushCode = SendFailureCode | 'unknown_channel' | 'unknown_target' | 'no_source' | 'no_target' | 'unsupported_scope'
 
-export interface PushPeer {
-  instance: string
-  botName?: string
-  host?: string
-}
-
 export interface PushChannel {
   channel: string
   instance: string
   botName: string
-  peers: PushPeer[]
 }
 
 export interface PushSource {
   channel: string
-  peer: string
+  /** The address this session answers on; the adapter gave it to core unparsed. */
+  replyTarget: string
+  /** The bot identity that last messaged this session, when the transport reported one. */
+  sender?: string | undefined
 }
 
 export interface PushRequest {
@@ -52,8 +48,10 @@ export type PushResult = PushSent | PushFailed
 
 export interface PushDelivery {
   channel: string
-  peer: string
-  to: string
+  /** The adapter's own address for the recipient. */
+  target: string
+  /** The bot identity the message is addressed to, when core knows it. */
+  to?: string | undefined
   text: string
   eventId: string
 }
@@ -62,6 +60,10 @@ export interface PushRouterOptions {
   channels: PushChannel[]
   send: (delivery: PushDelivery) => Promise<SendResult>
   source: (sessionId: string | undefined) => PushSource | undefined
+  /** Asks the adapter whether it can address this target, and why not. */
+  checkTarget: (channel: string, target: string) => string | undefined
+  /** The adapter's own one-line list of addresses, for the tool description and errors. */
+  describeTargets: (channel: string) => string
   /** Called after a push is delivered, so the turn that asked for it knows not to answer twice. */
   delivered?: ((sessionId: string | undefined) => void) | undefined
   now?: (() => number) | undefined
@@ -72,11 +74,13 @@ function fail(code: PushCode, retryable: boolean, reason: string): PushFailed {
   return { ok: false, code, retryable, reason }
 }
 
-/** Resolves an address to one peer, and keeps a push idempotent without charging the wire id. */
+/** Routes an active push to the adapter that owns the address. */
 export class PushRouter {
   readonly #channels: PushChannel[]
   readonly #send: PushRouterOptions['send']
   readonly #source: PushRouterOptions['source']
+  readonly #checkTarget: PushRouterOptions['checkTarget']
+  readonly #describeTargets: PushRouterOptions['describeTargets']
   readonly #delivered: PushRouterOptions['delivered']
   readonly #now: () => number
   readonly #newId: () => string
@@ -86,6 +90,8 @@ export class PushRouter {
     this.#channels = options.channels
     this.#send = options.send
     this.#source = options.source
+    this.#checkTarget = options.checkTarget
+    this.#describeTargets = options.describeTargets
     this.#delivered = options.delivered
     this.#now = options.now ?? Date.now
     this.#newId = options.newId ?? (() => crypto.randomUUID())
@@ -93,6 +99,16 @@ export class PushRouter {
 
   get channels(): readonly PushChannel[] {
     return this.#channels
+  }
+
+  /** The channel-by-channel description the tool hands the model. */
+  describe(): string {
+    if (this.#channels.length === 0) return 'No channel is configured, so this bot cannot send.'
+    const lines = this.#channels.map((channel) => {
+      const targets = this.#describeTargets(channel.channel)
+      return `${channel.channel} (addresses: ${targets.length === 0 ? 'none' : targets})`
+    })
+    return `Channels: ${lines.join('; ')}.`
   }
 
   #live(key: string): PushSent | undefined {
@@ -105,7 +121,10 @@ export class PushRouter {
     return entry.result
   }
 
-  #address(request: PushRequest, sessionId: string | undefined): { channel: PushChannel; peer: PushPeer } | PushFailed {
+  #address(
+    request: PushRequest,
+    sessionId: string | undefined,
+  ): { channel: PushChannel; target: string; to?: string } | PushFailed {
     if (request.scope !== undefined && request.scope !== PUSH_SCOPE) {
       const known = PUSH_SCOPES.join(', ')
       return fail('unsupported_scope', false, `a peer link carries "${PUSH_SCOPE}" only, not "${request.scope}"; scopes: ${known}`)
@@ -123,19 +142,24 @@ export class PushRouter {
         return fail('unknown_channel', false, `channel "${request.channel}" is not this bot's; known: ${known}`)
       }
     }
-    const wanted = request.target ?? (source !== undefined && source.channel === channel.channel ? source.peer : undefined)
-    if (wanted === undefined) {
-      return fail('no_target', false, `channel "${channel.channel}" has no peer to inherit; name a target`)
+    const inherited = source !== undefined && source.channel === channel.channel ? source : undefined
+    const target = request.target ?? inherited?.replyTarget
+    if (target === undefined) {
+      return fail('no_target', false, `channel "${channel.channel}" has no address to inherit; name a target`)
     }
-    const peer = channel.peers.find((candidate) => candidate.instance === wanted)
-    if (peer === undefined) {
-      const known = channel.peers.map((candidate) => candidate.instance).join(', ')
-      return fail('unknown_target', false, `channel "${channel.channel}" has no peer "${wanted}"; known: ${known}`)
+    const problem = this.#checkTarget(channel.channel, target)
+    if (problem !== undefined) {
+      return fail(
+        'unknown_target',
+        false,
+        `channel "${channel.channel}" cannot address "${target}": ${problem}; ${this.#describeTargets(channel.channel)}`,
+      )
     }
-    if (peer.botName === undefined || peer.botName.length === 0) {
-      return fail('unknown_target', false, `peer "${wanted}" has no botName, so an active push has no address`)
+    return {
+      channel,
+      target,
+      ...(target === inherited?.replyTarget && inherited?.sender !== undefined ? { to: inherited.sender } : {}),
     }
-    return { channel, peer }
   }
 
   async push(request: PushRequest, sessionId?: string): Promise<PushResult> {
@@ -146,12 +170,12 @@ export class PushRouter {
     }
     const addressed = this.#address(request, sessionId)
     if ('ok' in addressed) return addressed
-    const { channel, peer } = addressed
+    const { channel, target, to } = addressed
     const eventId = `push:${this.#newId()}`
     const sent = await this.#send({
       channel: channel.channel,
-      peer: peer.instance,
-      to: peer.botName as string,
+      target,
+      ...(to === undefined ? {} : { to }),
       text: request.text,
       eventId,
     })
@@ -161,7 +185,7 @@ export class PushRouter {
       messageId: sent.messageId,
       channel: channel.channel,
       scope: PUSH_SCOPE,
-      target: peer.instance,
+      target,
     }
     if (key !== undefined) this.#keys.set(key, { result, at: this.#now() })
     this.#delivered?.(sessionId)
@@ -169,25 +193,16 @@ export class PushRouter {
   }
 }
 
-export function describeChannels(channels: readonly PushChannel[]): string {
-  if (channels.length === 0) return 'No channel is configured, so this bot cannot send.'
-  const lines = channels.map((channel) => {
-    const peers = channel.peers.map((peer) => peer.instance).join(', ')
-    return `${channel.channel} (peers: ${peers.length === 0 ? 'none' : peers})`
-  })
-  return `Channels: ${lines.join('; ')}.`
-}
-
 /** Builds the send_text tool: one exit for an active push, the same sender as a reply. */
 export function createSendText(router: PushRouter) {
   return defineTool({
     name: 'send_text',
-    description: `Send a text message to a peer over a peer link. ${describeChannels(router.channels)} Without a channel the last peer that messaged this session is used; a target names a peer instance.`,
+    description: `Send a text message to a peer over a peer link. ${router.describe()} Without a channel the last peer that messaged this session is used; a target names an address on that channel.`,
     parameters: {
       text: { type: 'string', required: true, description: 'The message body to deliver' },
       channel: { type: 'string', description: 'Adapter instance to send through, e.g. p2p:orca. Omit to answer the current peer' },
       scope: { type: 'string', enum: [...PUSH_SCOPES], description: `Where the message lands; a peer link carries "${PUSH_SCOPE}" only` },
-      target: { type: 'string', description: 'Peer instance on that channel, e.g. seal' },
+      target: { type: 'string', description: 'Address on that channel, as the channel names it' },
       idempotencyKey: { type: 'string', description: 'Repeat this call safely within ten minutes; only a delivered push holds the key' },
     },
     output: {

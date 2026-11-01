@@ -3,8 +3,8 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
-import { staticCredentials } from '../src/p2p-secrets.js'
-import { sendToPeer } from '../src/p2p-send.js'
+import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
+import { sendToPeer } from '../src/adapters/p2p/p2p-send.js'
 
 const REF = '{{SECRET_9m2xr7qd}}'
 const credentials = staticCredentials({ [REF]: 'shared-value' })
@@ -96,13 +96,15 @@ async function mountReceiver(): Promise<Mounted> {
   const fork = await ctx.plugin(entry, {
     adapters: [
       {
-        channel: 'p2p:b',
-        instance: 'inst-b',
-        botName: 'bot-b',
-        peers: [{ instance: 'inst-a', secret: REF }],
-        policy: { deny: { words: ['spam'] }, allow: { peers: ['inst-a'] } },
-        listen: { host: '127.0.0.1', port },
-      },
+channel: 'p2p:b',
+instance: 'inst-b',
+botName: 'bot-b',
+p2p: {
+  peers: [{ instance: 'inst-a', secret: REF }],
+  listen: { host: '127.0.0.1', port }
+},
+policy: { deny: { words: ['spam'] }, allow: { peers: ['inst-a'] } }
+},
     ],
   })
   forks.push(fork)

@@ -4,7 +4,7 @@ import entry from '../src/index.js'
 import { Config, checkPipelineScopes, checkPipelineSettings } from '../src/plugin.js'
 import type { ChannelConfig } from '../src/plugin.js'
 import { ConfigError } from '../src/config.js'
-import { staticCredentials } from '../src/p2p-secrets.js'
+import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
 
 const REF = '{{SECRET_pq7x2m4a}}'
 
@@ -29,14 +29,24 @@ async function mount(config: Record<string, unknown>): Promise<Context> {
   return ctx
 }
 
-const adapter = (overrides: Record<string, unknown> = {}) => ({
-  channel: 'p2p:self',
-  instance: 'inst-a',
-  botName: 'bot-a',
-  peers: [{ instance: 'inst-b', secret: REF }],
-  listen: { host: '127.0.0.1', port: 0 },
-  ...overrides,
-})
+const adapter = (overrides: Record<string, unknown> = {}) => {
+  const { peers, listen, dedupe, inflightTtlMs, sentAtWindowMs, maxBodyBytes, waitMs, ...rest } = overrides
+  return {
+    channel: 'p2p:self',
+    instance: 'inst-a',
+    botName: 'bot-a',
+    p2p: {
+      peers: peers ?? [{ instance: 'inst-b', secret: REF }],
+      listen: listen ?? { host: '127.0.0.1', port: 0 },
+      ...(dedupe === undefined ? {} : { dedupe }),
+      ...(inflightTtlMs === undefined ? {} : { inflightTtlMs }),
+      ...(sentAtWindowMs === undefined ? {} : { sentAtWindowMs }),
+      ...(maxBodyBytes === undefined ? {} : { maxBodyBytes }),
+      ...(waitMs === undefined ? {} : { waitMs }),
+    },
+    ...rest,
+  }
+}
 
 const node = (id: string, type: string) => ({ id, type })
 

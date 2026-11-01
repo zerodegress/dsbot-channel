@@ -1,13 +1,6 @@
 export const CHAIN_TTL_MS = 60 * 60 * 1000
 
-/** Strips the reply markers a relay adds, so one conversation keeps one chain key. */
-export function baseEventId(eventId: string): string {
-  let base = eventId
-  while (base.startsWith('reply:')) base = base.slice('reply:'.length)
-  return base.length === 0 ? eventId : base
-}
-
-/** Remembers which conversations were closed, so a closed chain cannot start again. */
+/** Remembers which conversations were closed, keyed by the chain root the adapter supplies. */
 export class ClosedChains {
   readonly #closed = new Map<string, number>()
   readonly #now: () => number
@@ -18,11 +11,10 @@ export class ClosedChains {
     this.#ttlMs = options.ttlMs ?? CHAIN_TTL_MS
   }
 
-  close(eventId: string): string {
+  close(chainId: string): string {
     this.#sweep()
-    const key = baseEventId(eventId)
-    this.#closed.set(key, this.#now())
-    return key
+    this.#closed.set(chainId, this.#now())
+    return chainId
   }
 
   #sweep(): void {
@@ -32,12 +24,11 @@ export class ClosedChains {
     }
   }
 
-  isClosed(eventId: string): boolean {
-    const key = baseEventId(eventId)
-    const at = this.#closed.get(key)
+  isClosed(chainId: string): boolean {
+    const at = this.#closed.get(chainId)
     if (at === undefined) return false
     if (this.#now() - at >= this.#ttlMs) {
-      this.#closed.delete(key)
+      this.#closed.delete(chainId)
       return false
     }
     return true

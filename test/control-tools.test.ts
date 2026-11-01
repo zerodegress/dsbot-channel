@@ -6,7 +6,7 @@ function harness(options: { declined?: { ok: boolean; code?: string; reason?: st
   const closed: string[] = []
   const declined: { turn: PeerTurnRef; reason: string | undefined }[] = []
   const concluded: number[] = []
-  const turn: PeerTurnRef = { eventId: 'probe-1', channel: 'p2p:orca', peer: 'seal', sender: 'seal', suppressed: false, pushed: false }
+  const turn: PeerTurnRef = { eventId: 'probe-1', chainId: 'chain-1', channel: 'p2p:orca', target: 'seal', sender: 'seal', suppressed: false, pushed: false }
   const closedNow = new Set<string>()
   const ports: ControlPorts = {
     turnOf: (sessionId) => (sessionId === 'session-1' ? turn : undefined),
@@ -37,7 +37,7 @@ describe('no_reply', () => {
     const raw = await createNoReplyTool(ports).execute({}, exec('session-1'))
 
     expect(JSON.parse(String(raw))).toEqual({ ok: true, closed: true })
-    expect(closed).toEqual(['probe-1'])
+    expect(closed).toEqual(['chain-1'])
     expect(turn.suppressed).toBe(true)
     expect(concluded).toHaveLength(1)
   })
@@ -60,7 +60,7 @@ describe('decline', () => {
     expect(JSON.parse(String(raw))).toEqual({ ok: true, closed: true, declined: true })
     expect(declined).toHaveLength(1)
     expect(declined[0]?.reason).toBe('not my job')
-    expect(closed).toEqual(['probe-1'])
+    expect(closed).toEqual(['chain-1'])
     expect(turn.suppressed).toBe(true)
     expect(concluded).toHaveLength(1)
   })
@@ -71,7 +71,7 @@ describe('decline', () => {
     const raw = await createDeclineTool(ports).execute({ reason: 'no' }, exec('session-1'))
 
     expect(JSON.parse(String(raw))).toMatchObject({ ok: false, closed: true, declined: false, code: 'unreachable' })
-    expect(closed).toEqual(['probe-1'])
+    expect(closed).toEqual(['chain-1'])
   })
 
   test('is refused outside a peer turn', async () => {

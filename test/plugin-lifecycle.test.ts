@@ -1,13 +1,14 @@
 import { describe, expect, test } from 'vitest'
 import { createServer, request } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
 import * as entry from '../src/index.js'
 import { DEFAULT_PORT } from '../src/index.js'
 import { ConfigError } from '../src/config.js'
-import { P2P_ROUTE } from '../src/p2p-protocol.js'
-import { signEnvelope } from '../src/p2p-auth.js'
-import type { Envelope } from '../src/p2p-auth.js'
-import type { Listener } from '../src/p2p-listener.js'
+import { P2P_ROUTE } from '../src/adapters/p2p/p2p-protocol.js'
+import { signEnvelope } from '../src/adapters/p2p/p2p-auth.js'
+import type { Envelope } from '../src/adapters/p2p/p2p-auth.js'
+import type { Listener } from '../src/adapters/p2p/p2p-listener.js'
 
 const secret = 'peer-secret-1'
 const secretRef = 'PEER_SHARED_SECRET'
@@ -40,19 +41,29 @@ async function contextWithCredentials(): Promise<Context> {
   return ctx
 }
 
-const adapter = (overrides: Record<string, unknown> = {}) => ({
-  channel: 'p2p:self',
-  instance: 'inst-a',
-  botName: 'bot-a',
-  peers: [{ instance: 'inst-b', secret: secretRef }],
-  listen: { host: '127.0.0.1', port: 0 },
-  ...overrides,
-})
+const adapter = (overrides: Record<string, unknown> = {}) => {
+  const { peers, listen, dedupe, inflightTtlMs, sentAtWindowMs, maxBodyBytes, waitMs, ...rest } = overrides
+  return {
+    channel: 'p2p:self',
+    instance: 'inst-a',
+    botName: 'bot-a',
+    p2p: {
+      peers: peers ?? [{ instance: 'inst-b', secret: secretRef }],
+      listen: listen ?? { host: '127.0.0.1', port: 0 },
+      ...(dedupe === undefined ? {} : { dedupe }),
+      ...(inflightTtlMs === undefined ? {} : { inflightTtlMs }),
+      ...(sentAtWindowMs === undefined ? {} : { sentAtWindowMs }),
+      ...(maxBodyBytes === undefined ? {} : { maxBodyBytes }),
+      ...(waitMs === undefined ? {} : { waitMs }),
+    },
+    ...rest,
+  }
+}
 
 const config = (overrides: Record<string, unknown> = {}) => ({ adapters: [adapter(overrides)] })
 
 const message = {
-  eventId: 'evt-1',
+  eventId: 'evt-1',  chainId: 'evt-1',
   to: 'bot-a',
   sender: 'bot-b',
   instance: 'inst-b',
@@ -130,6 +141,33 @@ describe('plugin lifecycle', () => {
     const fork = await ctx.plugin(entry.default, { adapters: [] })
     expect(ctx.get('dsbot-channel.peers')).toBeUndefined()
     await fork.dispose()
+  })
+
+  test('a later adapter that fails to start stops the ones already listening', async () => {
+    const taken = createServer()
+    await new Promise<void>((resolve) => taken.listen(0, '127.0.0.1', resolve))
+    const takenPort = (taken.address() as AddressInfo).port
+    const freePort = await new Promise<number>((resolve, reject) => {
+      const probe = createServer()
+      probe.once('error', reject)
+      probe.listen(0, '127.0.0.1', () => {
+        const port = (probe.address() as AddressInfo).port
+        probe.close(() => resolve(port))
+      })
+    })
+    const ctx = await contextWithCredentials()
+    const one = adapter({ channel: 'p2p:one', listen: { host: '127.0.0.1', port: freePort } })
+    const two = adapter({ channel: 'p2p:two', botName: 'bot-b', listen: { host: '127.0.0.1', port: takenPort } })
+
+    await expect(ctx.plugin(entry.default, { adapters: [one, two] })).rejects.toThrow(/EADDRINUSE/)
+
+    const rebound = await new Promise<boolean>((resolve) => {
+      const probe = createServer()
+      probe.once('error', () => resolve(false))
+      probe.listen(freePort, '127.0.0.1', () => probe.close(() => resolve(true)))
+    })
+    expect(rebound).toBe(true)
+    taken.close()
   })
 
   test('refuses a duplicate adapter channel', async () => {

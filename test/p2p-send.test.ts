@@ -2,14 +2,14 @@ import { afterEach, describe, expect, test } from 'vitest'
 import { createServer } from 'node:http'
 import type { Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { DedupeTable } from '../src/p2p-dedupe.js'
-import { startListener } from '../src/p2p-listener.js'
-import type { Listener } from '../src/p2p-listener.js'
-import { staticCredentials } from '../src/p2p-secrets.js'
-import { sendToPeer } from '../src/p2p-send.js'
-import { signEnvelope } from '../src/p2p-auth.js'
-import type { Envelope } from '../src/p2p-auth.js'
-import { PEER_TEXT_MAX } from '../src/p2p-mapping.js'
+import { DedupeTable } from '../src/adapters/p2p/p2p-dedupe.js'
+import { startListener } from '../src/adapters/p2p/p2p-listener.js'
+import type { Listener } from '../src/adapters/p2p/p2p-listener.js'
+import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
+import { sendToPeer } from '../src/adapters/p2p/p2p-send.js'
+import { signEnvelope } from '../src/adapters/p2p/p2p-auth.js'
+import type { Envelope } from '../src/adapters/p2p/p2p-auth.js'
+import { PEER_TEXT_MAX } from '../src/adapters/p2p/p2p-mapping.js'
 
 const REF = '{{SECRET_dgntdkke}}'
 const SECRET = 'shared-value'
@@ -49,7 +49,7 @@ const base = (url: string) => ({
   credentials,
   to: 'remote-bot',
   body: 'hello',
-  eventId: 'evt-1',
+  eventId: 'evt-1',  chainId: 'evt-1',
   sender: 'sender-bot',
   instance: 'sender-inst',
 })
@@ -222,6 +222,19 @@ describe('failures are told apart', () => {
     const { url } = await peer({ botName: 'other-bot' })
     const result = await sendToPeer(base(url))
     expect(result).toMatchObject({ ok: false, code: 'forbidden' })
+  })
+
+  test('a peer on the old protocol is reported as its own failure code', async () => {
+    const server = createServer((request, response) => {
+      request.resume()
+      response.writeHead(401, { 'content-type': 'application/json' })
+      response.end(JSON.stringify({ error: 'chainId is required', code: 'protocol_mismatch' }))
+    })
+    servers.push(server)
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+    const address = server.address() as AddressInfo
+    const result = await sendToPeer(base(`http://127.0.0.1:${address.port}`))
+    expect(result).toMatchObject({ ok: false, code: 'protocol_mismatch', retryable: false })
   })
 
   test('a peer answering 503 is busy and retryable', async () => {
