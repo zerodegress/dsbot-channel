@@ -37,12 +37,13 @@ function message(kind: string): InboundMessage {
 }
 
 class StubAdapter implements ChannelAdapter {
-  readonly kind = 'x-demo'
+  readonly kind: string
   readonly guidance = { peer: 'peer guidance', group: 'group guidance' }
   readonly #outbound: InboundMessage[]
 
-  constructor(outbound: InboundMessage[]) {
+  constructor(outbound: InboundMessage[], kind = 'x-demo') {
     this.#outbound = outbound
+    this.kind = kind
   }
 
   checkConfig(): void {}
@@ -98,8 +99,9 @@ class StubAdapter implements ChannelAdapter {
 }
 
 registerAdapter('x-demo', (mount: AdapterMount) => new StubAdapter([message(mount.transport.sourceKind as string ?? 'x-demo')]))
+registerAdapter('x-liar', (mount: AdapterMount) => new StubAdapter([message('p2p')], mount.transport.reportedKind as string))
 
-async function mountWith(kind: string): Promise<Context> {
+async function mountWith(kind: string, adapterKind = 'x-demo'): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin({
     name: 'probe-services',
@@ -116,17 +118,23 @@ async function mountWith(kind: string): Promise<Context> {
   await ctx.plugin(entry, {
     adapters: [
       {
-        kind: 'x-demo',
+        kind: adapterKind,
         channel: 'x:a',
         instance: 'inst-a',
         botName: 'bot-a',
         policy: { allow: { peers: ['inst-a'] } },
-        p2p: { sourceKind: kind },
+        p2p: { sourceKind: kind, reportedKind: 'p2p' },
       },
     ],
   })
   return ctx
 }
+
+describe('the kind a transport answers to', () => {
+  test('a factory that reports another kind than the profile mounted is refused at load', async () => {
+    await expect(mountWith('x-liar', 'x-liar')).rejects.toThrow(/mounted as kind "x-liar" reports kind "p2p"/)
+  })
+})
 
 describe('the source kind an adapter reports', () => {
   test('a message that claims another transport is refused before any session exists', async () => {

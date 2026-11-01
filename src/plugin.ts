@@ -663,6 +663,12 @@ function mountAdapters(config: ChannelConfig, settings: AdapterCheckSettings, wa
       ...(adapter.status === undefined ? {} : { status: adapter.status }),
     }
     const transport = adapterFactory(kind)(mount, { warn })
+    if (transport.kind !== kind) {
+      throw new ConfigError(
+        `adapter mounted as kind "${kind}" reports kind "${transport.kind}"; a transport answers to the kind it registered`,
+        ['adapters', String(index), 'kind'],
+      )
+    }
     transport.checkConfig(settings)
     return { config: adapter, adapter: transport, index }
   })
