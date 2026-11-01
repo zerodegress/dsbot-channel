@@ -10,6 +10,14 @@ const base = {
   capabilities,
   attributes: { stableMessageId: true },
   quota: { softLimit: 0.8, hardLimit: 1 },
+  counters: {
+    authFailures: 0,
+    unknownPaths: 0,
+    underruns: 0,
+    protocolMismatches: 0,
+    sendFailures: {},
+    lastFailure: null,
+  },
   sampledAt: 1_000,
   queueDepth: 0,
 }
@@ -20,7 +28,7 @@ describe('fixed fields', () => {
       ...base,
       health: { kind: 'connection', state: 'online', lastFailure: null, lastFailureAt: null, reconnectCount: 0, lastConnectedAt: 1_000, queueDepth: 0 },
     })
-    expect(Object.keys(status).sort()).toEqual(['account', 'attributes', 'bot', 'capabilities', 'channel', 'health', 'queueDepth', 'quota', 'sampledAt'])
+    expect(Object.keys(status).sort()).toEqual(['account', 'attributes', 'bot', 'capabilities', 'channel', 'counters', 'health', 'queueDepth', 'quota', 'sampledAt'])
   })
 })
 

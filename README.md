@@ -60,6 +60,8 @@ adapters:
       accessToken: ONEBOT_TOKEN
 ```
 
+A listening transport answers a read-only status route on loopback: `/p2p/v1/status` for a p2p adapter and `/onebot/status` for an OneBot one. It reports health, capabilities and counters, and is refused for a request that came through a forwarder. Set `status: false` on an adapter to leave the route unregistered.
+
 `reply` chooses how a turn answers. `auto` lets it write text; `tool` requires a tool call and discards a plain answer with a warning. Ordered rules win over the by-scope map, which wins over the default:
 
 ```yaml

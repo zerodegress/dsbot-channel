@@ -259,3 +259,45 @@ describe('the onebot status', () => {
     expect('refuse' in adapter).toBe(false)
   })
 })
+
+describe('the onebot status route', () => {
+  function get(port: number, path: string, headers: Record<string, string> = {}): Promise<{ status: number; body: unknown }> {
+    return new Promise((resolve, reject) => {
+      const req = httpRequest({ host: '127.0.0.1', port, path, method: 'GET', headers }, (response) => {
+        const chunks: Buffer[] = []
+        response.on('data', (chunk: Buffer) => chunks.push(chunk))
+        response.on('end', () => {
+          const text = Buffer.concat(chunks).toString('utf8')
+          resolve({ status: response.statusCode ?? 0, body: text.length === 0 ? undefined : JSON.parse(text) })
+        })
+      })
+      req.on('error', reject)
+      req.end()
+    })
+  }
+
+  test('answers a loopback read with the adapter status', async () => {
+    const { port } = await startAdapter()
+    const reply = await get(port, '/onebot/status')
+    expect(reply.status).toBe(200)
+    expect(reply.body).toMatchObject({
+      channel: 'onebot:a',
+      bot: 'bot-a',
+      health: { kind: 'listener', listenState: 'listening' },
+      counters: { sendFailures: {}, lastFailure: null },
+      capabilities: { text: true, mention: true },
+    })
+  })
+
+  test('a forwarded read is refused and counted as an unknown path', async () => {
+    const { port, adapter } = await startAdapter()
+    expect((await get(port, '/onebot/status', { 'x-forwarded-for': '203.0.113.9' })).status).toBe(404)
+    expect(adapter.snapshot.unknownPaths).toBe(1)
+  })
+
+  test('turning the route off makes it an unknown path', async () => {
+    const { port, adapter } = await startAdapter({ status: false })
+    expect((await get(port, '/onebot/status')).status).toBe(404)
+    expect(adapter.snapshot.unknownPaths).toBe(1)
+  })
+})

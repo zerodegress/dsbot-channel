@@ -1362,7 +1362,7 @@ transport: {
     const reply = await getStatus(port)
 
     expect(reply.status).toBe(200)
-    expect(reply.body).toMatchObject({ snapshot: { health: { emptyTurns: 0, sendFailures: {} } } })
+    expect(reply.body).toMatchObject({ channel: 'p2p:a', health: { kind: 'listener' }, counters: { sendFailures: {} } })
   })
 
   test('an empty turn is reported in the log', async () => {
@@ -1462,7 +1462,7 @@ transport: {
     expect(JSON.parse(raw as string)).toMatchObject({ ok: false, code: 'unreachable' })
 
     const reply = await getStatus(port)
-    expect(reply.body).toMatchObject({ snapshot: { health: { sendFailures: { unreachable: 1 } } } })
+    expect(reply.body).toMatchObject({ counters: { sendFailures: { unreachable: 1 } } })
   })
 
   test('a reply that never lands is counted', async () => {
@@ -1506,7 +1506,7 @@ transport: {
     await waitFor(() => warnings.some((line) => line.includes('was not delivered')))
 
     const reply = await getStatus(port)
-    expect(reply.body).toMatchObject({ snapshot: { health: { sendFailures: { unreachable: 1 } } } })
+    expect(reply.body).toMatchObject({ counters: { sendFailures: { unreachable: 1 } } })
   })
 
   test('a refusal that never lands is counted', async () => {
@@ -1573,7 +1573,7 @@ transport: {
     await new Promise((resolve) => setTimeout(resolve, 120))
 
     const reply = await getStatus(port)
-    expect(reply.body).toMatchObject({ snapshot: { health: { sendFailures: { unreachable: 1 } } } })
+    expect(reply.body).toMatchObject({ counters: { sendFailures: { unreachable: 1 } } })
   })
 
   test('the reply names the channel and the port it is really listening on', async () => {
@@ -1611,8 +1611,9 @@ status: true
     expect(reply.body).toMatchObject({
       channel: 'p2p:a',
       bot: 'bot-a',
-      instance: 'inst-a',
-      snapshot: { state: 'listening', boundPort: port, inFlight: 0, unknownPaths: 0, lastFailure: null },
+      account: 'inst-a',
+      health: { kind: 'listener', listenState: 'listening', boundPort: port },
+      counters: { unknownPaths: 0, lastFailure: null },
     })
   })
 

@@ -1,3 +1,5 @@
+import type { AdapterCounters } from './adapter-status.js'
+
 export type ChannelState = 'starting' | 'listening' | 'failed' | 'closed'
 
 export interface ChannelFailure {
@@ -127,5 +129,18 @@ export class ChannelStats {
 
   #remember(reason: string): void {
     this.#lastFailure = { at: this.#now(), reason }
+  }
+}
+
+/** The counters a status reader needs, taken from one transport's snapshot. */
+export function countersOf(snapshot: ChannelSnapshot): AdapterCounters {
+  return {
+    authFailures: snapshot.authFailures,
+    unknownPaths: snapshot.unknownPaths,
+    underruns: snapshot.underruns,
+    protocolMismatches: snapshot.protocolMismatches,
+    sendFailures: { ...snapshot.health.sendFailures },
+    lastFailure:
+      snapshot.lastFailure === null ? null : { at: snapshot.lastFailure.at, reason: snapshot.lastFailure.reason },
   }
 }

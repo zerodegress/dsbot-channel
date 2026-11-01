@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A read-only status route on every listening transport: `/p2p/v1/status` and `/onebot/status` both answer an `AdapterStatus` to a loopback caller, and `AdapterStatus` gains required `counters` (auth failures, unknown paths, underruns, protocol mismatches, send failures by code, last failure).
 - An OneBot 11 transport over reverse HTTP: the implementation pushes events to a loopback listener, replies call its HTTP API, an optional access token guards both directions, and mention is reported as `self`/`others`/`all` from the message array. Media is carried in but never sent in this version.
 - A `reply` block chooses how a turn answers: `default` and `byScope` (`c2c`/`group`/`p2p`), plus ordered `rules` whose `when` matches source, author, transport and body, combined with AND, `not` and `any`. The first match wins. In `tool` mode a plain text answer is discarded with a warning and counted as `dropped`; a profile that can choose `tool` fails to load when the host has no tools service.
 - Adapter kinds: `p2p` and `onebot` are built in, a third-party transport registers as `x-[a-z0-9-]+` within 32 characters and mounts through one adapter contract. A message's `source.kind` must match the adapter that carried it, and an unknown kind or a mismatch is refused before a session or a charge exists.
@@ -22,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `/p2p/v1/status` answers an `AdapterStatus` instead of the old `{channel, bot, instance, snapshot}` report; the route had never been registered in a shipped build, so nothing read it. `ListenerHealth` now carries `lastFailure`, the way `ConnectionHealth` does.
 - An adapter declares its transport in `adapters[].transport` instead of `adapters[].p2p`; the old key now fails to load with an error that names the new one.
 - Prompt injections are bracketed blocks now: `[<kind>]` for the adapter's guidance and `[tool-mode]` for the mode notice, each on its own line with a blank line before the message. The guidance still rides a conversation once; the mode block repeats only on a switch into tool mode.
 - `mentioned` on an event is now `{ self, others, all }` instead of one boolean, so an adapter says whether a message names the bot, someone else, or everyone. A profile may set `policy.requireMention` to refuse group messages that name neither the bot nor everyone; it is off by default. The old boolean no longer compiles against the new field.

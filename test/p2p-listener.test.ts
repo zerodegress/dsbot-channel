@@ -64,6 +64,26 @@ function post(port: number, body: unknown, headers?: Record<string, string>): Pr
   })
 }
 
+const statusFixture = () => ({
+  channel: 'p2p:self',
+  account: 'self',
+  bot: 'self-bot',
+  health: { kind: 'listener' as const, listenState: 'listening' as const, boundPort: 7123, lastAuthenticatedAt: null, lastFailure: null, queueDepth: 0 },
+  counters: {
+    authFailures: 0,
+    unknownPaths: 0,
+    underruns: 0,
+    protocolMismatches: 0,
+    sendFailures: {},
+    lastFailure: null,
+  },
+  capabilities: { text: true, image: false, file: false, voice: false, recall: false, history: false, mention: false, reply: true, stream: false },
+  attributes: { stableMessageId: true },
+  quota: { softLimit: 0, hardLimit: 0 },
+  sampledAt: 1,
+  queueDepth: 0,
+})
+
 const message = (overrides: Record<string, unknown> = {}) => ({
   eventId: 'evt-1',  chainId: 'evt-1',
   to: 'bot-a',
@@ -247,7 +267,7 @@ describe('listener', () => {
       config: baseConfig(),
       table: table(),
       stats: channel,
-      status: { report: () => ({ allowed: true }) },
+      status: { report: () => statusFixture() },
     })
     open.push(listener)
     const reply = await new Promise<{ status: number; body: unknown }>((resolve, reject) => {
@@ -267,7 +287,7 @@ describe('listener', () => {
       req.on('error', reject)
       req.end()
     })
-    expect(reply).toEqual({ status: 200, body: { allowed: true } })
+    expect(reply).toEqual({ status: 200, body: statusFixture() })
   })
 
   test('a status read that a forwarder rewrote is refused, even from loopback', async () => {
@@ -276,7 +296,7 @@ describe('listener', () => {
       config: baseConfig(),
       table: table(),
       stats: channel,
-      status: { report: () => ({ allowed: true }) },
+      status: { report: () => statusFixture() },
     })
     open.push(listener)
     const sent: number[] = []
@@ -323,7 +343,7 @@ describe('listener', () => {
     const listener = await startListener({
       config: baseConfig(),
       table: table(),
-      status: { report: () => ({ allowed: true }) },
+      status: { report: () => statusFixture() },
     })
     open.push(listener)
     const sent: number[] = []
@@ -349,7 +369,7 @@ describe('listener', () => {
       config: baseConfig(),
       table: table(),
       stats: channel,
-      status: { report: () => ({ allowed: true }) },
+      status: { report: () => statusFixture() },
     })
     open.push(listener)
     const sent: { status: number; body: unknown }[] = []
@@ -574,5 +594,26 @@ describe('listener error handler', () => {
     expect(reply.status).toBe(200)
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(reported).toBe(1)
+  })
+})
+
+describe('the status route a profile can turn off', () => {
+  test('a route that is not registered answers 404 and counts the path', async () => {
+    const channel = new ChannelStats()
+    const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
+    open.push(listener)
+    const reply = await new Promise<number>((resolve, reject) => {
+      const req = request(
+        { host: '127.0.0.1', port: listener.address().port, path: '/p2p/v1/status', method: 'GET' },
+        (response) => {
+          response.resume()
+          response.on('end', () => resolve(response.statusCode ?? 0))
+        },
+      )
+      req.on('error', reject)
+      req.end()
+    })
+    expect(reply).toBe(404)
+    expect(channel.snapshot().unknownPaths).toBe(1)
   })
 })

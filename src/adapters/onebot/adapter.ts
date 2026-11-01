@@ -4,8 +4,9 @@ import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { AdapterStatus } from '../../adapter-status.js'
 import { buildListenerHealth, buildStatus } from '../../adapter-status.js'
+import { answerStatus } from '../shared/status-route.js'
 import type { ChannelSnapshot } from '../../channel-stats.js'
-import { ChannelStats } from '../../channel-stats.js'
+import { ChannelStats, countersOf } from '../../channel-stats.js'
 import { ConfigError } from '../../config.js'
 import type {
   AdapterHandle,
@@ -30,6 +31,8 @@ export interface OneBotAdapterConfig {
   sendTimeoutMs: number
   accessToken?: string
   bots: readonly string[]
+  /** Whether this adapter answers its own status route. */
+  status?: boolean | undefined
 }
 
 export interface OneBotEvent {
@@ -51,6 +54,8 @@ export const ONEBOT_PEER_GUIDANCE =
 
 export const ONEBOT_GROUP_GUIDANCE =
   'This is a group message from OneBot. Your reply is posted back to that group. If it needs no answer, call no_reply; if you refuse it, call decline with a short reason.'
+
+export const ONEBOT_STATUS_ROUTE = '/onebot/status'
 
 export const ONEBOT_DEDUPE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 export const ONEBOT_DEDUPE_LIMIT = 100_000
@@ -315,8 +320,10 @@ export class OneBotAdapter implements ChannelAdapter {
         listenState: listening ? 'listening' : snapshot.state === 'failed' ? 'failed' : 'stopped',
         boundPort: snapshot.boundPort,
         lastAuthenticatedAt: snapshot.lastAuthenticatedAt,
+        lastFailure: snapshot.lastFailure,
         queueDepth: snapshot.inFlight,
       }),
+      counters: countersOf(snapshot),
       capabilities: this.capabilities,
       attributes: { stableMessageId: true },
       quota: { softLimit: 0, hardLimit: 0 },
@@ -480,6 +487,16 @@ export class OneBotAdapter implements ChannelAdapter {
   }
 
   async #handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    if (
+      this.#config.status !== false &&
+      answerStatus(request, response, {
+        route: ONEBOT_STATUS_ROUTE,
+        report: () => this.status(),
+        onRefused: () => this.#stats.unknownPath(),
+      })
+    ) {
+      return
+    }
     const url = request.url ?? '/'
     if (request.method !== 'POST' || url !== this.#config.listen.path) {
       this.#stats.unknownPath()

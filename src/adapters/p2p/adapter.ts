@@ -1,6 +1,7 @@
 import type { AdapterStatus } from '../../adapter-status.js'
 import { buildListenerHealth, buildStatus } from '../../adapter-status.js'
 import type { ChannelSnapshot } from '../../channel-stats.js'
+import { countersOf } from '../../channel-stats.js'
 import { ChannelStats } from '../../channel-stats.js'
 import { ConfigError } from '../../config.js'
 import type {
@@ -19,6 +20,7 @@ import { GROUP_GUIDANCE, PEER_GUIDANCE } from './guidance.js'
 import { DedupeTable } from './p2p-dedupe.js'
 import type { InboundRequest } from './p2p-wire.js'
 import { DEFAULT_HOST, DEFAULT_PORT, checkListenerConfig, startListener } from './p2p-listener.js'
+import { STATUS_ROUTE } from './p2p-status.js'
 import { cleanExcerpt, oneLine, toP2PEvent } from './p2p-mapping.js'
 import { DEFAULT_SENT_AT_WINDOW_MS, MAX_BODY_BYTES } from './p2p-protocol.js'
 import type { CredentialsLike, PeerRef } from './p2p-secrets.js'
@@ -165,8 +167,10 @@ export class P2PAdapter implements ChannelAdapter {
         listenState: listening ? 'listening' : failed ? 'failed' : 'stopped',
         boundPort: snapshot.boundPort,
         lastAuthenticatedAt: snapshot.lastAuthenticatedAt,
+        lastFailure: snapshot.lastFailure,
         queueDepth: snapshot.inFlight,
       }),
+      counters: countersOf(snapshot),
       capabilities: this.capabilities,
       attributes: { stableMessageId: true },
       quota: { softLimit: 0, hardLimit: 0 },
@@ -282,12 +286,8 @@ export class P2PAdapter implements ChannelAdapter {
         ? {}
         : {
             status: {
-              report: () => ({
-                channel: this.#config.channel,
-                bot: this.#config.botName,
-                instance: this.#config.instance,
-                snapshot: this.#stats.snapshot(),
-              }),
+              route: STATUS_ROUTE,
+              report: () => this.status(),
             },
           }),
     })
