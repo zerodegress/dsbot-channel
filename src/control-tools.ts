@@ -11,6 +11,8 @@ export interface TurnRef {
   sender: string
   /** Set by end or decline so the turn that just ran sends nothing back. */
   suppressed: boolean
+  /** Set by decline, so a reader can tell a refusal from a quiet end. */
+  declined?: boolean | undefined
   /** Set when this turn pushed with send_text, so the reply is not sent twice. */
   pushed: boolean
 }
@@ -75,6 +77,7 @@ export function createDeclineTool(ports: ControlPorts) {
       const already = ports.isClosed(turn.chainId)
       ports.closeChain(turn.chainId)
       turn.suppressed = true
+      turn.declined = true
       if (already) {
         exec.concludeTurn()
         return JSON.stringify({ ok: true, closed: true, declined: false, already: true })

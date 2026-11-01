@@ -132,6 +132,21 @@ export class BudgetLedger {
     for (const key of keys) this.window(key).add(points, at)
   }
 
+  /** The limits this ledger enforces, as a copy, for a read-only view. */
+  limitsView(): BudgetLimits {
+    return { ...this.limits }
+  }
+
+  /** Every session key this ledger has charged, in the order it first saw them. */
+  sessions(): string[] {
+    const keys: string[] = []
+    for (const key of this.windows.keys()) {
+      if (key === GLOBAL || key.startsWith('bot:')) continue
+      keys.push(key)
+    }
+    return keys
+  }
+
   usage(botId: string, session: string): Usage {
     const at = this.now()
     const usage: Usage = { global: this.window(GLOBAL).sum(at) }
@@ -139,39 +154,59 @@ export class BudgetLedger {
     return usage
   }
 
-  private levelOf(key: string, ratio: number, at: number): LimitLevel {
+  /** The level the current windows and locks imply, computed without writing anything. */
+  private levelFor(key: string, ratio: number, at: number): LimitLevel {
     const { softLimit, hardLimit } = this.limits
     const { softRelease, hardReleaseBelow, hardHoldMs } = this.settings.hysteresis
     const lock = this.locks.get(key)
     if (lock?.level === 'hard') {
-      if (ratio >= hardReleaseBelow) {
-        this.locks.set(key, { level: 'hard', since: at })
-        return 'hard'
-      }
+      if (ratio >= hardReleaseBelow) return 'hard'
       if (at - lock.since < hardHoldMs) return 'hard'
-      this.locks.delete(key)
       return ratio >= softLimit ? 'soft' : 'normal'
     }
     if (lock?.level === 'soft') {
-      if (ratio >= hardLimit) {
-        this.locks.set(key, { level: 'hard', since: at })
-        return 'hard'
-      }
-      if (ratio < softLimit - softRelease) {
-        this.locks.delete(key)
-        return 'normal'
-      }
+      if (ratio >= hardLimit) return 'hard'
+      if (ratio < softLimit - softRelease) return 'normal'
       return 'soft'
     }
-    if (ratio >= hardLimit) {
-      this.locks.set(key, { level: 'hard', since: at })
-      return 'hard'
-    }
-    if (ratio >= softLimit) {
-      this.locks.set(key, { level: 'soft', since: at })
-      return 'soft'
-    }
+    if (ratio >= hardLimit) return 'hard'
+    if (ratio >= softLimit) return 'soft'
     return 'normal'
+  }
+
+  private levelOf(key: string, ratio: number, at: number): LimitLevel {
+    const level = this.levelFor(key, ratio, at)
+    const lock = this.locks.get(key)
+    if (level === 'hard') {
+      const held = lock?.level === 'hard' && ratio < this.settings.hysteresis.hardReleaseBelow
+      if (!held) this.locks.set(key, { level: 'hard', since: at })
+    } else if (level === 'soft') {
+      if (lock?.level !== 'soft') this.locks.set(key, { level: 'soft', since: at })
+    } else if (lock !== undefined) {
+      this.locks.delete(key)
+    }
+    return level
+  }
+
+  /** The state a reader may see, computed without touching a lock or creating a window. */
+  peek(botId: string, session: string): LimitState {
+    const at = this.now()
+    const byScope: Record<string, LimitLevel> = {}
+    const triggeredBy: string[] = []
+    let aggregate: LimitLevel = 'normal'
+    for (const key of this.keysFor(botId, session)) {
+      const ratio = this.spentOn(key, at) / this.limits.capacity
+      const level = this.levelFor(key, ratio, at)
+      byScope[key] = level
+      if (level !== 'normal') triggeredBy.push(key)
+      if (level === 'hard') aggregate = 'hard'
+      else if (level === 'soft' && aggregate === 'normal') aggregate = 'soft'
+    }
+    return { byScope, aggregate, triggeredBy }
+  }
+
+  private spentOn(key: string, at: number): number {
+    return this.windows.get(key)?.sum(at) ?? 0
   }
 
   check(botId: string, session: string): LimitState {

@@ -152,3 +152,15 @@ describe('the package surface', () => {
     }
   })
 })
+
+describe('the observation services', () => {
+  test('are only wired into the services a host reads, never into a decision path', () => {
+    const plugin = readFileSync(join(import.meta.dirname, '..', 'src', 'plugin.ts'), 'utf8')
+    const lines = plugin.split('\n')
+    const reads = lines
+      .map((line, index) => ({ line, index: index + 1 }))
+      .filter(({ line }) => line.includes('usageSnapshot(') || line.includes('turns.snapshot()'))
+    expect(reads).toHaveLength(2)
+    for (const one of reads) expect(one.line).toContain("ctx.set('dsbot-channel.")
+  })
+})

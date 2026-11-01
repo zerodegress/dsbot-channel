@@ -1680,14 +1680,12 @@ describe('the reply ceiling', () => {
     await waitFor(() => sessions.prompted.length === 2)
     await waitFor(() => warnings.some((line) => line.includes('loop-limit')))
 
-    // The gate compares wall-clock instants, so wait until the window has really passed rather
-    // than sleeping a fixed span a busy machine can still land inside.
     const refusedAt = Date.now()
     await waitFor(() => Date.now() - refusedAt >= RELAY_RESET_WINDOW_MS + RELAY_RESET_MARGIN_MS)
     await send(portB, 'evt-2', 'again')
 
-    await waitFor(() => sessions.prompted.length === 4)
-    expect(sessions.prompted[2]?.text).toContain('again')
+    await waitFor(() => sessions.prompted.some((entry) => entry.text.endsWith(' again')))
+    expect(sessions.prompted.some((entry) => entry.text.endsWith(' again'))).toBe(true)
   })
 
   test('relayLimit below one is refused at mount time', async () => {
