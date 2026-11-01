@@ -118,7 +118,7 @@ async function mount(policy: Record<string, unknown>, adapter = 'x-group'): Prom
         instance: 'inst-a',
         botName: 'bot-a',
         policy: { ...policy },
-        p2p: {},
+        transport: {},
       },
     ],
   })

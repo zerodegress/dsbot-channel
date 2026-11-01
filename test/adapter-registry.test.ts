@@ -78,7 +78,7 @@ describe('the p2p transport block', () => {
 
   test('refuses a field it never reads', () => {
     expect(() => parseP2PConfig(mount({ peers: [{ instance: 'b', secret: 's' }], bogus: 1 }))).toThrow(
-      /p2p names a field this adapter does not read: bogus/,
+      /transport names a field this adapter does not read: bogus/,
     )
   })
 

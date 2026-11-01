@@ -90,7 +90,7 @@ async function mount(options: { policy?: Record<string, unknown> } = {}) {
 channel: 'p2p:a',
 instance: 'inst-a',
 botName: 'bot-a',
-p2p: {
+transport: {
   peers: [{ instance: 'inst-b', secret: REF }],
   listen: { host: '127.0.0.1', port }
 },

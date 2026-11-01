@@ -56,7 +56,7 @@ export interface AdapterConfig {
   pipeline?: PipelineLayer | undefined
   status?: boolean
   /** The transport block; only the adapter of this kind reads it. */
-  p2p?: Record<string, unknown>
+  transport?: Record<string, unknown>
 }
 
 export interface ChannelConfig {
@@ -124,7 +124,7 @@ export const Config: any = Schema.object({
         }).default({}),
         pipeline: (layerSchema as any).default(undefined),
         status: Schema.boolean().default(true),
-        p2p: Schema.any(),
+        transport: Schema.any(),
       }),
     )
     .default([]),
@@ -344,9 +344,25 @@ interface ChannelRuntime {
   deps: PipelineDeps
 }
 
+/** Reads the profile, pointing an old `p2p` key at the block that replaced it. */
+function readConfig(raw: unknown): ChannelConfig {
+  try {
+    return validateConfig<ChannelConfig>(Config, raw)
+  } catch (error) {
+    if (error instanceof ConfigError && error.fields.includes('p2p')) {
+      throw new ConfigError(
+        `${error.message}; the transport block is now named "transport"`,
+        error.path,
+        error.fields,
+      )
+    }
+    throw error
+  }
+}
+
 /** Starts only the adapters the profile declares; an empty list starts nothing. */
 export async function apply(ctx: Context, raw: unknown): Promise<void> {
-  const config = validateConfig<ChannelConfig>(Config, raw)
+  const config = readConfig(raw)
   const warn = createWarn(ctx)
   const settings: PipelineSettings = {
     maxTurnMs: config.pipeline.maxTurnMs,
@@ -688,7 +704,7 @@ function mountAdapters(config: ChannelConfig, settings: AdapterCheckSettings, wa
       channel: adapter.channel,
       instance: adapter.instance,
       botName: adapter.botName,
-      transport: adapter.p2p ?? {},
+      transport: adapter.transport ?? {},
       ...(adapter.status === undefined ? {} : { status: adapter.status }),
     }
     const transport = adapterFactory(kind)(mount, { warn })

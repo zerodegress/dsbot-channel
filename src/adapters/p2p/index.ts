@@ -15,29 +15,29 @@ const FIELDS = new Set([
 ])
 
 function refuse(message: string, field?: string): never {
-  throw new ConfigError(message, field === undefined ? ['adapters', 'p2p'] : ['adapters', 'p2p', field])
+  throw new ConfigError(message, field === undefined ? ['adapters', 'transport'] : ['adapters', 'transport', field])
 }
 
 function record(value: unknown, field: string): Record<string, unknown> {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) refuse(`p2p.${field} must be an object`, field)
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) refuse(`transport.${field} must be an object`, field)
   return value as Record<string, unknown>
 }
 
 function requiredText(value: unknown, field: string): string {
-  if (typeof value !== 'string' || value.length === 0) refuse(`p2p.${field} must be a non-empty string`, field)
+  if (typeof value !== 'string' || value.length === 0) refuse(`transport.${field} must be a non-empty string`, field)
   return value
 }
 
 function optionalText(value: unknown, field: string): string | undefined {
   if (value === undefined) return undefined
-  if (typeof value !== 'string' || value.length === 0) refuse(`p2p.${field} must be a non-empty string`, field)
+  if (typeof value !== 'string' || value.length === 0) refuse(`transport.${field} must be a non-empty string`, field)
   return value
 }
 
 function optionalPort(value: unknown, field: string): number | undefined {
   if (value === undefined) return undefined
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-    refuse(`p2p.${field} must be a whole port number of at least 0`, field)
+    refuse(`transport.${field} must be a whole port number of at least 0`, field)
   }
   return value
 }
@@ -45,13 +45,13 @@ function optionalPort(value: unknown, field: string): number | undefined {
 function optionalWhole(value: unknown, field: string): number | undefined {
   if (value === undefined) return undefined
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
-    refuse(`p2p.${field} must be a whole number of at least 1`, field)
+    refuse(`transport.${field} must be a whole number of at least 1`, field)
   }
   return value
 }
 
 function parsePeers(value: unknown): P2PPeerConfig[] {
-  if (!Array.isArray(value) || value.length === 0) refuse('p2p.peers must list at least one peer', 'peers')
+  if (!Array.isArray(value) || value.length === 0) refuse('transport.peers must list at least one peer', 'peers')
   return value.map((entry, index) => {
     const peer = record(entry, `peers[${index}]`)
     return {
@@ -88,7 +88,7 @@ function parseDedupe(value: unknown): { ttlMs?: number; limit?: number } | undef
 export function parseP2PConfig(mount: AdapterMount): P2PAdapterConfig {
   const raw = mount.transport
   const unknown = Object.keys(raw).filter((key) => !FIELDS.has(key))
-  if (unknown.length > 0) refuse(`p2p names a field this adapter does not read: ${unknown.join(', ')}`)
+  if (unknown.length > 0) refuse(`transport names a field this adapter does not read: ${unknown.join(', ')}`)
   return {
     channel: mount.channel,
     instance: mount.instance,

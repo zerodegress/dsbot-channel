@@ -128,7 +128,7 @@ async function mount(reply: unknown, options: { withTools?: boolean; answer?: st
         instance: 'inst-a',
         botName: 'bot-a',
         policy: {},
-        p2p: {},
+        transport: {},
       },
     ],
   })

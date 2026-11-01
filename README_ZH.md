@@ -33,7 +33,7 @@ config:
       channel: p2p:self
       instance: self
       botName: self-bot
-      p2p:
+      transport:
         listen: { host: 127.0.0.1, port: 7123 }
         peers:
           - instance: peer-a
@@ -45,6 +45,20 @@ config:
 `kind` 声明这条通道的传输，不写默认 `p2p`。内置 kind 是 `p2p` 和 `onebot`；第三方传输注册时必须用 `x-[a-z0-9-]+`，不超过 32 个字符。一个 kind 对应一个实现：每个 kind 只能注册一次工厂，但可以有多个 adapter 复用它（两条 p2p 链接就是 `p2p` 的两个 adapter）。消息的 `source.kind` 必须等于承载它的适配器的 kind；profile 里写未知 kind 会在加载期失败。
 
 在 adapter 上设 `policy.requireMention: true` 后，群消息如果既没有点名 bot（`self`），也没有 @ 所有人（`all`），就会被直接拒掉。该开关默认关闭，私聊不受影响；对于无法区分 `self`、`others`、`all` 的通道，不能开启这个开关，开启后会在加载期报错。
+
+OneBot 11 是内置通道，走反向 HTTP：实现方把事件推到我们的监听器，回复则通过调用它的 HTTP API 发出。本版接收媒体但不出站发送媒体。
+
+```yaml
+adapters:
+  - kind: onebot
+    channel: onebot:self
+    instance: onebot
+    botName: self-bot
+    transport:
+      listen: { host: 127.0.0.1, port: 7331 }
+      api: { url: "http://127.0.0.1:3000" }
+      accessToken: ONEBOT_TOKEN
+```
 
 `reply` 决定一个回合怎么作答。`auto` 允许直接写文本；`tool` 要求必须调用工具，纯文本会被丢弃并记一条 warn。有序规则优先于按作用域的映射，再回落到默认值：
 

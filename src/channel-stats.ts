@@ -22,6 +22,8 @@ export interface ChannelSnapshot {
   underruns: number
   /** Requests for a path this channel does not serve, which a port scan also produces. */
   unknownPaths: number
+  /** Requests refused because the caller did not present the configured token. */
+  authFailures: number
   /** Peers that spoke a protocol version this build does not sign. */
   protocolMismatches: number
   lastProtocolMismatchAt: number | null
@@ -39,6 +41,7 @@ export class ChannelStats {
   #inFlight = 0
   #underruns = 0
   #unknownPaths = 0
+  #authFailures = 0
   #protocolMismatches = 0
   #lastProtocolMismatchAt: number | null = null
   #emptyTurns = 0
@@ -76,6 +79,10 @@ export class ChannelStats {
     this.#unknownPaths += 1
   }
 
+  authFailure(): void {
+    this.#authFailures += 1
+  }
+
   protocolMismatch(): void {
     this.#protocolMismatches += 1
     this.#lastProtocolMismatchAt = this.#now()
@@ -110,6 +117,7 @@ export class ChannelStats {
       inFlight: this.#inFlight,
       underruns: this.#underruns,
       unknownPaths: this.#unknownPaths,
+      authFailures: this.#authFailures,
       protocolMismatches: this.#protocolMismatches,
       lastProtocolMismatchAt: this.#lastProtocolMismatchAt,
       health: { emptyTurns: this.#emptyTurns, sendFailures: Object.fromEntries(this.#sendFailures) },
