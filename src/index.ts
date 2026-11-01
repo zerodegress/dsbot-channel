@@ -79,7 +79,7 @@ export type { BudgetConfig, LedgerOptions } from './budget-config.js'
 export { compilePolicy } from './policy-config.js'
 export type { CompiledPolicy, PolicyConfig } from './policy-config.js'
 export type { CheckReport, PipelineNodeSpec, PipelineSettings } from './pipeline-config.js'
-export { BudgetLedger, DEFAULT_BUDGET, sessionKeyFor } from './budget-ledger.js'
+export { BudgetLedger, DEFAULT_BUDGET } from './budget-ledger.js'
 export { TurnBilling } from './turn-billing.js'
 export type { TurnBillingOptions } from './turn-billing.js'
 export type {
@@ -91,7 +91,6 @@ export type {
   LedgerSnapshot,
   LimitLevel,
   LimitState,
-  ScopePair,
   Usage,
 } from './budget-ledger.js'
 export { DEFAULT_HOST, DEFAULT_PORT, SIGNATURE_HEADER, checkListenerConfig, startListener } from './adapters/p2p/p2p-listener.js'

@@ -1,4 +1,4 @@
-import type { ChargeKind, Scope } from './event-types.js'
+import type { ChargeKind } from './event-types.js'
 
 export type LimitLevel = 'normal' | 'soft' | 'hard'
 
@@ -29,11 +29,6 @@ export interface BudgetLimits {
   softLimit: number
   hardLimit: number
   capacity: number
-}
-
-export interface ScopePair {
-  scope: Scope
-  target: string
 }
 
 export interface ChargeWindow {
@@ -95,19 +90,6 @@ class Window {
       if (bucket > newest - BUCKET_COUNT) total += value
     }
     return total
-  }
-}
-
-export function sessionKeyFor(pair: ScopePair): string {
-  switch (pair.scope) {
-    case 'group':
-      return `group:${pair.target}`
-    case 'c2c':
-      return `peer:${pair.target}`
-    case 'p2p':
-      return `p2p:${pair.target}`
-    default:
-      throw new Error(`unknown scope "${String(pair.scope)}"`)
   }
 }
 

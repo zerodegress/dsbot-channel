@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { BudgetLedger, DEFAULT_BUDGET, sessionKeyFor } from '../src/budget-ledger.js'
+import { BudgetLedger, DEFAULT_BUDGET } from '../src/budget-ledger.js'
 
 const limits = { softLimit: 0.8, hardLimit: 1, capacity: 100 }
 
@@ -25,11 +25,6 @@ describe('three dimensions', () => {
     expect(usage).toMatchObject({ global: 20, 'bot:bot-a': 20, 'group:1': 20 })
   })
 
-  test('session keys follow the scope', () => {
-    expect(sessionKeyFor({ scope: 'group', target: 'g1' })).toBe('group:g1')
-    expect(sessionKeyFor({ scope: 'c2c', target: 'u1' })).toBe('peer:u1')
-    expect(sessionKeyFor({ scope: 'p2p', target: 'peer-a' })).toBe('p2p:peer-a')
-  })
 
   test('the session dimension aggregates every bot in it', () => {
     const ledger = new BudgetLedger(limits, DEFAULT_BUDGET)
