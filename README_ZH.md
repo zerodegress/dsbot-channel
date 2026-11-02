@@ -18,7 +18,17 @@ ds-bot 的消息网关：多个外部平台的事件进到同一个 Bot，回答
 
 ## 安装
 
-尚未发布。从源码安装：
+在 dsh 的界面里安装。
+
+也可以在终端里直接装：
+
+```sh
+dsh plugin --profile ds-bot add dsbot-channel
+```
+
+profile 写运行 Bot 的那个。
+
+亦可从源码构建：
 
 ```sh
 pnpm install

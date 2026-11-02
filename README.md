@@ -18,7 +18,17 @@ Whether to speak at all is an explicit decision — `no_reply`, `decline`, the r
 
 ## Install
 
-Not published yet. Install from a checkout:
+Install it from the dsh UI.
+
+You can also install it from a terminal:
+
+```sh
+dsh plugin --profile ds-bot add dsbot-channel
+```
+
+Run this against the profile that runs your bot.
+
+Alternatively, build from source:
 
 ```sh
 pnpm install
