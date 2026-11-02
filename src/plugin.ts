@@ -70,7 +70,18 @@ export interface ChannelConfig {
   pipeline: PipelineSettings & { global: PipelineNodeSpec[] }
   /** How a turn answers: auto lets it write, tool requires a tool call. */
   reply?: unknown
+  /** How messages arrive at a turn: one by one, or a short window merged into one. */
+  turn?: TurnSettings | undefined
 }
+
+export interface TurnSettings {
+  /** A window shorter than this many milliseconds keeps the one-message-one-turn behaviour. */
+  coalesceMs: number
+  maxBatch: number
+  maxChars: number
+}
+
+export const DEFAULT_TURN: TurnSettings = { coalesceMs: 0, maxBatch: 10, maxChars: 8000 }
 
 const nodeSpecSchema = Schema.object({
   id: Schema.string().required(),
@@ -102,6 +113,11 @@ export const Config: any = Schema.object({
   }).default({}),
   /** Nested shape, enum and regex checks live in reply-config; this schema only claims the key. */
   reply: Schema.any(),
+  turn: Schema.object({
+    coalesceMs: Schema.number(),
+    maxBatch: Schema.number(),
+    maxChars: Schema.number(),
+  }),
   adapters: Schema
     .array(
       Schema.object({
@@ -152,6 +168,30 @@ function declaredNodes(config: ChannelConfig, adapter: AdapterConfig): PipelineN
     ...(adapter.pipeline === undefined ? {} : { bot: adapter.pipeline }),
   }
   return resolvePipeline(scopes).nodes
+}
+
+/** Fills the turn block from its defaults and refuses a window nothing can honour. */
+export function checkTurnSettings(
+  raw: { coalesceMs?: number | undefined; maxBatch?: number | undefined; maxChars?: number | undefined } | undefined,
+): TurnSettings {
+  const turn: TurnSettings = {
+    coalesceMs: raw?.coalesceMs ?? DEFAULT_TURN.coalesceMs,
+    maxBatch: raw?.maxBatch ?? DEFAULT_TURN.maxBatch,
+    maxChars: raw?.maxChars ?? DEFAULT_TURN.maxChars,
+  }
+  if (!Number.isInteger(turn.coalesceMs) || turn.coalesceMs < 0) {
+    throw new ConfigError(`turn.coalesceMs must be a whole number of milliseconds, at least 0: ${turn.coalesceMs}`, [
+      'turn',
+      'coalesceMs',
+    ])
+  }
+  if (!Number.isInteger(turn.maxBatch) || turn.maxBatch < 1 || turn.maxBatch > 50) {
+    throw new ConfigError(`turn.maxBatch must be a whole number between 1 and 50: ${turn.maxBatch}`, ['turn', 'maxBatch'])
+  }
+  if (!Number.isInteger(turn.maxChars) || turn.maxChars < 100) {
+    throw new ConfigError(`turn.maxChars must be a whole number of at least 100: ${turn.maxChars}`, ['turn', 'maxChars'])
+  }
+  return turn
 }
 
 /** Refuses a turn timing no pipeline can run with. */
@@ -424,6 +464,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
     judgeTimeoutMs: config.pipeline.judgeTimeoutMs,
   }
   checkPipelineSettings(settings)
+  checkTurnSettings(config.turn)
   checkPipelineScopes(config, warn)
   const bots = botScopes(config)
   const pipelines = new SessionPipelines({ bots })
