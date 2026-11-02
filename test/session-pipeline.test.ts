@@ -45,6 +45,7 @@ interface BotInput {
   layer?: PipelineLayer
   deny?: boolean
   allow?: boolean
+  prepare?: boolean
   peers?: string[]
 }
 
@@ -59,6 +60,7 @@ function harness(input: Record<string, BotInput> = { orca: { peers: ['seal'] } }
           base: resolvePipeline(scopes).nodes,
           denyRules: one.deny ?? false,
           allowRules: one.allow ?? false,
+          prepare: one.prepare ?? false,
           peers: one.peers ?? [],
         },
       ]

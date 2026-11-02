@@ -247,7 +247,7 @@ function botScopes(config: ChannelConfig): Map<string, BotFacts> {
     const allow = (compiled.deps.allowRules ?? []).length > 0
     const base = declaredNodes(config, adapter) ?? compiled.specs
     if (seen === undefined) {
-      bots.set(adapter.botName, { base, denyRules: deny, allowRules: allow, deps: compiled.deps })
+      bots.set(adapter.botName, { base, denyRules: deny, allowRules: allow, prepare: false, deps: compiled.deps })
       continue
     }
     if (stable(seen.base) !== stable(base)) {
@@ -299,7 +299,8 @@ function checkPolicy(adapter: AdapterConfig, index: number): void {
   }
 }
 
-/** Binds this turn's hook; the bot level deps stay identical across adapters, which #77 compares. */
+/** Binds this turn's hook; the bot level deps stay identical across adapters, which #77 compares.
+ *  The node context is not read: the hook sees the event built for this message, not the pipeline's copy. */
 function bindPrepare(
   deps: PipelineDeps,
   transport: ChannelAdapter,
@@ -330,10 +331,10 @@ function checkPrepareSupport(bots: Map<string, BotFacts>, channels: readonly Mou
     perBot.set(channel.config.botName, list)
   }
   for (const [bot, facts] of bots) {
-    const node = facts.base.find((one) => one.type === 'prepare')
-    if (node === undefined) continue
     const missing = (perBot.get(bot) ?? []).filter((channel) => typeof channel.adapter.prepare !== 'function')
-    if (missing.length === 0) continue
+    facts.prepare = missing.length === 0
+    const node = facts.base.find((one) => one.type === 'prepare')
+    if (node === undefined || missing.length === 0) continue
     const names = missing.map((channel) => `"${channel.config.channel}" (${channel.adapter.kind})`).join(', ')
     throw new ConfigError(
       `node "${node.id}": bot "${bot}" declares a prepare node, but adapter ${names} cannot prepare; every adapter answering for a bot must carry the hook`,

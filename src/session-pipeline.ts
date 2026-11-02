@@ -14,6 +14,8 @@ export interface BotScope {
   /** A rule node is bound only when every adapter of this bot can match one. */
   denyRules: boolean
   allowRules: boolean
+  /** Every adapter of this bot carries the prepare hook, so a layer may introduce the node. */
+  prepare: boolean
 }
 
 export interface SessionPipelineOptions {
@@ -106,6 +108,12 @@ export class SessionPipelines {
     const introduced = new Set([...(layer.insert ?? []).map((spec) => spec.id), ...Object.keys(layer.override ?? {})])
     for (const node of report.nodes) {
       if (!introduced.has(node.id)) continue
+      if (node.type === 'prepare' && !bot.prepare) {
+        throw new ConfigError(
+          `node "${node.id}": this bot's adapters supply no prepare hook, so the node could only fail every turn`,
+          ['pipeline'],
+        )
+      }
       const reason = unboundReason(node) ?? unboundRuleReason(node, rules)
       if (reason !== undefined) throw new ConfigError(`node "${node.id}": ${reason}`, ['pipeline'])
     }

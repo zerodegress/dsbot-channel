@@ -117,9 +117,16 @@ class PlainStub implements ChannelAdapter {
     return { ok: true, messageId: 'm-1', duplicate: false }
   }
 
+  #ports: AdapterPorts | undefined
+
   async start(ports: AdapterPorts): Promise<AdapterHandle> {
+    this.#ports = ports
     for (const one of this.queue) await ports.onMessage(inbound(one, this.kind))
     return { stop: () => Promise.resolve() }
+  }
+
+  async deliver(one: Queued): Promise<void> {
+    await this.#ports?.onMessage(inbound(one, this.kind))
   }
 }
 
@@ -155,6 +162,7 @@ interface MountOptions {
   pipeline?: { global: { id: string; type: string }[] }
   extraAdapter?: boolean
   denied?: boolean
+  allow?: boolean
 }
 
 async function mount(options: MountOptions = {}): Promise<Context> {
@@ -186,7 +194,11 @@ async function mount(options: MountOptions = {}): Promise<Context> {
       channel: 'x:a',
       instance: 'inst-a',
       botName: 'bot-a',
-      ...(options.denied === true ? { policy: { deny: { words: ['spam'] }, allow: { peers: ['inst-a'] } } } : {}),
+      ...(options.denied === true
+        ? { policy: { deny: { words: ['spam'] }, allow: { peers: ['inst-a'] } } }
+        : options.allow === true
+          ? { policy: { allow: { peers: ['inst-a'] } } }
+          : {}),
       transport: {},
     },
     ...(options.extraAdapter === true
@@ -267,6 +279,57 @@ describe('the prepare hook an adapter may carry', () => {
 
     await waitFor(() => created[0] !== undefined && created[0].seen.length === 1)
     expect(created[0]!.seen.map((one) => one.event.eventKey)).toEqual(['evt-2'])
+  })
+})
+
+describe('a prepare node a session layer introduces', () => {
+  test('is refused at declaration when the adapters carry no hook', async () => {
+    nextQueue = []
+    const ctx = new Context()
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', {
+          create: () => Promise.resolve({ sessionId: 'session-1' }),
+          prompt: () => Promise.resolve({ accepted: true }),
+        })
+      },
+    })
+    const fork = await ctx.plugin(entry, {
+      adapters: [
+        {
+          channel: 'p2p:self',
+          instance: 'inst-a',
+          botName: 'bot-a',
+          policy: { allow: { peers: ['inst-b'] } },
+          transport: { peers: [{ instance: 'inst-b', secret: REF }], listen: { host: '127.0.0.1', port: 0 } },
+        },
+      ],
+      pipeline: { global: [{ id: 'allow', type: 'allow' }] },
+    })
+    forks.push(fork as unknown as { dispose: () => Promise<void> })
+    const pipeline = ctx.get('dsbot-channel.pipeline') as {
+      forSession(bot: string, key: string, layer: unknown): void
+    }
+    expect(() =>
+      pipeline.forSession('bot-a', 'p2p:inst-b', { insert: [{ id: 'late', type: 'prepare', after: 'allow' }] }),
+    ).toThrow(/node "late".*prepare/)
+  })
+
+  test('runs once per turn when every adapter carries the hook', async () => {
+    const ctx = await mount({ denied: true, pipeline: { global: [{ id: 'deny', type: 'deny' }] } })
+    const pipeline = ctx.get('dsbot-channel.pipeline') as {
+      forSession(bot: string, key: string, layer: unknown): void
+    }
+    pipeline.forSession('bot-a', 'group:1', { insert: [{ id: 'late', type: 'prepare', after: 'deny' }] })
+
+    await created[0]!.deliver({ eventKey: 'evt-9', sessionKey: 'group:1', text: 'late hook' })
+    await waitFor(() => created[0]!.seen.length === 1)
+    expect(created[0]!.seen[0]!.event.eventKey).toBe('evt-9')
+    expect(created[0]!.seen[0]!.sessionKey).toBe('group:1')
   })
 })
 
