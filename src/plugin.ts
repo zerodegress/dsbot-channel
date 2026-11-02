@@ -40,6 +40,7 @@ import type { BotScope } from './session-pipeline.js'
 import { SessionPipelines } from './session-pipeline.js'
 import { TurnBilling } from './turn-billing.js'
 import { TurnStats } from './turn-stats.js'
+import { TurnQueue } from './turn-queue.js'
 import type { TurnOutcome } from './turn-stats.js'
 import { createWarn } from './warn.js'
 
@@ -430,6 +431,7 @@ interface ChannelRuntime {
   gate: InboundGate
   billing: TurnBilling
   deps: PipelineDeps
+  turn: TurnSettings
 }
 
 /** Reads the profile, pointing an old `p2p` key at the block that replaced it. */
@@ -464,7 +466,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
     judgeTimeoutMs: config.pipeline.judgeTimeoutMs,
   }
   checkPipelineSettings(settings)
-  checkTurnSettings(config.turn)
+  const turn = checkTurnSettings(config.turn)
   checkPipelineScopes(config, warn)
   const bots = botScopes(config)
   const pipelines = new SessionPipelines({ bots })
@@ -513,6 +515,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const chains = new ClosedChains()
   const injected = new InjectionLedger()
   const activeTurns = new Map<string, TurnRef>()
+  const queued = new Map<string, { queue: TurnQueue<InboundMessage>; timer: ReturnType<typeof setTimeout> | undefined }>()
   const eventKeys = new KeyGuard()
   const chainKeys = new ChainGuard()
   const turns = new TurnStats()
@@ -521,10 +524,17 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
     return found?.value
   }
 
-  const runTurn = async (runtime: ChannelRuntime, message: InboundMessage, sessionId: string): Promise<void> => {
+  const runTurn = async (
+    runtime: ChannelRuntime,
+    message: InboundMessage,
+    sessionId: string,
+    rest: readonly InboundMessage[] = [],
+  ): Promise<void> => {
+    const last = rest.length === 0 ? message : rest[rest.length - 1]!
     const { config: adapter, adapter: transport } = runtime.channel
     const turnRef: TurnRef = {
-      eventId: message.requestId,
+      // The refusal answers the newest message of the batch; the record below uses the first.
+      eventId: last.requestId,
       chainId: message.chainId,
       channel: adapter.channel,
       target: message.replyTarget,
@@ -558,7 +568,10 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
       const turn = await runtime.sessions.runTurn({
         peer: message.sessionKey,
         requestId: message.requestId,
-        text: blocks.length === 0 ? message.body.text : `${blocks.join('\n')}\n\n${message.body.text}`,
+        text:
+          blocks.length === 0
+            ? [message, ...rest].map((one) => one.body.text).join('\n')
+            : `${blocks.join('\n')}\n\n${[message, ...rest].map((one) => one.body.text).join('\n')}`,
       })
       if (turnRef.suppressed) {
         if (turnRef.declined === true) {
@@ -603,14 +616,14 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
       }
       const sent = await transport.send({
         target: message.replyTarget,
-        to: message.author.senderId,
+        to: last.author.senderId,
         body: turn.text,
         eventId: `reply:${randomUUID()}`,
         chainId: message.chainId,
         sender: adapter.botName,
         instance: adapter.instance,
-        inReplyTo: message.requestId,
-        inReplyToText: message.rawText,
+        inReplyTo: last.requestId,
+        inReplyToText: last.rawText,
       })
       if (sent.ok) {
         turns.replied()
@@ -672,6 +685,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         }),
         billing: new TurnBilling({ ledger }),
         deps: bots.get(adapter.botName)?.deps ?? compiled.deps,
+        turn,
       }
       const onMessage = async (message: InboundMessage): Promise<InboundVerdict> => {
         const kindProblem = tokenProblem('source.kind', message.source.kind, SOURCE_KIND_MAX)
@@ -734,19 +748,58 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
           replyTarget: message.replyTarget,
           sender: message.author.senderId,
         })
-        setTimeout(() => {
-          void runTurn(runtime, message, sessionId).catch((error: unknown) => {
-            turns.failed()
-            turns.close({
-              eventKey: message.eventKey,
-              bot: adapter.botName,
-              channel: adapter.channel,
-              sessionKey: message.sessionKey,
-              outcome: 'failed',
+        const runBatch = (batch: readonly InboundMessage[]): void => {
+          const first = batch[0]!
+          for (const one of batch) {
+            if (one.sessionKey !== first.sessionKey) {
+              throw new Error(`a batch mixes sessions: "${first.sessionKey}" and "${one.sessionKey}"`)
+            }
+          }
+          setTimeout(() => {
+            void runTurn(runtime, first, sessionId, batch.slice(1)).catch((error: unknown) => {
+              turns.failed()
+              turns.close({
+                eventKey: first.eventKey,
+                bot: adapter.botName,
+                channel: adapter.channel,
+                sessionKey: first.sessionKey,
+                outcome: 'failed',
+                mergedKeys: batch.map((one) => one.eventKey),
+              })
+              warn(`dsbot-channel: peer turn for ${first.replyTarget} failed: ${String(error)}`)
             })
-            warn(`dsbot-channel: peer turn for ${message.replyTarget} failed: ${String(error)}`)
-          })
-        }, 0)
+          }, 0)
+        }
+        if (turn.coalesceMs === 0) {
+          runBatch([message])
+          return { ok: true }
+        }
+        const queueKey = `${adapter.botName}|${message.sessionKey}`
+        let held = queued.get(queueKey)
+        if (held === undefined) {
+          held = {
+            queue: new TurnQueue({ maxBatch: turn.maxBatch, maxChars: turn.maxChars }, turn.coalesceMs),
+            timer: undefined,
+          }
+          queued.set(queueKey, held)
+        }
+        const ready = held.queue.push(
+          { eventKey: message.eventKey, chars: message.body.text.length + 1, value: message },
+          Date.now(),
+        )
+        if (ready !== undefined) {
+          if (held.timer !== undefined) clearTimeout(held.timer)
+          held.timer = undefined
+          runBatch(ready.map((one) => one.value))
+          return { ok: true }
+        }
+        if (held.timer === undefined) {
+          held.timer = setTimeout(() => {
+            const due = held!.queue.due(Date.now())
+            held!.timer = undefined
+            if (due !== undefined) runBatch(due.map((one) => one.value))
+          }, turn.coalesceMs)
+        }
         return { ok: true }
       }
       started.push(await transport.start({ onMessage, resolveSecret }))
