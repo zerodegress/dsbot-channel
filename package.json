@@ -1,7 +1,23 @@
 {
   "name": "dsbot-channel",
-  "version": "0.0.0",
-  "description": "A cordis plugin for ds-bot that carries messages between instances over a peer link.",
+  "version": "0.1.0",
+  "description": "A message gateway for ds-bot: events from several external platforms reach one bot, and answers go back to the conversation they came from",
+  "keywords": [
+    "cordis",
+    "dsbot",
+    "deepseek",
+    "chatbot",
+    "gateway",
+    "messaging"
+  ],
+  "homepage": "https://github.com/zerodegress/dsbot-channel",
+  "bugs": {
+    "url": "https://github.com/zerodegress/dsbot-channel/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zerodegress/dsbot-channel.git"
+  },
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -18,20 +34,28 @@
     "cordis.patch.yml",
     "README.md",
     "README_ZH.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "LICENSE"
   ],
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
   },
   "scripts": {
     "build": "pnpm clean && rolldown -c && tsc -p tsconfig.json",
+    "build:debug": "SOURCE_MAP=1 pnpm build",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "typecheck": "tsc -p tsconfig.test.json",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepack": "pnpm build"
+    "prepack": "pnpm build",
+    "prepublishOnly": "pnpm lint && pnpm typecheck && pnpm test"
   },
   "dependencies": {
     "@deepseek-ai/dsh-tools": "0.2.1-rc.2",

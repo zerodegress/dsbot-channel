@@ -33,7 +33,7 @@ function mediaMessage(): InboundMessage {
     ...message('x-media'),
     eventKey: 'inst-a:media-1',
     chainId: 'inst-a:media-1',
-    body: { text: 'look', media: [{ type: 'image', url: null, handle: 'onebot:image:abc-123' }], replyTo: null },
+    body: { text: 'look', media: [{ type: 'image', url: 'https://example.test/a.png' }], replyTo: null },
     rawText: 'look',
   }
 }
@@ -204,15 +204,15 @@ describe('the session key an adapter supplies', () => {
   })
 })
 
-describe('a media handle a third-party adapter carries', () => {
-  test('a reference with only a handle reaches a turn untouched', async () => {
+describe('a media reference a third-party adapter carries', () => {
+  test('a reference with a url reaches a turn untouched', async () => {
     verdicts.length = 0
     const { prompts } = await mountPrompted('x-media', 'x-media')
 
     expect(verdicts).toEqual([{ ok: true }])
     await new Promise((resolve) => setTimeout(resolve, 10))
     expect(prompts).toHaveLength(1)
-    expect(messages.at(-1)?.body.media[0]).toEqual({ type: 'image', url: null, handle: 'onebot:image:abc-123' })
+    expect(messages.at(-1)?.body.media[0]).toEqual({ type: 'image', url: 'https://example.test/a.png' })
   })
 })
 

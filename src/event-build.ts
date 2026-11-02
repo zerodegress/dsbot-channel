@@ -1,7 +1,7 @@
 import { adapterMetaOf } from './adapter-meta.js'
 import { contentHash, eventKey } from './event-key.js'
 import type { ChargeKind, Event, EventInput, MediaRef, Mentioned, Source } from './event-types.js'
-import { MEDIA_HANDLE_MAX, MEDIA_TYPES } from './event-types.js'
+import { MEDIA_TYPES } from './event-types.js'
 import { AUTHOR_KINDS, CHARGE_KINDS, SCOPES, SOURCE_KIND_MAX } from './event-types.js'
 
 function assertEnum<T extends string>(name: string, allowed: readonly T[], value: string): T {
@@ -32,27 +32,10 @@ function assertMedia(media: readonly MediaRef[]): MediaRef[] {
     if (!(MEDIA_TYPES as readonly string[]).includes(item.type)) {
       throw new Error(`media[${index}].type must be one of ${MEDIA_TYPES.join(', ')}, got "${String(item.type)}"`)
     }
-    const url = item.url ?? null
-    const handle = item.handle ?? null
-    if (url === null && handle === null) throw new Error(`media[${index}] needs a url or a handle`)
-    if (url !== null && (typeof url !== 'string' || url.length === 0)) {
-      throw new Error(`media[${index}].url must be a non-empty string when it is present`)
+    if (typeof item.url !== 'string' || item.url.length === 0) {
+      throw new Error(`media[${index}] needs a non-empty url`)
     }
-    if (handle !== null) {
-      if (typeof handle !== 'string' || handle.length === 0) {
-        throw new Error(`media[${index}].handle must be a non-empty string when it is present`)
-      }
-      if (Array.from(handle).length > MEDIA_HANDLE_MAX) {
-        throw new Error(`media[${index}].handle must be at most ${MEDIA_HANDLE_MAX} characters`)
-      }
-      for (const char of handle) {
-        const code = char.codePointAt(0) ?? 0
-        if (code < 0x21 || code > 0x7e) {
-          throw new Error(`media[${index}].handle must be one line of printable characters without spaces`)
-        }
-      }
-    }
-    return { type: item.type, url, handle }
+    return { type: item.type, url: item.url }
   })
 }
 

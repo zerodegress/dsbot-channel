@@ -17,7 +17,6 @@ import type {
   SendInput,
   SendResult,
 } from '../../contract.js'
-import { MEDIA_HANDLE_MAX } from '../../event-types.js'
 import type { AuthorKind, MediaRef, Mentioned, Scope } from '../../event-types.js'
 import { buildEvent } from '../../event-build.js'
 import { ADAPTER_META_MAX_BYTES } from '../../adapter-meta.js'
@@ -100,17 +99,6 @@ function mentionsOf(segments: unknown, selfId: string | undefined): Mentioned {
   return mentioned
 }
 
-/** A handle must be one printable line; a bad one becomes null instead of failing the message. */
-function handleOf(value: unknown): string | null {
-  if (typeof value !== 'string' || value.length === 0) return null
-  if (Array.from(value).length > MEDIA_HANDLE_MAX) return null
-  for (const char of value) {
-    const code = char.codePointAt(0) ?? 0
-    if (code < 0x21 || code > 0x7e) return null
-  }
-  return value
-}
-
 function mediaOf(segments: unknown): { media: MediaRef[]; dropped: number } {
   const media: MediaRef[] = []
   let dropped = 0
@@ -121,12 +109,11 @@ function mediaOf(segments: unknown): { media: MediaRef[]; dropped: number } {
     const type = typeof one.type === 'string' ? MEDIA_FOR_SEGMENT[one.type] : undefined
     if (type === undefined) continue
     const url = typeof one.data?.url === 'string' && one.data.url.length > 0 ? one.data.url : null
-    const handle = handleOf(one.data?.file)
-    if (url === null && handle === null) {
+    if (url === null) {
       dropped += 1
       continue
     }
-    media.push({ type, url, handle })
+    media.push({ type, url })
   }
   return { media, dropped }
 }
@@ -173,7 +160,7 @@ export function mapOneBotEvent(
   const rawText = segmentText(event.message)
   const { media, dropped } = mediaOf(event.message)
   if (dropped > 0) {
-    warn?.(`dsbot-channel: dropped ${dropped} onebot media reference(s) from ${messageId} that carried neither a url nor a usable handle`)
+    warn?.(`dsbot-channel: dropped ${dropped} onebot media reference(s) from ${messageId} that carried no url`)
   }
   const nickname = typeof event.sender?.card === 'string' && event.sender.card.length > 0
     ? event.sender.card
