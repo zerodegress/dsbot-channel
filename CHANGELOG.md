@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `turn-stats` separates a quiet end from a refusal: `suppressed` stays the sum, with `ended` and `refused` beside it, and the tools report which one they took.
 
+### Changed
+
+- `decline` takes a `reason` from the closed set a channel can tell the sender, plus an optional `note`, counts toward the reply ceiling like a reply does, and is charged at the rejected rate instead of being refunded.
+
 ### Fixed
 
 - A refusal now reaches the peer it refuses: `decline` posted an empty body, which the receiving parser rejects, so every refusal came back `400` and the sender never learned it was declined. The chosen reason travels as `reason`, and the note (or `declined` when there is none) travels as `body`.
@@ -35,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A p2p channel that runs end to end: an accepted message starts a turn with the host session controller, and the reply is sent back to the peer that sent it.
 - `mentioned` on an event reports `self`, `others` and `all` separately, so an adapter says whether a message names the bot, someone else, or everyone; `policy.requireMention: true` refuses group messages that name neither the bot nor everyone, and is off by default.
 - A media reference is `{ type, url }` with a non-empty `url`, and both fields take part in the content hash. An adapter that can only name a media item by a token of its own drops it and warns: core never sees a platform token.
-- `decline` closes the conversation with a refusal the adapter sends (`RefuseInput`), and reports `declined: false` when a transport cannot send one. It takes a `reason` from the closed set a channel can tell the sender, plus an optional `note`, counts toward the reply ceiling like a reply does, and is charged at the rejected rate instead of being refunded.
+- `decline` closes the conversation with a refusal the adapter sends (`RefuseInput`), and reports `declined: false` when a transport cannot send one.
 - `send_text` addresses a message by `target` alone; a caller that still passes `scope` gets `unsupported_argument` rather than silence.
 - Guidance and the tool-mode notice ride as bracketed blocks on their own lines: `[<kind>]` for the adapter's guidance, `[tool-mode]` for the mode notice. Guidance rides a conversation once; the mode block repeats only on a switch into tool mode.
 - An adapter declares the capabilities it carries at mount time, beside the sampled ones in its status.
