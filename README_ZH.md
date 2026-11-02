@@ -2,7 +2,7 @@
 
 [English](./README.md) | 中文
 
-[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness) [![](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
+[![](https://img.shields.io/npm/v/dsbot-channel)](https://www.npmjs.com/package/dsbot-channel) [![DSH](https://img.shields.io/badge/DSH-0.2.1--rc.4-4D6BFE)](https://www.npmjs.com/package/@deepseek-ai/dsh) [![DS-Bot](https://img.shields.io/badge/DS--Bot-0.2.x-4D6BFE)](https://github.com/Fei2411/DS-Bot) [![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness) [![](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
 ds-bot 的消息网关：多个外部平台的事件进到同一个 Bot，回答投回它来的那个会话。
 
@@ -15,6 +15,8 @@ ds-bot 的消息网关：多个外部平台的事件进到同一个 Bot，回答
 - 宿主的凭据服务，用于解析适配器密钥
 - 宿主的会话控制服务，用于跑回合
 - 宿主的 tools 服务，当 profile 可能选择 tool 模式时
+
+已在 DS-Bot 0.2.x 上测试（本版发布时为 0.2.5）。不保证与后续版本的兼容性。
 
 ## 安装
 
