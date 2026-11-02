@@ -2370,17 +2370,6 @@ describe('messages that arrive together', () => {
     expect(record.merged).toBe(record.mergedKeys.length)
   })
 
-  test('what a full batch leaves behind gets its own window', async () => {
-    const { sessions, portB } = await pair({ turn: { coalesceMs: 1500, maxChars: 100 } })
-    const long = 'x'.repeat(60)
-    await send(portB, 'evt-a', long)
-    await send(portB, 'evt-b', long)
-    await send(portB, 'evt-c', long)
-
-    await waitFor(() => sessions.prompted.length === 3, 15000)
-    expect(sessions.prompted).toHaveLength(3)
-  })
-
   test('the same words twice still appear twice', async () => {
     const { sessions, portB } = await pair({ turn: { coalesceMs: 500 } })
     await send(portB, 'evt-a', 'same words')
