@@ -446,6 +446,7 @@ async function pair(
     budget?: { capacity: number }
     unsupported?: string
     global?: unknown[]
+    turn?: { coalesceMs: number; maxBatch?: number; maxChars?: number }
   } = {},
 ) {
   const [portA, portB] = [await freePort(), await freePort()]
@@ -482,13 +483,14 @@ policy: {
   await ctx.plugin(registryPlugin)
   const fork = await ctx.plugin(entry, {
     ...(options.global === undefined ? {} : { pipeline: { global: options.global } }),
+    ...(options.turn === undefined ? {} : { turn: options.turn }),
     adapters: [
       adapter('p2p:a', 'inst-a', 'bot-a', 'inst-b', portA, portB),
       adapter('p2p:b', 'inst-b', 'bot-b', 'inst-a', portB, portA),
     ],
   })
   forks.push(fork)
-  return { sessions, portB }
+  return { sessions, portB, ctx }
 }
 
 function send(port: number, eventId: string, body: string, sender = 'bot-a', chainId?: string) {
@@ -701,6 +703,7 @@ describe('closing a peer conversation', () => {
     posts: Captured[]
     prompted: string[]
     port: number
+    ctx: Context
     close: () => void
   }
 
@@ -708,7 +711,12 @@ describe('closing a peer conversation', () => {
     first: 'no_reply' | 'decline' | 'none',
     later: 'no_reply' | 'decline' | 'none' = first,
     host?: string,
-    options: { reason?: string; relayLimit?: number; budget?: Record<string, unknown> } = {},
+    options: {
+      reason?: string
+      relayLimit?: number
+      budget?: Record<string, unknown>
+      turn?: { coalesceMs: number; maxBatch?: number; maxChars?: number }
+    } = {},
   ): Promise<Mounted> {
     const posts: Captured[] = []
     const capture = createServer((request, response) => {
@@ -775,6 +783,7 @@ describe('closing a peer conversation', () => {
     })
     await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
+      ...(options.turn === undefined ? {} : { turn: options.turn }),
       adapters: [
         {
 channel: 'p2p:b',
@@ -803,7 +812,7 @@ transport: {
       ],
     })
     forks.push(fork)
-    return { posts, prompted, port, close: () => capture.close() }
+    return { posts, prompted, port, ctx, close: () => capture.close() }
   }
 
   test('no_reply leaves the peer with nothing at all', async () => {
@@ -936,6 +945,27 @@ transport: {
 
       expect(mounted.prompted[0]).toContain('call no_reply')
       expect(mounted.prompted[1]).not.toContain('call no_reply')
+    } finally {
+      mounted.close()
+    }
+  })
+
+  test('a quiet batch still records how many messages it answered', async () => {
+    const mounted = await mount('no_reply', 'no_reply', undefined, { turn: { coalesceMs: 1500 } })
+    try {
+      await send(mounted.port, 'evt-1', 'first')
+      await send(mounted.port, 'evt-2', 'second')
+      const turns = mounted.ctx.get('dsbot-channel.turns') as {
+        snapshot(): { recent: { outcome: string; merged: number; mergedKeys: string[] }[] }
+      }
+      const deadline = Date.now() + 8000
+      while (!turns.snapshot().recent.some((one) => one.outcome === 'ended')) {
+        if (Date.now() > deadline) throw new Error('the quiet batch never closed')
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      }
+      const record = turns.snapshot().recent.find((one) => one.outcome === 'ended')!
+      expect(record.merged).toBe(2)
+      expect(record.mergedKeys).toHaveLength(2)
     } finally {
       mounted.close()
     }
@@ -2340,5 +2370,44 @@ describe('a reply chain three hops long', () => {
       expect(later.length).toBeLessThanOrEqual(64)
     }
     expect(new Set(ids).size).toBe(ids.length)
+  })
+})
+
+describe('messages that arrive together', () => {
+  test('three in one window make one turn that quotes the newest', async () => {
+    const { sessions, portB, ctx } = await pair({ turn: { coalesceMs: 1500 } })
+    await Promise.all([
+      send(portB, 'evt-a', 'first'),
+      send(portB, 'evt-b', 'second'),
+      send(portB, 'evt-c', 'third'),
+    ])
+
+    await waitFor(() => sessions.prompted.length > 0, 8000)
+    expect(sessions.prompted).toHaveLength(1)
+    const text = sessions.prompted[0]!.text
+    expect(text).toContain('first')
+    expect(text).toContain('second')
+    expect(text).toContain('third')
+    expect(text.indexOf('first')).toBeLessThan(text.indexOf('second'))
+    expect(text.indexOf('second')).toBeLessThan(text.indexOf('third'))
+
+    const turns = ctx.get('dsbot-channel.turns') as {
+      snapshot(): { recent: { outcome: string; merged: number; mergedKeys: string[] }[] }
+    }
+    await waitFor(() => turns.snapshot().recent.some((one) => one.outcome === 'replied'), 8000)
+    const record = turns.snapshot().recent.find((one) => one.outcome === 'replied')!
+    expect(record.merged).toBe(3)
+    expect(record.mergedKeys.map((key) => key.replace('inst-a:', ''))).toEqual(['p2p-evt-a', 'p2p-evt-b', 'p2p-evt-c'])
+    expect(record.merged).toBe(record.mergedKeys.length)
+  })
+
+  test('the same words twice still appear twice', async () => {
+    const { sessions, portB } = await pair({ turn: { coalesceMs: 500 } })
+    await send(portB, 'evt-a', 'same words')
+    await send(portB, 'evt-b', 'same words')
+
+    await waitFor(() => sessions.prompted.length > 0, 4000)
+    expect(sessions.prompted).toHaveLength(1)
+    expect(sessions.prompted[0]!.text.match(/same words/g)).toHaveLength(2)
   })
 })

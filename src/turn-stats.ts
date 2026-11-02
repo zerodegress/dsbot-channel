@@ -21,6 +21,10 @@ export interface TurnRecord {
   outcome: TurnOutcome
   code?: string | undefined
   durationMs: number
+  /** How many messages this turn answered; `merged === mergedKeys.length` always holds. */
+  merged: number
+  /** The event keys it answered, in arrival order; the triggering message is included. */
+  mergedKeys: string[]
 }
 
 export const DEFAULT_TURN_RECORD_LIMIT = 200
@@ -86,11 +90,23 @@ export class TurnStats {
 
   /** Records how one turn ended; a turn opened earlier carries its own duration. */
   close(
-    input: { eventKey: string; bot: string; channel: string; sessionKey: string; outcome: TurnOutcome; code?: string },
+    input: {
+      eventKey: string
+      bot: string
+      channel: string
+      sessionKey: string
+      outcome: TurnOutcome
+      code?: string
+      mergedKeys?: readonly string[]
+    },
   ): void {
     const startedAt = this.#open.get(input.eventKey) ?? this.#now()
     this.#open.delete(input.eventKey)
     const endedAt = this.#now()
+    const mergedKeys = input.mergedKeys === undefined ? [input.eventKey] : [...input.mergedKeys]
+    if (mergedKeys.length === 0 || !mergedKeys.includes(input.eventKey)) {
+      throw new Error(`a turn record names the message it answers: "${input.eventKey}" is not in its merged keys`)
+    }
     const record: TurnRecord = {
       eventKey: input.eventKey,
       bot: input.bot,
@@ -100,6 +116,8 @@ export class TurnStats {
       endedAt,
       outcome: input.outcome,
       durationMs: endedAt - startedAt,
+      merged: mergedKeys.length,
+      mergedKeys,
       ...(input.code === undefined ? {} : { code: input.code }),
     }
     this.#recent.push(record)

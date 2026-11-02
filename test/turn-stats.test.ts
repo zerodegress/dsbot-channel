@@ -72,6 +72,8 @@ describe('the turns a host may read back', () => {
       endedAt: 1_250,
       durationMs: 250,
       outcome: 'replied',
+      merged: 1,
+      mergedKeys: ['inst-a:m1'],
     })
   })
 
@@ -103,5 +105,32 @@ describe('the turns a host may read back', () => {
     const before = stats.snapshot()
     stats.snapshot()
     expect(stats.snapshot()).toEqual(before)
+  })
+})
+
+describe('what a turn answered', () => {
+  const base = { bot: 'bot-a', channel: 'p2p:a', sessionKey: 'p2p:inst-a', outcome: 'replied' as const }
+  const stats = () => new TurnStats({ now: () => 5 })
+
+  test('a turn with no batch answers exactly its own message', () => {
+    const one = stats()
+    one.close({ ...base, eventKey: 'evt-1' })
+    const record = one.snapshot().recent[0]!
+    expect(record.merged).toBe(1)
+    expect(record.mergedKeys).toEqual(['evt-1'])
+  })
+
+  test('a batch keeps arrival order and its size matches the keys', () => {
+    const one = stats()
+    one.close({ ...base, eventKey: 'evt-1', mergedKeys: ['evt-1', 'evt-2', 'evt-3'] })
+    const record = one.snapshot().recent[0]!
+    expect(record.mergedKeys).toEqual(['evt-1', 'evt-2', 'evt-3'])
+    expect(record.merged).toBe(record.mergedKeys.length)
+  })
+
+  test('a batch that does not name its own message is refused', () => {
+    const one = stats()
+    expect(() => one.close({ ...base, eventKey: 'evt-1', mergedKeys: ['evt-2'] })).toThrow(/is not in its merged keys/)
+    expect(() => one.close({ ...base, eventKey: 'evt-1', mergedKeys: [] })).toThrow(/is not in its merged keys/)
   })
 })
