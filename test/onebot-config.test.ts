@@ -63,4 +63,23 @@ describe('the onebot transport block', () => {
     expect(() => parseOneBotConfig(mount({ api: { url: 'http://x' }, sendTimeoutMs: 0 }))).toThrow(/sendTimeoutMs/)
     expect(() => parseOneBotConfig(mount({ api: { url: 'http://x' }, bots: '20002' }))).toThrow(/list of ids/)
   })
+
+  test('reads the history block, off unless a profile opens a kind', () => {
+    expect(parseOneBotConfig(mount({ api: { url: 'http://x' } })).history).toEqual({ group: false, private: false })
+    expect(
+      parseOneBotConfig(mount({ api: { url: 'http://x' }, history: { group: true } })).history,
+    ).toEqual({ group: true, private: false })
+    expect(
+      parseOneBotConfig(mount({ api: { url: 'http://x' }, history: { group: true, private: true } })).history,
+    ).toEqual({ group: true, private: true })
+  })
+
+  test('refuses a history block it cannot read', () => {
+    expect(() => parseOneBotConfig(mount({ api: { url: 'http://x' }, history: { group: 'yes' } }))).toThrow(
+      /transport.history.group must be true or false/,
+    )
+    expect(() => parseOneBotConfig(mount({ api: { url: 'http://x' }, history: { dm: true } }))).toThrow(
+      /transport.history names a field this adapter does not read: dm/,
+    )
+  })
 })

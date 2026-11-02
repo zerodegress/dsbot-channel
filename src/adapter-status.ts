@@ -14,13 +14,22 @@ export interface MediaCapability {
 /** A media capability nobody claims: all four answers false. */
 export const NO_MEDIA: MediaCapability = { in: false, out: false, fromUrl: false, fromHandle: false }
 
+/** Which conversation kinds a transport can page history for. */
+export interface HistoryCapability {
+  group: boolean
+  private: boolean
+}
+
+/** Neither kind: the answer when nothing declares history. */
+export const NO_HISTORY: HistoryCapability = { group: false, private: false }
+
 export interface CapabilitySet {
   text: boolean
   image: MediaCapability
   file: MediaCapability
   voice: MediaCapability
   recall: boolean
-  history: boolean
+  history: HistoryCapability
   /** The platform can tell this bot's own mentions from mentions of others and of everyone. */
   mention: boolean
   reply: boolean

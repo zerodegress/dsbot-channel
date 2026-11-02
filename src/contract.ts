@@ -55,6 +55,8 @@ export type SendFailureCode =
   | 'forbidden'
   | 'busy'
   | 'rejected'
+  /** The transport cannot carry this request at all: no such action, or no way to read the source. */
+  | 'unsupported'
 
 export interface SendSuccess {
   ok: true
@@ -70,6 +72,33 @@ export interface SendFailure {
 }
 
 export type SendResult = SendSuccess | SendFailure
+
+/** One message read back from a transport. */
+export interface HistoryRecord {
+  messageId: string
+  /** The adapter's own cursor for this record; the same value travels back as `before`. */
+  cursor: string
+  /** Milliseconds since the epoch, as the transport stamped it. */
+  timestamp: number
+  senderId: string
+  /** Display name the transport reported, when it reports one. */
+  nickname?: string | undefined
+  /** What the sender said, without the transport's own header. */
+  text: string
+}
+
+export interface HistoryInput {
+  /** The address to read, as the adapter spells it. */
+  target: string
+  /** The adapter's own cursor; core never parses it. */
+  before?: string | undefined
+  limit: number
+}
+
+/** A page of history, or why the transport could not read one. */
+export type HistoryResult =
+  | { ok: true; records: HistoryRecord[]; next?: string | undefined }
+  | { ok: false; code: SendFailureCode; reason: string }
 
 /** Why a turn is refused; closed, so every transport tells the sender the same story. */
 export const REFUSE_REASONS = ['unsupported', 'unavailable', 'unauthorized', 'too-busy', 'policy'] as const
@@ -171,6 +200,11 @@ export interface ChannelAdapter {
    * refusal; core falls back to closing silently when it is absent.
    */
   refuse?(input: RefuseInput): Promise<RefuseResult>
+  /**
+   * Reads earlier messages from an address. Present only when the transport can page
+   * history; `capabilities.history` says for which kind of address.
+   */
+  history?(input: HistoryInput): Promise<HistoryResult>
   /**
    * Runs before every turn that reaches the prepare node, as a side effect only: it cannot
    * answer, cannot see the prompt and is never charged. Synchronous by contract.

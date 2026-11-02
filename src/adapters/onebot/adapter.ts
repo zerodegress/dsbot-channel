@@ -2,7 +2,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import type { AdapterStatus } from '../../adapter-status.js'
+import type { AdapterStatus, CapabilitySet } from '../../adapter-status.js'
 import { buildListenerHealth, buildStatus } from '../../adapter-status.js'
 import { answerStatus } from '../shared/status-route.js'
 import type { ChannelSnapshot } from '../../channel-stats.js'
@@ -12,6 +12,9 @@ import type {
   AdapterHandle,
   AdapterPorts,
   ChannelAdapter,
+  HistoryInput,
+  HistoryRecord,
+  HistoryResult,
   InboundMessage,
   SendFailure,
   SendInput,
@@ -28,6 +31,8 @@ export interface OneBotAdapterConfig {
   selfId?: string
   listen: { host: string; port: number; path: string }
   api: { url: string; timeoutMs: number }
+  /** Which addresses a profile lets this link page history for; both off unless written out. */
+  history?: { group: boolean; private: boolean } | undefined
   sendTimeoutMs: number
   accessToken?: string
   bots: readonly string[]
@@ -260,17 +265,7 @@ class Seen {
 export class OneBotAdapter implements ChannelAdapter {
   readonly kind = 'onebot'
   readonly guidance = { peer: ONEBOT_PEER_GUIDANCE, group: ONEBOT_GROUP_GUIDANCE }
-  readonly capabilities = {
-    text: true,
-    image: { in: true, out: true, fromUrl: true, fromHandle: true },
-    file: { in: true, out: true, fromUrl: true, fromHandle: true },
-    voice: { in: true, out: false, fromUrl: false, fromHandle: false },
-    recall: false,
-    history: false,
-    mention: true,
-    reply: true,
-    stream: false,
-  }
+  readonly capabilities: CapabilitySet
   readonly #config: OneBotAdapterConfig
   readonly #stats: ChannelStats
   readonly #now: () => number
@@ -282,6 +277,20 @@ export class OneBotAdapter implements ChannelAdapter {
 
   constructor(config: OneBotAdapterConfig, options: { warn?: (message: string) => void; now?: () => number } = {}) {
     this.#config = config
+    this.capabilities = {
+      text: true,
+      image: { in: true, out: true, fromUrl: true, fromHandle: true },
+      file: { in: true, out: true, fromUrl: true, fromHandle: true },
+      voice: { in: true, out: false, fromUrl: false, fromHandle: false },
+      recall: false,
+      history: {
+        group: config.history?.group === true,
+        private: config.history?.private === true,
+      },
+      mention: true,
+      reply: true,
+      stream: false,
+    }
     this.#stats = new ChannelStats(options.now)
     this.#now = options.now ?? Date.now
     this.#warn = options.warn
@@ -355,6 +364,119 @@ export class OneBotAdapter implements ChannelAdapter {
     return answered
   }
 
+
+  /** Pages earlier messages through the implementation's history API. */
+  async history(input: HistoryInput): Promise<HistoryResult> {
+    const target = this.#parseTarget(input.target)
+    if (target === undefined) {
+      return { ok: false, code: 'unsupported', reason: `this adapter cannot address "${input.target}"` }
+    }
+    const segment = target.scope === 'group' ? 'group' : 'private'
+    if (this.capabilities.history[segment] !== true) {
+      return { ok: false, code: 'unsupported', reason: `capabilities.history.${segment} is false` }
+    }
+    const action = target.scope === 'group' ? 'get_group_msg_history' : 'get_friend_msg_history'
+    const params: Record<string, unknown> = {
+      ...(target.scope === 'group' ? { group_id: target.id } : { user_id: target.id }),
+      count: input.limit,
+      ...(input.before === undefined ? {} : { message_seq: input.before }),
+    }
+    const answered = await this.#historyCall(action, params)
+    if (!answered.ok) return answered
+    const raw = Array.isArray(answered.data.messages) ? answered.data.messages : []
+    const records: HistoryRecord[] = []
+    for (const entry of raw) {
+      const record = this.#historyRecord(entry)
+      if (record !== undefined) records.push(record)
+    }
+    // Oldest first, so a reader follows the conversation the way it happened.
+    records.sort((left, right) => left.timestamp - right.timestamp)
+    // `next` is the cursor to pass back as `before` for earlier messages: the oldest record on
+    // this page, not an offset. A page without `next` means there is nothing older.
+    const next = records.length > 0 && records.length >= input.limit ? records[0]!.cursor : undefined
+    return { ok: true, records, ...(next === undefined ? {} : { next }) }
+  }
+
+  #historyRecord(entry: unknown): HistoryRecord | undefined {
+    if (entry === null || typeof entry !== 'object') return undefined
+    const one = entry as Record<string, unknown>
+    const messageId = idOf(one.message_id)
+    if (messageId === undefined) return undefined
+    const sender = (one.sender === null || typeof one.sender !== 'object' ? {} : one.sender) as Record<string, unknown>
+    const card = typeof sender.card === 'string' && sender.card.length > 0 ? sender.card : undefined
+    const nickname =
+      card ?? (typeof sender.nickname === 'string' && sender.nickname.length > 0 ? sender.nickname : undefined)
+    const cursor = idOf(one.message_seq) ?? idOf(one.real_seq) ?? messageId
+    const seconds = typeof one.time === 'number' && Number.isFinite(one.time) ? one.time : 0
+    return {
+      messageId,
+      cursor,
+      timestamp: seconds * 1000,
+      senderId: idOf(sender.user_id) ?? '',
+      text: segmentText(one.message),
+      ...(nickname === undefined ? {} : { nickname }),
+    }
+  }
+
+  async #historyCall(
+    action: string,
+    params: Record<string, unknown>,
+  ): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; code: SendFailure['code']; reason: string }> {
+    const ports = this.#ports
+    if (ports === undefined) {
+      return { ok: false, code: 'unreachable', reason: 'the onebot adapter is not started' }
+    }
+    const token = this.#config.accessToken === undefined ? undefined : await ports.resolveSecret(this.#config.accessToken)
+    if (this.#config.accessToken !== undefined && token === undefined) {
+      return { ok: false, code: 'credential', reason: 'the onebot access token did not resolve' }
+    }
+    let response: Response
+    try {
+      response = await fetch(`${this.#config.api.url}/${action}`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
+        },
+        body: JSON.stringify(params),
+        signal: AbortSignal.timeout(this.#config.sendTimeoutMs),
+      })
+    } catch (error) {
+      const timeout = error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')
+      return {
+        ok: false,
+        code: timeout ? 'timeout' : 'unreachable',
+        reason: timeout ? 'the onebot api did not answer in time' : `the onebot api is unreachable: ${String(error)}`,
+      }
+    }
+    let parsed: { status?: unknown; retcode?: unknown; data?: unknown; message?: unknown }
+    try {
+      parsed = (await response.json()) as typeof parsed
+    } catch {
+      if (response.status === 404) {
+        return { ok: false, code: 'unsupported', reason: 'the implementation has no such history action' }
+      }
+      return { ok: false, code: 'rejected', reason: `the api answered ${response.status} without json` }
+    }
+    const message = this.#oneLine(parsed.message ?? '')
+    if (response.status === 401 || response.status === 403 || parsed.retcode === 1403) {
+      return { ok: false, code: 'unauthorized', reason: message === '' ? 'unauthorized' : message }
+    }
+    if (/^消息.*不存在$/.test(message)) return { ok: true, data: {} }
+    if (/^记录.*不存在$/.test(message)) return { ok: false, code: 'rejected', reason: message }
+    if (response.status === 404) {
+      return { ok: false, code: 'unsupported', reason: message === '' ? 'the implementation has no such history action' : message }
+    }
+    if (!response.ok || parsed.status === 'failed' || (parsed.retcode !== undefined && parsed.retcode !== 0)) {
+      return {
+        ok: false,
+        code: response.status >= 500 ? 'unreachable' : 'rejected',
+        reason: message === '' ? `the api answered ${response.status}` : message,
+      }
+    }
+    if (parsed.data === null || typeof parsed.data !== 'object') return { ok: true, data: {} }
+    return { ok: true, data: parsed.data as Record<string, unknown> }
+  }
 
   /** The text alone when there is no media, otherwise the segments this instance may carry. */
   #messageOf(input: SendInput): string | { type: string; data: Record<string, string> }[] | undefined {
