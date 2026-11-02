@@ -245,7 +245,7 @@ describe('the policy value', () => {
 describe('a transport that cannot tell mentions apart', () => {
   test('warns at mount when whenMentioned is written out', async () => {
     await mount({ groupBots: 'whenMentioned' }, { mention: false })
-    expect(warnings.some((line) => line.includes('whenMentioned') && line.includes('x-group'))).toBe(true)
+    expect(warnings.some((line) => line.includes('whenMentioned') && line.includes('x:a'))).toBe(true)
   })
 
   test('stays quiet at mount under the default, then warns once', async () => {
@@ -254,6 +254,7 @@ describe('a transport that cannot tell mentions apart', () => {
 
     await deliver(message({ eventKey: 'b-6', kind: 'bot', mentioned: quiet }))
     expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('x:a')
     expect(warnings[0]).toContain('x-group')
 
     await deliver(message({ eventKey: 'b-7', kind: 'bot', mentioned: quiet }))

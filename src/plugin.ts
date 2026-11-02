@@ -769,8 +769,8 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         ) {
           runtime.mentionFallback.warned = true
           warn(
-            `policy.groupBots defaults to "whenMentioned", but "${transport.kind}" cannot tell mentions apart; ` +
-              `a bot's group message is refused as bot-speaker`,
+            `policy.groupBots defaults to "whenMentioned", but adapter "${adapter.channel}" (${transport.kind}) ` +
+              `cannot tell mentions apart; a bot's group message is refused as bot-speaker`,
           )
         }
         if (message.author.kind === 'person') runtime.gate.resetPeer(message.sessionKey, adapter.botName)
@@ -957,8 +957,8 @@ function mountAdapters(
     }
     if (adapter.policy.groupBots === 'whenMentioned' && transport.capabilities.mention !== true) {
       warn(
-        `policy.groupBots "whenMentioned" cannot be honoured by "${kind}", which cannot tell mentions apart; ` +
-          `a bot's group message is refused as bot-speaker`,
+        `policy.groupBots "whenMentioned" cannot be honoured by adapter "${adapter.channel}" (${kind}), ` +
+          `which cannot tell mentions apart; a bot's group message is refused as bot-speaker`,
       )
     }
     if (transport.kind !== kind) {
