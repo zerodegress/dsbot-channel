@@ -203,9 +203,22 @@ export class P2PAdapter implements ChannelAdapter {
       ...(peer.url === undefined ? {} : { url: peer.url }),
       ...(peer.host === undefined ? {} : { host: peer.host }),
     }
-    const media = (input.media ?? [])
-      .filter((item) => item.url !== null)
-      .map((item) => [item.type, item.url as string] as const)
+    const offered = input.media ?? []
+    const usable = offered.filter((item) => item.url !== null && /^https?:\/\/[^\s]+$/i.test(item.url))
+    if (offered.length > 0 && usable.length < offered.length) {
+      this.#options.warn?.(
+        `dsbot-channel: dropped ${offered.length - usable.length} media item(s) from ${input.eventId}: p2p carries http(s) urls only`,
+      )
+    }
+    if (usable.length === 0 && input.body.length === 0) {
+      return {
+        ok: false,
+        code: 'no_url',
+        retryable: false,
+        reason: 'every media item was dropped and the body is empty, so there is nothing a peer could accept',
+      }
+    }
+    const media = usable.map((item) => [item.type, item.url as string] as const)
     const result = await sendToPeer({
       peer: target,
       ...(input.chainId === undefined ? {} : { chainId: input.chainId }),

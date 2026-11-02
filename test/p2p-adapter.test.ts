@@ -451,3 +451,78 @@ describe('media in the adapter', () => {
     expect(withMedia.eventKey).toBe(without.eventKey)
   })
 })
+
+describe('media a peer could not receive', () => {
+  const warned: string[] = []
+
+  async function adapterWithCapture(): Promise<{ adapter: P2PAdapter; posted: Record<string, unknown>[]; close: () => void }> {
+    const posted: Record<string, unknown>[] = []
+    const capture = createServer((request, response) => {
+      let raw = ''
+      request.on('data', (chunk: string) => {
+        raw += chunk
+      })
+      request.on('end', () => {
+        posted.push(JSON.parse(raw) as Record<string, unknown>)
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({ duplicate: false, messageId: 'p2p-x' }))
+      })
+    })
+    await new Promise<void>((resolve) => capture.listen(0, '127.0.0.1', resolve))
+    const capturePort = (capture.address() as AddressInfo).port
+    const adapter = new P2PAdapter(
+      {
+        channel: 'p2p:b',
+        instance: 'inst-b',
+        botName: 'bot-b',
+        peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}`, botName: 'bot-a' }],
+        listen: { host: '127.0.0.1', port: await freePort() },
+      },
+      { warn: (line) => warned.push(line) },
+    )
+    adapter.checkConfig({ maxTurnMs: 120_000 })
+    const handle = await adapter.start({
+      onMessage: async () => ({ ok: true }),
+      resolveSecret: (ref) => Promise.resolve(credentials.resolve(ref).then((one) => one?.value)),
+    })
+    stops.push(handle.stop)
+    stops.push(async () => {
+      capture.close()
+    })
+    return { adapter, posted, close: () => capture.close() }
+  }
+
+  test('a handle and a plain url are dropped with one warning', async () => {
+    const { adapter, posted } = await adapterWithCapture()
+    const result = await adapter.send({
+      target: 'inst-a',
+      eventId: 'evt-drop',
+      body: 'text',
+      media: [
+        { type: 'image', url: null, handle: 'ab12.image' },
+        { type: 'image', url: 'not-a-url', handle: null },
+      ],
+      sender: 'bot-a',
+      instance: 'inst-b',
+    })
+    expect(result.ok).toBe(true)
+    expect(posted[0]).not.toHaveProperty('media')
+    const lines = warned.filter((line) => line.includes('dropped'))
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toContain('dropped 2 media item(s) from evt-drop')
+  })
+
+  test('nothing left to send fails here, before the peer could refuse it', async () => {
+    const { adapter, posted } = await adapterWithCapture()
+    const result = await adapter.send({
+      target: 'inst-a',
+      eventId: 'evt-dead',
+      body: '',
+      media: [{ type: 'image', url: null, handle: 'ab12.image' }],
+      sender: 'bot-a',
+      instance: 'inst-b',
+    })
+    expect(result).toMatchObject({ ok: false, code: 'no_url' })
+    expect(posted).toHaveLength(0)
+  })
+})
