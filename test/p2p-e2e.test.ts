@@ -2349,24 +2349,30 @@ describe('a reply chain three hops long', () => {
 })
 
 describe('messages that arrive together', () => {
-  test('two in one window make one turn that quotes the newest', async () => {
-    const { sessions, portB, ctx } = await pair({ turn: { coalesceMs: 500 } })
-    await send(portB, 'evt-a', 'first')
-    await send(portB, 'evt-b', 'second')
+  test('three in one window make one turn that quotes the newest', async () => {
+    const { sessions, portB, ctx } = await pair({ turn: { coalesceMs: 1500 } })
+    await Promise.all([
+      send(portB, 'evt-a', 'first'),
+      send(portB, 'evt-b', 'second'),
+      send(portB, 'evt-c', 'third'),
+    ])
 
-    await waitFor(() => sessions.prompted.length > 0, 4000)
+    await waitFor(() => sessions.prompted.length > 0, 8000)
     expect(sessions.prompted).toHaveLength(1)
     const text = sessions.prompted[0]!.text
     expect(text).toContain('first')
     expect(text).toContain('second')
+    expect(text).toContain('third')
     expect(text.indexOf('first')).toBeLessThan(text.indexOf('second'))
+    expect(text.indexOf('second')).toBeLessThan(text.indexOf('third'))
 
     const turns = ctx.get('dsbot-channel.turns') as {
       snapshot(): { recent: { outcome: string; merged: number; mergedKeys: string[] }[] }
     }
     await waitFor(() => turns.snapshot().recent.some((one) => one.outcome === 'replied'), 8000)
     const record = turns.snapshot().recent.find((one) => one.outcome === 'replied')!
-    expect(record.merged).toBe(2)
+    expect(record.merged).toBe(3)
+    expect(record.mergedKeys.map((key) => key.replace('inst-a:', ''))).toEqual(['p2p-evt-a', 'p2p-evt-b', 'p2p-evt-c'])
     expect(record.merged).toBe(record.mergedKeys.length)
   })
 
