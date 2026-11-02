@@ -888,6 +888,17 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
       router,
       capabilities: (channel) => byChannel.get(channel)?.adapter.capabilities,
       push: (request, sessionId) => router.push(request, sessionId),
+      history: (channel, input) => {
+        const adapter = byChannel.get(channel)?.adapter
+        if (adapter?.history === undefined) {
+          return Promise.resolve({
+            ok: false as const,
+            code: 'unsupported' as const,
+            reason: `channel "${channel}" has no history reader`,
+          })
+        }
+        return adapter.history(input)
+      },
     })
     ctx.effect(() => tools.register(createSendImage(gate)), 'dsbot-channel: send_image tool')
     ctx.effect(() => tools.register(createSendFile(gate)), 'dsbot-channel: send_file tool')

@@ -1,5 +1,6 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { CapabilitySet } from './adapter-status.js'
+import type { HistoryInput, HistoryResult } from './contract.js'
 import type { MediaType } from './event-types.js'
 import type { PushCode, PushRequest, PushResult, PushRouter } from './push-tool.js'
 
@@ -21,6 +22,8 @@ export interface CapabilityGateOptions {
   push?: ((request: PushRequest, sessionId?: string) => Promise<PushResult>) | undefined
   /** The static capability set the adapter declared at mount time, never a sampled status. */
   capabilities: (channel: string) => CapabilitySet | undefined
+  /** Reads history through the adapter that owns the channel; absent means nothing is wired. */
+  history?: ((channel: string, input: HistoryInput) => Promise<HistoryResult>) | undefined
 }
 
 function fail(code: CapabilityCode, reason: string): CapabilityFailure {
@@ -32,11 +35,13 @@ export class CapabilityGate {
   readonly #router: PushRouter
   readonly #capabilities: CapabilityGateOptions['capabilities']
   readonly #push: CapabilityGateOptions['push']
+  readonly #history: CapabilityGateOptions['history']
 
   constructor(options: CapabilityGateOptions) {
     this.#router = options.router
     this.#capabilities = options.capabilities
     this.#push = options.push
+    this.#history = options.history
   }
 
   /** Sends one image from a url through the push router; the caption rides the text field. */
@@ -68,6 +73,40 @@ export class CapabilityGate {
       sessionId,
     )
     return sent.ok ? { ok: true, messageId: sent.messageId } : sent
+  }
+
+  /** Reads earlier messages, after asking the segment this address belongs to. */
+  async readHistory(
+    request: { channel?: string | undefined; target?: string | undefined },
+    sessionId: string | undefined,
+    query: { limit: number; before?: string | undefined },
+  ): Promise<CapabilityFailure | HistoryResult> {
+    const addressed = this.#router.resolve(request, sessionId)
+    if ('ok' in addressed) return addressed
+    const channel = addressed.channel.channel
+    const target = addressed.target
+    const history = this.#capabilities(channel)?.history
+    const segment = target.startsWith('group:') ? 'group' : target.startsWith('peer:') ? 'private' : undefined
+    if (segment === undefined) {
+      // A transport that spells its own addresses (p2p names its peers) never says which
+      // segment a target belongs to; it may read it when either segment is open.
+      if (history?.group !== true && history?.private !== true) {
+        return fail(
+          UNSUPPORTED_CAPABILITY,
+          `channel "${channel}" cannot read history: capabilities.history.group and .private are both false`,
+        )
+      }
+    } else if (history?.[segment] !== true) {
+      return fail(UNSUPPORTED_CAPABILITY, `channel "${channel}" cannot read history: capabilities.history.${segment} is false`)
+    }
+    if (this.#history === undefined) {
+      return fail(UNSUPPORTED_CAPABILITY, `channel "${channel}" has no history reader wired in this build`)
+    }
+    return this.#history(channel, {
+      target,
+      limit: query.limit,
+      ...(query.before === undefined ? {} : { before: query.before }),
+    })
   }
 
   refuse(
@@ -142,13 +181,6 @@ function urlProblem(url: unknown): string | undefined {
   return undefined
 }
 
-function limitProblem(limit: unknown): string | undefined {
-  if (limit === undefined) return undefined
-  if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1) {
-    return `limit must be a whole number of at least 1: ${String(limit)}`
-  }
-  return undefined
-}
 
 /** Sends an image to an address; this version has no image sender, so it answers why. */
 export function createSendImage(gate: CapabilityGate) {
@@ -208,30 +240,45 @@ export function createSendFile(gate: CapabilityGate) {
   })
 }
 
-/** Reads recent messages from an address; this version has no history transport, so it answers why. */
+/** How many messages a history call asks for when it names no limit, and the most it may ask. */
+export const DEFAULT_HISTORY_LIMIT = 50
+export const HISTORY_LIMIT_MAX = 200
+
+function historyLimit(value: number | undefined): { ok: true; limit: number } | { ok: false; reason: string } {
+  if (value === undefined) return { ok: true, limit: DEFAULT_HISTORY_LIMIT }
+  if (!Number.isInteger(value) || value < 1 || value > HISTORY_LIMIT_MAX) {
+    return { ok: false, reason: `limit must be a whole number between 1 and ${HISTORY_LIMIT_MAX}: ${String(value)}` }
+  }
+  return { ok: true, limit: value }
+}
+
+/** Reads earlier messages from an address, one page at a time. */
 export function createReadHistory(gate: CapabilityGate) {
   return defineTool({
     name: 'read_history',
     description:
-      'Read recent messages from an address on one channel. This build declares no history transport, so a call answers why it cannot.',
+      'Read earlier messages from an address on one channel, newest page first. The answer names the cursor to ask for the page before it.',
     parameters: {
       channel: { type: 'string', description: 'Adapter instance to read through, e.g. onebot:main. Omit to use the channel that last messaged this session' },
       target: { type: 'string', description: ADDRESS_NOTE },
-      limit: { type: 'number', description: 'How many recent messages to ask for; a whole number of at least 1' },
+      limit: { type: 'number', description: `How many messages this page asks for; a whole number between 1 and ${HISTORY_LIMIT_MAX}, default ${DEFAULT_HISTORY_LIMIT}` },
+      before: { type: 'string', description: 'The cursor the previous page answered with; omit for the newest page' },
     },
     output: {
       schema: { type: 'string' as const },
       render: (_args: unknown, value: unknown) => [{ type: 'text' as const, text: String(value) }],
     },
     async execute(
-      args: { channel?: string; target?: string; limit?: number },
+      args: { channel?: string; target?: string; limit?: number; before?: string },
       exec: { agent?: { id?: string } },
     ): Promise<string> {
-      const problem = limitProblem(args.limit)
-      if (problem !== undefined) return JSON.stringify(fail('unsupported_argument', problem))
-      return JSON.stringify(
-        gate.refuse(args, exec?.agent?.id, 'history', 'read history', 'ask the peer to resend the messages you need'),
-      )
+      const sized = historyLimit(args.limit)
+      if (!sized.ok) return JSON.stringify(fail('unsupported_argument', sized.reason))
+      const answered = await gate.readHistory(args, exec?.agent?.id, {
+        limit: sized.limit,
+        ...(args.before === undefined ? {} : { before: args.before }),
+      })
+      return JSON.stringify(answered)
     },
   })
 }

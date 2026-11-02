@@ -10,7 +10,7 @@ import { PushRouter } from '../src/push-tool.js'
 import type { PushChannel, PushSource } from '../src/push-tool.js'
 import type { CapabilitySet } from '../src/adapter-status.js'
 import { NO_MEDIA } from '../src/adapter-status.js'
-import type { SendResult } from '../src/contract.js'
+import type { HistoryInput, HistoryResult, SendResult } from '../src/contract.js'
 
 const channels: PushChannel[] = [
   { channel: 'p2p:a', instance: 'a', botName: 'a' },
@@ -19,7 +19,7 @@ const channels: PushChannel[] = [
 
 const addresses: Record<string, string[]> = {
   'p2p:a': ['peer-a'],
-  'onebot:main': ['group:1'],
+  'onebot:main': ['group:1', 'peer:9'],
 }
 
 function caps(over: Partial<CapabilitySet> = {}): CapabilitySet {
@@ -44,7 +44,11 @@ interface Harness {
   sends: unknown[]
 }
 
-function harness(capabilities: Record<string, CapabilitySet | undefined>, source?: PushSource): Harness {
+function harness(
+  capabilities: Record<string, CapabilitySet | undefined>,
+  source?: PushSource,
+  history?: (channel: string, input: HistoryInput) => Promise<HistoryResult>,
+): Harness {
   const sends: unknown[] = []
   const router = new PushRouter({
     channels,
@@ -57,7 +61,11 @@ function harness(capabilities: Record<string, CapabilitySet | undefined>, source
       return { ok: true, messageId: 'sent-1', duplicate: false }
     },
   })
-  const gate = new CapabilityGate({ router, capabilities: (channel) => capabilities[channel] })
+  const gate = new CapabilityGate({
+    router,
+    capabilities: (channel) => capabilities[channel],
+    ...(history === undefined ? {} : { history }),
+  })
   return {
     image: createSendImage(gate),
     file: createSendFile(gate),
@@ -93,7 +101,7 @@ describe('a tool whose capability the channel never declared', () => {
     const { history } = harness(empty)
     const result = await call(history, { channel: 'onebot:main', target: 'group:1', limit: 20 })
     expect(result).toMatchObject({ ok: false, code: UNSUPPORTED_CAPABILITY })
-    expect(result.reason).toContain('capabilities.history.group and .private are both false')
+    expect(result.reason).toContain('capabilities.history.group is false')
     expect(result.reason).toContain('onebot:main')
   })
 
@@ -164,5 +172,54 @@ describe('an argument that cannot become a request', () => {
     expect(unknown).toMatchObject({ ok: false, code: 'unknown_channel' })
     const orphan = await call(image, { url: 'https://example.test/a.png' })
     expect(orphan).toMatchObject({ ok: false, code: 'no_source' })
+  })
+
+})
+
+describe('reading history asks the segment the address belongs to', () => {
+  const calls: { channel: string; input: HistoryInput }[] = []
+  const reader = (channel: string, input: HistoryInput): Promise<HistoryResult> => {
+    calls.push({ channel, input })
+    return Promise.resolve({ ok: true, records: [] })
+  }
+
+  test('a group address asks the group bit and a peer address the private one', async () => {
+    calls.length = 0
+    const groupOnly = harness(
+      { 'onebot:main': caps({ history: { group: true, private: false } }) },
+      undefined,
+      reader,
+    )
+
+    const peer = await call(groupOnly.history, { channel: 'onebot:main', target: 'peer:9', limit: 5 })
+    expect(peer).toMatchObject({ ok: false, code: UNSUPPORTED_CAPABILITY })
+    expect(peer.reason).toContain('capabilities.history.private is false')
+    expect(calls).toEqual([])
+
+    const group = await call(groupOnly.history, { channel: 'onebot:main', target: 'group:1', limit: 5 })
+    expect(group).toEqual({ ok: true, records: [] })
+    expect(calls).toEqual([{ channel: 'onebot:main', input: { target: 'group:1', limit: 5 } }])
+  })
+
+  test('the limit is bounded rather than truncated', async () => {
+    calls.length = 0
+    const ready = harness(
+      { 'onebot:main': caps({ history: { group: true, private: true } }) },
+      undefined,
+      reader,
+    )
+
+    for (const limit of [0, 2.5, 201]) {
+      const refused = await call(ready.history, { channel: 'onebot:main', target: 'group:1', limit })
+      expect(refused).toMatchObject({ ok: false, code: 'unsupported_argument' })
+    }
+    expect(calls).toEqual([])
+
+    await call(ready.history, { channel: 'onebot:main', target: 'group:1' })
+    await call(ready.history, { channel: 'onebot:main', target: 'group:1', limit: 200, before: 's9' })
+    expect(calls).toEqual([
+      { channel: 'onebot:main', input: { target: 'group:1', limit: 50 } },
+      { channel: 'onebot:main', input: { target: 'group:1', limit: 200, before: 's9' } },
+    ])
   })
 })

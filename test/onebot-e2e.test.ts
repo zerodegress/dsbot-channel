@@ -272,7 +272,7 @@ describe('an OneBot link that carries no media or history yet', () => {
     expect(file.reason).toContain('declares capabilities.file')
     expect(file.reason).toContain('onebot:a')
     expect(history).toMatchObject({ ok: false, code: 'unsupported_capability' })
-    expect(history.reason).toContain('capabilities.history.group and .private are both false')
+    expect(history.reason).toContain('capabilities.history.group is false')
     expect(history.reason).toContain('onebot:a')
     expect(mounted.calls).toHaveLength(1)
   })
