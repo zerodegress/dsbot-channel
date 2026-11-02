@@ -1,10 +1,12 @@
 # dsbot-channel
 
-The channel layer for ds-bot: one bot sends and receives across several platforms, and decides when to speak.
+English | [中文](./README_ZH.md)
 
-[中文说明](./README_ZH.md)
+[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness) [![](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
-It follows the direction the DSH team is exploring with its Super Agent prototype in three concrete places: an answer goes back to the conversation it came from and carries the id of the message it answers (`inReplyTo`); speaking is an explicit decision (`no_reply`, `decline`, the relay round limit, pipeline gates); and with `policy.budget` set, every turn is metered per bot, so acting for a team does not spend the team's attention unseen.
+A message gateway for ds-bot: events from several external platforms reach one bot, and answers go back to the conversation they came from.
+
+Whether to speak at all is an explicit decision — `no_reply`, `decline`, the relay round limit, pipeline gates — and with `policy.budget` set every turn is metered per bot. Those choices, together with `inReplyTo` marking which message an answer answers, are the step this project takes in the direction the DSH team explores with its Super Agent prototype.
 
 ## Requirements
 
@@ -94,5 +96,3 @@ pnpm lint
 ## License
 
 MIT. See [LICENSE](./LICENSE).
-
-[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
