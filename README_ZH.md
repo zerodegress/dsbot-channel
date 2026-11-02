@@ -18,6 +18,10 @@ ds-bot 的消息网关：多个外部平台的事件进到同一个 Bot，回答
 
 ## 安装
 
+最省事的途径是 dsh 里的插件管理：搜索 `dsbot-channel` 并安装。
+
+也可以在终端里直接装：
+
 ```sh
 dsh plugin --profile web add dsbot-channel
 ```
