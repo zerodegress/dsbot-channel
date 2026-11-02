@@ -91,6 +91,16 @@ config:
         mode: auto
 ```
 
+`turn` decides how many messages one turn answers. `coalesceMs` opens a window in milliseconds; messages that arrive inside it are answered together, and `maxBatch` / `maxChars` close the window early. The default `0` keeps one message per turn, and a batch is charged and recorded once:
+
+```yaml
+config:
+  turn:
+    coalesceMs: 1200
+    maxBatch: 10
+    maxChars: 8000
+```
+
 Set `status: false` on an adapter to leave its status route unregistered.
 
 The patch ships enabled with no adapters, so the base starts idle; a profile declares its own adapters to start a listener.

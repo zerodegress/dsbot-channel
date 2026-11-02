@@ -91,6 +91,16 @@ config:
         mode: auto
 ```
 
+`turn` 决定一个回合回答几条消息。`coalesceMs` 以毫秒为单位开一个窗口，窗口内到达的消息合起来回答，`maxBatch` / `maxChars` 可提前收口。默认 `0` 保持一条消息一个回合；合并的一批只计费一次、只记一条记录：
+
+```yaml
+config:
+  turn:
+    coalesceMs: 1200
+    maxBatch: 10
+    maxChars: 8000
+```
+
 在 adapter 上设 `status: false` 可不注册它的状态路由。
 
 patch 出厂是启用的，但不带 adapter，所以基座处于空闲状态；profile 自己声明 adapter 后 listener 才会启动。

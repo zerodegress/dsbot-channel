@@ -446,6 +446,7 @@ async function pair(
     budget?: { capacity: number }
     unsupported?: string
     global?: unknown[]
+    turn?: { coalesceMs: number; maxBatch?: number; maxChars?: number }
   } = {},
 ) {
   const [portA, portB] = [await freePort(), await freePort()]
@@ -482,6 +483,7 @@ policy: {
   await ctx.plugin(registryPlugin)
   const fork = await ctx.plugin(entry, {
     ...(options.global === undefined ? {} : { pipeline: { global: options.global } }),
+    ...(options.turn === undefined ? {} : { turn: options.turn }),
     adapters: [
       adapter('p2p:a', 'inst-a', 'bot-a', 'inst-b', portA, portB),
       adapter('p2p:b', 'inst-b', 'bot-b', 'inst-a', portB, portA),
@@ -2343,5 +2345,30 @@ describe('a reply chain three hops long', () => {
       expect(later.length).toBeLessThanOrEqual(64)
     }
     expect(new Set(ids).size).toBe(ids.length)
+  })
+})
+
+describe('messages that arrive together', () => {
+  test('two in one window make one turn that quotes the newest', async () => {
+    const { sessions, portB } = await pair({ turn: { coalesceMs: 500 } })
+    await send(portB, 'evt-a', 'first')
+    await send(portB, 'evt-b', 'second')
+
+    await waitFor(() => sessions.prompted.length > 0, 4000)
+    expect(sessions.prompted).toHaveLength(1)
+    const text = sessions.prompted[0]!.text
+    expect(text).toContain('first')
+    expect(text).toContain('second')
+    expect(text.indexOf('first')).toBeLessThan(text.indexOf('second'))
+  })
+
+  test('the same words twice still appear twice', async () => {
+    const { sessions, portB } = await pair({ turn: { coalesceMs: 500 } })
+    await send(portB, 'evt-a', 'same words')
+    await send(portB, 'evt-b', 'same words')
+
+    await waitFor(() => sessions.prompted.length > 0, 4000)
+    expect(sessions.prompted).toHaveLength(1)
+    expect(sessions.prompted[0]!.text.match(/same words/g)).toHaveLength(2)
   })
 })
