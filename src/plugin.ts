@@ -746,6 +746,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
           target: delivery.target,
           to: delivery.to,
           body: delivery.text,
+          ...(delivery.media === undefined ? {} : { media: delivery.media }),
           eventId: delivery.eventId,
           chainId: delivery.eventId,
           sender: channel.config.botName,

@@ -156,6 +156,23 @@ describe('pushing twice with one key', () => {
   })
 })
 
+describe('media on a push', () => {
+  test('rides the delivery in order, with no owner invented', async () => {
+    const { router, deliveries } = harness({ source: { channel: 'p2p:orca', replyTarget: 'seal' } })
+    const media = [{ type: 'image' as const, url: 'https://example.test/a.png', handle: null }]
+    await router.push({ text: 'look', media }, 'session-1')
+
+    expect(deliveries[0]?.media).toEqual(media)
+    expect(deliveries[0]?.text).toBe('look')
+  })
+
+  test('a push with no media carries no field at all', async () => {
+    const { router, deliveries } = harness({ source: { channel: 'p2p:orca', replyTarget: 'seal' } })
+    await router.push({ text: 'plain' }, 'session-1')
+    expect('media' in (deliveries[0] ?? {})).toBe(false)
+  })
+})
+
 describe('what this channel can do', () => {
   test('the text router builds the text tool alone', () => {
     const { router } = harness()

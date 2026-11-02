@@ -1,5 +1,5 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { SendFailureCode, SendResult } from './contract.js'
+import type { OutboundMedia, SendFailureCode, SendResult } from './contract.js'
 
 export const PUSH_WINDOW_MS = 10 * 60 * 1000
 
@@ -27,6 +27,7 @@ export interface PushSource {
 
 export interface PushRequest {
   text: string
+  media?: readonly OutboundMedia[] | undefined
   channel?: string
   target?: string
   idempotencyKey?: string
@@ -55,6 +56,8 @@ export interface PushDelivery {
   /** The bot identity the message is addressed to, when core knows it. */
   to?: string | undefined
   text: string
+  /** Media to carry with the text, in order; a transport drops what it cannot carry. */
+  media?: readonly OutboundMedia[] | undefined
   eventId: string
 }
 
@@ -184,6 +187,7 @@ export class PushRouter {
       target,
       ...(to === undefined ? {} : { to }),
       text: request.text,
+      ...(request.media === undefined ? {} : { media: request.media }),
       eventId,
     })
     if (!sent.ok) return fail(sent.code, sent.retryable, sent.reason)
