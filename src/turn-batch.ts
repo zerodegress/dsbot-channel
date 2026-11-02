@@ -17,8 +17,9 @@ export function takeBatch(pending: readonly PendingMessage[], limits: BatchLimit
   let taken = 0
   for (const message of pending) {
     if (taken >= limits.maxBatch) break
-    if (taken > 0 && chars + message.chars > limits.maxChars) break
-    chars += message.chars
+    const added = taken === 0 ? message.chars : message.chars + 1
+    if (taken > 0 && chars + added > limits.maxChars) break
+    chars += added
     taken += 1
   }
   return taken
@@ -29,7 +30,8 @@ export function joinBatch(texts: readonly string[]): string {
   return texts.join('\n')
 }
 
-/** The characters a batch contributes, separator included, so a cap stays a cap. */
-export function batchChars(texts: readonly string[]): number[] {
-  return texts.map((text) => text.length + 1)
+/** The characters a batch occupies once joined: the parts plus one newline between each. */
+export function batchChars(texts: readonly string[]): number {
+  if (texts.length === 0) return 0
+  return texts.reduce((sum, text) => sum + text.length, 0) + texts.length - 1
 }

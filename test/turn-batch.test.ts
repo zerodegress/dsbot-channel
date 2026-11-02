@@ -25,8 +25,9 @@ describe('how many messages make one turn', () => {
     expect(takeBatch(queue([300, 10]), { maxBatch: 10, maxChars: 100 })).toBe(1)
   })
 
-  test('a batch exactly at the character limit is taken', () => {
-    expect(takeBatch(queue([50, 50, 1]), { maxBatch: 10, maxChars: 100 })).toBe(2)
+  test('a batch exactly at the character limit is taken, and one byte more is not', () => {
+    expect(takeBatch(queue([50, 49]), { maxBatch: 10, maxChars: 100 })).toBe(2)
+    expect(takeBatch(queue([50, 50]), { maxBatch: 10, maxChars: 100 })).toBe(1)
   })
 })
 
@@ -37,10 +38,9 @@ describe('the body one batch produces', () => {
     expect(joined.match(/好/g)).toHaveLength(2)
   })
 
-  test('counts the separator each message brings, so the cap is really the cap', () => {
-    const texts = ['abc', 'de']
-    expect(joinBatch(texts).length).toBe(6)
-    expect(batchChars(texts).reduce((sum, one) => sum + one, 0)).toBe(7)
-    expect(joinBatch(texts).length).toBeLessThanOrEqual(batchChars(texts).reduce((sum, one) => sum + one, 0))
+  test('the batch size is exactly the joined length', () => {
+    for (const texts of [['abc'], ['abc', 'de'], ['a', 'bb', 'ccc']]) {
+      expect(batchChars(texts)).toBe(joinBatch(texts).length)
+    }
   })
 })

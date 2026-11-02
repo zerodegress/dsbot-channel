@@ -490,7 +490,7 @@ policy: {
     ],
   })
   forks.push(fork)
-  return { sessions, portB }
+  return { sessions, portB, ctx }
 }
 
 function send(port: number, eventId: string, body: string, sender = 'bot-a', chainId?: string) {
@@ -2350,7 +2350,7 @@ describe('a reply chain three hops long', () => {
 
 describe('messages that arrive together', () => {
   test('two in one window make one turn that quotes the newest', async () => {
-    const { sessions, portB } = await pair({ turn: { coalesceMs: 500 } })
+    const { sessions, portB, ctx } = await pair({ turn: { coalesceMs: 500 } })
     await send(portB, 'evt-a', 'first')
     await send(portB, 'evt-b', 'second')
 
@@ -2360,6 +2360,25 @@ describe('messages that arrive together', () => {
     expect(text).toContain('first')
     expect(text).toContain('second')
     expect(text.indexOf('first')).toBeLessThan(text.indexOf('second'))
+
+    const turns = ctx.get('dsbot-channel.turns') as {
+      snapshot(): { recent: { outcome: string; merged: number; mergedKeys: string[] }[] }
+    }
+    await waitFor(() => turns.snapshot().recent.some((one) => one.outcome === 'replied'), 8000)
+    const record = turns.snapshot().recent.find((one) => one.outcome === 'replied')!
+    expect(record.merged).toBe(2)
+    expect(record.merged).toBe(record.mergedKeys.length)
+  })
+
+  test('what a full batch leaves behind gets its own window', async () => {
+    const { sessions, portB } = await pair({ turn: { coalesceMs: 1500, maxChars: 100 } })
+    const long = 'x'.repeat(60)
+    await send(portB, 'evt-a', long)
+    await send(portB, 'evt-b', long)
+    await send(portB, 'evt-c', long)
+
+    await waitFor(() => sessions.prompted.length === 3, 15000)
+    expect(sessions.prompted).toHaveLength(3)
   })
 
   test('the same words twice still appear twice', async () => {

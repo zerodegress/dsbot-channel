@@ -660,6 +660,10 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const reporting = new Set(channels.map((channel) => channel.adapter))
   const started: AdapterHandle[] = []
   ctx.effect(() => async () => {
+    for (const held of queued.values()) {
+      if (held.timer !== undefined) clearTimeout(held.timer)
+    }
+    queued.clear()
     await Promise.allSettled(started.map((handle) => handle.stop()))
     reporting.clear()
     started.length = 0
@@ -784,23 +788,28 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
           }
           queued.set(queueKey, held)
         }
+        const openWindow = (): void => {
+          if (held!.queue.pending === 0) return
+          if (held!.timer !== undefined) return
+          held!.timer = setTimeout(() => {
+            held!.timer = undefined
+            const due = held!.queue.due(Date.now())
+            if (due !== undefined) runBatch(due.map((one) => one.value))
+            openWindow()
+          }, turn.coalesceMs)
+        }
         const ready = held.queue.push(
-          { eventKey: message.eventKey, chars: message.body.text.length + 1, value: message },
+          { eventKey: message.eventKey, chars: message.body.text.length, value: message },
           Date.now(),
         )
         if (ready !== undefined) {
           if (held.timer !== undefined) clearTimeout(held.timer)
           held.timer = undefined
           runBatch(ready.map((one) => one.value))
+          openWindow()
           return { ok: true }
         }
-        if (held.timer === undefined) {
-          held.timer = setTimeout(() => {
-            const due = held!.queue.due(Date.now())
-            held!.timer = undefined
-            if (due !== undefined) runBatch(due.map((one) => one.value))
-          }, turn.coalesceMs)
-        }
+        openWindow()
         return { ok: true }
       }
       started.push(await transport.start({ onMessage, resolveSecret }))
