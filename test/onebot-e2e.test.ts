@@ -55,7 +55,11 @@ interface Mounted {
   tools: ToolLike[]
 }
 
-async function mount(policy: Record<string, unknown> = {}, bots: string[] = []): Promise<Mounted> {
+async function mount(
+  policy: Record<string, unknown> = {},
+  bots: string[] = [],
+  extraTransport: Record<string, unknown> = {},
+): Promise<Mounted> {
   const tools: ToolLike[] = []
   const prompted: string[] = []
   const calls: { action: string; body: Record<string, unknown> }[] = []
@@ -119,6 +123,7 @@ async function mount(policy: Record<string, unknown> = {}, bots: string[] = []):
           api: { url: `http://127.0.0.1:${apiPort}` },
           accessToken: REF,
           bots,
+          ...extraTransport,
         },
       },
     ],
@@ -269,11 +274,29 @@ describe('an OneBot link that carries no media or history yet', () => {
       },
     })
     expect(file).toMatchObject({ ok: false, code: 'unsupported_capability' })
-    expect(file.reason).toContain('capabilities.file')
+    expect(file.reason).toContain('capabilities.file.fromUrl')
     expect(file.reason).toContain('onebot:a')
     expect(history).toMatchObject({ ok: false, code: 'unsupported_capability' })
     expect(history.reason).toContain('capabilities.history')
     expect(history.reason).toContain('onebot:a')
     expect(mounted.calls).toHaveLength(1)
+  })
+
+  test('send_file reaches the upload action when the profile opened it', async () => {
+    const mounted = await mount({}, [], { fileFromUrl: true })
+    const tool = mounted.tools.find((one) => one.name === 'send_file')
+    if (tool === undefined) throw new Error('send_file is not registered')
+
+    const answer = JSON.parse(
+      (await tool.execute(
+        { url: 'https://example.test/a.txt', name: 'a.txt', channel: 'onebot:a', target: 'group:30003' },
+        {},
+      )) as string,
+    ) as Record<string, unknown>
+
+    expect(answer).toEqual({ ok: true, messageId: '77' })
+    expect(mounted.calls).toHaveLength(1)
+    expect(mounted.calls[0]!.action).toBe('upload_group_file')
+    expect(mounted.calls[0]!.body).toEqual({ group_id: '30003', file: 'https://example.test/a.txt', name: 'a.txt' })
   })
 })

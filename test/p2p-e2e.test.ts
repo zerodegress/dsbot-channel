@@ -654,9 +654,7 @@ transport: {
 
     expect(image).toMatchObject({ ok: true })
     expect(typeof image.messageId).toBe('string')
-    expect(file).toMatchObject({ ok: false, code: 'unsupported_capability' })
-    expect(file.reason).toContain('no sender')
-    expect(file.reason).toContain('p2p:a')
+    expect(file).toMatchObject({ ok: true })
     expect(history).toMatchObject({ ok: false, code: 'unsupported_capability' })
     expect(history.reason).toContain('capabilities.history')
     expect(history.reason).toContain('p2p:a')

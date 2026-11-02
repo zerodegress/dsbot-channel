@@ -351,7 +351,12 @@ export class OneBotAdapter implements ChannelAdapter {
       return { ok: false, code: 'no_url', retryable: false, reason: `this adapter cannot address "${input.target}"` }
     }
     const file = (input.media ?? []).find((item) => item.type === 'file')
-    if (file !== undefined) return this.#sendFile(target, file, input.timeoutMs)
+    if (file !== undefined) {
+      if (input.body.length > 0) {
+        this.#warn?.('dsbot-channel: dropped the text beside a file: a file send carries its name only')
+      }
+      return this.#sendFile(target, file, input.timeoutMs)
+    }
     const message = this.#messageOf(input)
     if (message === undefined) {
       return { ok: false, code: 'rejected', retryable: false, reason: 'there is nothing this channel can carry' }

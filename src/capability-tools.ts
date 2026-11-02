@@ -75,6 +75,37 @@ export class CapabilityGate {
     return sent.ok ? { ok: true, messageId: sent.messageId } : sent
   }
 
+  /** Sends one file from a url through the push router; the receiver's name travels with it. */
+  async sendFile(
+    request: { url: string; name: string; channel?: string | undefined; target?: string | undefined; idempotencyKey?: string | undefined },
+    sessionId: string | undefined,
+  ): Promise<CapabilityFailure | { ok: true; messageId: string }> {
+    const addressed = this.#router.resolve(request, sessionId)
+    if ('ok' in addressed) return addressed
+    const channel = addressed.channel.channel
+    const capability = this.#capabilities(channel)?.file
+    if (capability?.out !== true) {
+      return fail(UNSUPPORTED_CAPABILITY, `channel "${channel}" cannot send files: capabilities.file.out is false`)
+    }
+    if (capability.fromUrl !== true) {
+      return fail(UNSUPPORTED_CAPABILITY, `channel "${channel}" cannot send files: capabilities.file.fromUrl is false`)
+    }
+    if (this.#push === undefined) {
+      return fail(UNSUPPORTED_CAPABILITY, `channel "${channel}" has no sender wired in this build`)
+    }
+    const sent = await this.#push(
+      {
+        text: '',
+        channel,
+        target: addressed.target,
+        ...(request.idempotencyKey === undefined ? {} : { idempotencyKey: request.idempotencyKey }),
+        media: [{ type: 'file', url: request.url, handle: null, name: request.name }],
+      },
+      sessionId,
+    )
+    return sent.ok ? { ok: true, messageId: sent.messageId } : sent
+  }
+
   /** Reads earlier messages, after asking the segment this address belongs to. */
   async readHistory(
     request: { channel?: string | undefined; target?: string | undefined },
@@ -210,7 +241,7 @@ export function createSendFile(gate: CapabilityGate) {
   return defineTool({
     name: 'send_file',
     description:
-      'Send a file to an address on one channel. This build declares no file sender, so a call answers why it cannot.',
+      'Send a file to an address on one channel: the channel fetches an http(s) url, and the receiver sees it under `name`.',
     parameters: {
       url: { type: 'string', required: true, description: 'An http(s) address the channel fetches; a local path is not readable by a transport' },
       name: { type: 'string', description: 'The file name the receiver sees; a call without one is refused' },
@@ -231,9 +262,7 @@ export function createSendFile(gate: CapabilityGate) {
       if (typeof args.name !== 'string' || args.name.trim().length === 0) {
         return JSON.stringify(fail('unsupported_argument', 'name must be a non-empty file name'))
       }
-      return JSON.stringify(
-        gate.refuseMedia(args, exec?.agent?.id, 'file', 'url', 'send files', 'put a link in a text message instead'),
-      )
+      return JSON.stringify(await gate.sendFile(args, exec?.agent?.id))
     },
   })
 }
