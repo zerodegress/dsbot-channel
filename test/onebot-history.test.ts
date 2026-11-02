@@ -141,4 +141,11 @@ describe('history over the OneBot api', () => {
     expect(collected).toEqual(['5', '6', '7', '2', '3', '4', '1'])
     expect(new Set(collected).size).toBe(collected.length)
   })
+
+  test('a closed segment is refused by the adapter that knows the address', async () => {
+    const onebot = await started({ group: true, private: false })
+    const page = await onebot.history({ target: 'peer:9', limit: 5 })
+    expect(page).toMatchObject({ ok: false, code: 'unsupported' })
+    if (!page.ok) expect(page.reason).toContain('capabilities.history.private is false')
+  })
 })

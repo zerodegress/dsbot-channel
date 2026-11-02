@@ -85,19 +85,14 @@ export class CapabilityGate {
     if ('ok' in addressed) return addressed
     const channel = addressed.channel.channel
     const target = addressed.target
+    // Core never reads a target: only the transport knows which kind of conversation it names,
+    // so it refuses a closed segment itself. Here one fact is enough: neither kind is open.
     const history = this.#capabilities(channel)?.history
-    const segment = target.startsWith('group:') ? 'group' : target.startsWith('peer:') ? 'private' : undefined
-    if (segment === undefined) {
-      // A transport that spells its own addresses (p2p names its peers) never says which
-      // segment a target belongs to; it may read it when either segment is open.
-      if (history?.group !== true && history?.private !== true) {
-        return fail(
-          UNSUPPORTED_CAPABILITY,
-          `channel "${channel}" cannot read history: capabilities.history.group and .private are both false`,
-        )
-      }
-    } else if (history?.[segment] !== true) {
-      return fail(UNSUPPORTED_CAPABILITY, `channel "${channel}" cannot read history: capabilities.history.${segment} is false`)
+    if (history?.group !== true && history?.private !== true) {
+      return fail(
+        UNSUPPORTED_CAPABILITY,
+        `channel "${channel}" cannot read history: capabilities.history.group and .private are both false`,
+      )
     }
     if (this.#history === undefined) {
       return fail(UNSUPPORTED_CAPABILITY, `channel "${channel}" has no history reader wired in this build`)

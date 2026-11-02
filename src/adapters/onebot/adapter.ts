@@ -371,6 +371,10 @@ export class OneBotAdapter implements ChannelAdapter {
     if (target === undefined) {
       return { ok: false, code: 'unsupported', reason: `this adapter cannot address "${input.target}"` }
     }
+    const segment = target.scope === 'group' ? 'group' : 'private'
+    if (this.capabilities.history[segment] !== true) {
+      return { ok: false, code: 'unsupported', reason: `capabilities.history.${segment} is false` }
+    }
     const action = target.scope === 'group' ? 'get_group_msg_history' : 'get_friend_msg_history'
     const params: Record<string, unknown> = {
       ...(target.scope === 'group' ? { group_id: target.id } : { user_id: target.id }),

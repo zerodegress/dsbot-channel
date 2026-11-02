@@ -101,7 +101,7 @@ describe('a tool whose capability the channel never declared', () => {
     const { history } = harness(empty)
     const result = await call(history, { channel: 'onebot:main', target: 'group:1', limit: 20 })
     expect(result).toMatchObject({ ok: false, code: UNSUPPORTED_CAPABILITY })
-    expect(result.reason).toContain('capabilities.history.group is false')
+    expect(result.reason).toContain('capabilities.history.group and .private are both false')
     expect(result.reason).toContain('onebot:main')
   })
 
@@ -176,14 +176,14 @@ describe('an argument that cannot become a request', () => {
 
 })
 
-describe('reading history asks the segment the address belongs to', () => {
+describe('reading history asks the adapter, never the address', () => {
   const calls: { channel: string; input: HistoryInput }[] = []
   const reader = (channel: string, input: HistoryInput): Promise<HistoryResult> => {
     calls.push({ channel, input })
     return Promise.resolve({ ok: true, records: [] })
   }
 
-  test('a group address asks the group bit and a peer address the private one', async () => {
+  test('a transport with one segment open is asked for any address it accepts', async () => {
     calls.length = 0
     const groupOnly = harness(
       { 'onebot:main': caps({ history: { group: true, private: false } }) },
@@ -192,13 +192,18 @@ describe('reading history asks the segment the address belongs to', () => {
     )
 
     const peer = await call(groupOnly.history, { channel: 'onebot:main', target: 'peer:9', limit: 5 })
-    expect(peer).toMatchObject({ ok: false, code: UNSUPPORTED_CAPABILITY })
-    expect(peer.reason).toContain('capabilities.history.private is false')
-    expect(calls).toEqual([])
+    expect(peer).toEqual({ ok: true, records: [] })
+    expect(calls).toEqual([{ channel: 'onebot:main', input: { target: 'peer:9', limit: 5 } }])
+  })
 
-    const group = await call(groupOnly.history, { channel: 'onebot:main', target: 'group:1', limit: 5 })
-    expect(group).toEqual({ ok: true, records: [] })
-    expect(calls).toEqual([{ channel: 'onebot:main', input: { target: 'group:1', limit: 5 } }])
+  test('both segments closed refuses before the adapter is asked', async () => {
+    calls.length = 0
+    const closed = harness({ 'onebot:main': caps() }, undefined, reader)
+
+    const refused = await call(closed.history, { channel: 'onebot:main', target: 'group:1', limit: 5 })
+    expect(refused).toMatchObject({ ok: false, code: UNSUPPORTED_CAPABILITY })
+    expect(refused.reason).toContain('capabilities.history.group and .private are both false')
+    expect(calls).toEqual([])
   })
 
   test('the limit is bounded rather than truncated', async () => {
