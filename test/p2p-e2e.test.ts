@@ -1877,6 +1877,19 @@ policy
 
   test('a hard limit is accepted, because the gate reads it', async () => {
     await expect(mountWith({ budget: { capacity: 100, hardLimit: 0.9 } })).resolves.toBeDefined()
+    await expect(mountWith({ budget: { capacity: 100, hardLimit: 1 } })).resolves.toBeDefined()
+  })
+
+  test('a hard limit that is not above zero and at most one is refused', async () => {
+    for (const hardLimit of [0, -0.1, 1.5, 2]) {
+      await expect(mountWith({ budget: { capacity: 100, hardLimit } })).rejects.toThrow(/budget hardLimit/)
+    }
+  })
+
+  test('a point table in a profile is an unknown field', async () => {
+    await expect(mountWith({ budget: { capacity: 100, points: { accepted: 5 } } })).rejects.toThrow(
+      /unknown config fields: points/,
+    )
   })
 
   test('a budget without a capacity is refused by the schema', async () => {

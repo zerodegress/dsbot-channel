@@ -9,14 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A limit state names each level by the dimension it belongs to: `byDimension` reports `global`, `bot` and `conversation` beside the key map, so a reader no longer parses a session key to learn which dimension tripped.
 - `turn-stats` separates a quiet end from a refusal: `suppressed` stays the sum, with `ended` and `refused` beside it, and the tools report which one they took.
 
 ### Changed
 
+- `LimitState.byScope` is now `byKey`: the field maps ledger keys (`global`, `bot:<id>`, and the adapter's session key) to levels, while `reply.byScope` maps a scope (`c2c`/`group`/`p2p`) to a reply mode. A caller that read the old name no longer compiles.
 - `decline` takes a `reason` from the closed set a channel can tell the sender, plus an optional `note`, counts toward the reply ceiling like a reply does, and is charged at the rejected rate instead of being refunded.
+
+### Removed
+
+- `judge` and `push` are gone from `CHARGE_KINDS` and from the point table: nothing charged either kind, the `judge` node cannot be bound in this version, and the push tool never touched the ledger. `points` holds `accepted` and `rejected` only, a turn is always charged as a bot call, and `TurnBilling` no longer takes a `chargeKind`.
 
 ### Fixed
 
+- A `policy.budget.hardLimit` outside `(0, 1]` is refused at mount time: `0` made every turn hard the moment it started, while a value above `1` could never trip. A decimal limit also trips on the point it names, not one past it.
 - A refusal now reaches the peer it refuses: `decline` posted an empty body, which the receiving parser rejects, so every refusal came back `400` and the sender never learned it was declined. The chosen reason travels as `reason`, and the note (or `declined` when there is none) travels as `body`.
 - The reply ceiling counts per conversation on every transport now: `admit` and `recordReply` used two spellings of the peer, so on OneBot the count never matched and `relayLimit` never fired, while a person speaking never cleared it. Both go through one key, and a person's message resets it.
 
