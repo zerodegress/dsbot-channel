@@ -3,9 +3,12 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { ConfigError } from '../src/config.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
-import { P2PAdapter, REFUSE_NOTE_MAX } from '../src/adapters/p2p/adapter.js'
+import { P2PAdapter } from '../src/adapters/p2p/adapter.js'
 import type { P2PAdapterConfig } from '../src/adapters/p2p/adapter.js'
 import { sendToPeer } from '../src/adapters/p2p/p2p-send.js'
+import { DedupeTable } from '../src/adapters/p2p/p2p-dedupe.js'
+import { startListener } from '../src/adapters/p2p/p2p-listener.js'
+import type { InboundRequest } from '../src/adapters/p2p/p2p-wire.js'
 import type { InboundMessage } from '../src/contract.js'
 
 const REF = '{{SECRET_7k3mwq8t}}'
@@ -223,9 +226,73 @@ describe('the p2p adapter tells a peer it was refused', () => {
       chainId: 'evt-42',
       status: 'declined',
       final: true,
-      body: '',
-      reason: 'no',
+      body: 'no',
+      reason: 'policy',
     })
+  })
+
+  test('a refusal reaches a real listener, which takes the note as its body', async () => {
+    const received: InboundRequest[] = []
+    const listener = await startListener({
+      config: {
+        botName: 'bot-a',
+        peers: [{ instance: 'inst-b', secret: REF }],
+        credentials,
+        inflightTtlMs: 300_000,
+        maxBodyBytes: 64 * 1024,
+        listen: { host: '127.0.0.1', port: 0 },
+      },
+      table: new DedupeTable({ ttlMs: 1000, limit: 10, inflightTtlMs: 300_000, maxTurnMs: 120_000 }),
+      onMessage: (request) => {
+        received.push(request)
+      },
+    })
+    const adapter = new P2PAdapter({
+      channel: 'p2p:b',
+      instance: 'inst-b',
+      botName: 'bot-b',
+      peers: [
+        {
+          instance: 'inst-a',
+          secret: REF,
+          url: `http://127.0.0.1:${listener.address().port}`,
+          botName: 'bot-a',
+        },
+      ],
+      listen: { host: '127.0.0.1', port: await freePort() },
+    })
+    adapter.checkConfig({ maxTurnMs: 120_000 })
+    const handle = await adapter.start({
+      onMessage: async () => ({ ok: true }),
+      resolveSecret: (ref) => Promise.resolve(credentials.resolve(ref).then((one) => one?.value)),
+    })
+    stops.push(async () => {
+      await handle.stop()
+    })
+    stops.push(async () => {
+      await listener.close()
+    })
+
+    const refused = await adapter.refuse({
+      target: 'inst-a',
+      inReplyTo: 'evt-rt-1',
+      chainId: 'evt-rt-1',
+      reason: 'too-busy',
+      note: 'later please',
+    })
+    await adapter.refuse({ target: 'inst-a', inReplyTo: 'evt-rt-2', chainId: 'evt-rt-2', reason: 'policy' })
+
+    expect(refused).toEqual({ ok: true })
+    await waitFor(() => received.length === 2)
+    expect(received[0]).toMatchObject({
+      eventId: 'decline:evt-rt-1',
+      chainId: 'evt-rt-1',
+      status: 'declined',
+      final: true,
+      reason: 'too-busy',
+      body: 'later please',
+    })
+    expect(received[1]).toMatchObject({ status: 'declined', reason: 'policy', body: 'declined' })
   })
 })
 
@@ -286,8 +353,8 @@ describe('the p2p adapter sends through its own addressing', () => {
   })
 })
 
-describe('the note a refusal carries', () => {
-  test('a long note is trimmed to one bounded line before it reaches the wire', async () => {
+describe('the reason a refusal carries', () => {
+  test('the wire carries the chosen reason, bounded and on one line', async () => {
     const posted: Record<string, unknown>[] = []
     const capture = createServer((request, response) => {
       let raw = ''
@@ -319,11 +386,19 @@ describe('the note a refusal carries', () => {
       capture.close()
     })
 
-    await adapter.refuse({ target: 'inst-a', inReplyTo: 'evt-9', chainId: 'evt-9', reason: 'policy', note: `${'x'.repeat(300)}\nnext` })
+    await adapter.refuse({
+      target: 'inst-a',
+      inReplyTo: 'evt-9',
+      chainId: 'evt-9',
+      reason: 'too-busy',
+      note: `later${'x'.repeat(250)}\nplease`,
+    })
 
-    const reason = String(posted[0]?.reason ?? '')
-    expect(reason.length).toBe(REFUSE_NOTE_MAX)
-    expect(reason).not.toContain('\n')
+    expect(posted[0]?.reason).toBe('too-busy')
+    const body = posted[0]?.body as string
+    expect(body).toHaveLength(200)
+    expect(body.startsWith('later')).toBe(true)
+    expect(body).not.toMatch(/\s{2,}|\n/)
   })
 })
 

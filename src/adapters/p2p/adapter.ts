@@ -22,7 +22,7 @@ import type { InboundRequest } from './p2p-wire.js'
 import { DEFAULT_HOST, DEFAULT_PORT, checkListenerConfig, startListener } from './p2p-listener.js'
 import { STATUS_ROUTE } from './p2p-status.js'
 import { cleanExcerpt, oneLine, toP2PEvent } from './p2p-mapping.js'
-import { DEFAULT_SENT_AT_WINDOW_MS, MAX_BODY_BYTES } from './p2p-protocol.js'
+import { DECLINED, DEFAULT_SENT_AT_WINDOW_MS, MAX_BODY_BYTES } from './p2p-protocol.js'
 import type { CredentialsLike, PeerRef } from './p2p-secrets.js'
 import { sendToPeer } from './p2p-send.js'
 import type { PeerTarget } from './p2p-send.js'
@@ -244,13 +244,13 @@ export class P2PAdapter implements ChannelAdapter {
       peer: target,
       credentials: this.#credentials(ports),
       to,
-      body: '',
+      body: oneLine(input.note, REFUSE_NOTE_MAX) || DECLINED,
       eventId: `decline:${input.inReplyTo}`,
       chainId: input.chainId,
       sender: this.#config.botName,
       instance: this.#config.instance,
       status: 'declined',
-      reason: oneLine(input.note ?? input.reason, REFUSE_NOTE_MAX),
+      reason: input.reason,
       final: true,
     })
     if (!result.ok) this.#stats.sendFailed(result.code)

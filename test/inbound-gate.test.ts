@@ -16,7 +16,7 @@ describe('loop guard', () => {
     const gate = new InboundGate({})
     for (let round = 1; round <= 3; round += 1) {
       expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot' , session: 'p2p:peer-a' })).allow).toBe(true)
-      gate.recordReply('bot', 'peer-a')
+      gate.recordReply('bot', 'p2p:peer-a')
     }
     const stopped = await gate.admit({ event, peer: 'peer-a', botId: 'bot' , session: 'p2p:peer-a' })
     expect(stopped.allow).toBe(false)
@@ -25,28 +25,28 @@ describe('loop guard', () => {
 
   test('counters are per peer, so one runaway peer does not silence another', async () => {
     const gate = new InboundGate({})
-    for (let round = 0; round < 3; round += 1) gate.recordReply('bot', 'peer-a')
+    for (let round = 0; round < 3; round += 1) gate.recordReply('bot', 'p2p:peer-a')
     expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot' , session: 'p2p:peer-a' })).reason).toBe('loop-limit')
     expect((await gate.admit({ event: { ...event, eventKey: 'peer-b:m9' }, peer: 'peer-b', botId: 'bot', session: 'p2p:peer-b' })).allow).toBe(true)
   })
 
   test('a person speaking resets the peer counter', async () => {
     const gate = new InboundGate({})
-    for (let round = 0; round < 3; round += 1) gate.recordReply('bot', 'peer-a')
-    gate.resetPeer('peer-a')
+    for (let round = 0; round < 3; round += 1) gate.recordReply('bot', 'p2p:peer-a')
+    gate.resetPeer('p2p:peer-a')
     expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot' , session: 'p2p:peer-a' })).allow).toBe(true)
   })
 
   test('the ceiling is configurable', async () => {
     const gate = new InboundGate({ loop: { relayLimit: 1 } })
-    gate.recordReply('bot', 'peer-a')
+    gate.recordReply('bot', 'p2p:peer-a')
     expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot' , session: 'p2p:peer-a' })).reason).toBe('loop-limit')
   })
 
   test('silence for the idle window clears the counter', async () => {
     let now = 0
     const gate = new InboundGate({ now: () => now })
-    for (let round = 0; round < 3; round += 1) gate.recordReply('bot', 'peer-a')
+    for (let round = 0; round < 3; round += 1) gate.recordReply('bot', 'p2p:peer-a')
     expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot' , session: 'p2p:peer-a' })).reason).toBe('loop-limit')
     now += DEFAULT_LOOP_IDLE_RESET_MS + 1
     expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot' , session: 'p2p:peer-a' })).allow).toBe(true)
@@ -55,14 +55,14 @@ describe('loop guard', () => {
   test('a short pause does not clear the counter', async () => {
     let now = 0
     const gate = new InboundGate({ now: () => now })
-    for (let round = 0; round < 3; round += 1) gate.recordReply('bot', 'peer-a')
+    for (let round = 0; round < 3; round += 1) gate.recordReply('bot', 'p2p:peer-a')
     now += DEFAULT_LOOP_IDLE_RESET_MS - 1
     expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot' , session: 'p2p:peer-a' })).reason).toBe('loop-limit')
   })
 
   test('the scope that tripped the budget is reported on every refusal', async () => {
     const gate = new InboundGate({})
-    for (let round = 0; round < 3; round += 1) gate.recordReply('bot', 'peer-a')
+    for (let round = 0; round < 3; round += 1) gate.recordReply('bot', 'p2p:peer-a')
     const decision = await gate.admit({ event, peer: 'peer-a', botId: 'bot' , session: 'p2p:peer-a' })
     expect(decision.reason).toBe('loop-limit')
     expect(decision.triggeredBy).toBeDefined()
@@ -71,7 +71,7 @@ describe('loop guard', () => {
   test('the idle window is configurable', async () => {
     let now = 0
     const gate = new InboundGate({ loop: { relayResetMs: 60_000 }, now: () => now })
-    for (let round = 0; round < 3; round += 1) gate.recordReply('bot', 'peer-a')
+    for (let round = 0; round < 3; round += 1) gate.recordReply('bot', 'p2p:peer-a')
     now += 10 * 60_000
     expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot' , session: 'p2p:peer-a' })).allow).toBe(true)
   })
@@ -160,5 +160,42 @@ describe('the budget is consulted before a turn starts', () => {
     const before = ledger.usage('bot', 'p2p:peer-a').global
     await new InboundGate({ ledger }).admit({ event, peer: 'peer-a', botId: 'bot', session: 'p2p:peer-a' })
     expect(ledger.usage('bot', 'p2p:peer-a').global).toBe(before)
+  })
+})
+
+describe('the round key is the conversation', () => {
+  const groupEvent = (key: string, sender: string) => ({
+    eventKey: key,
+    scope: 'group' as const,
+    mentioned: { self: true, others: false, all: false },
+    text: 'hi',
+    peer: '12345',
+    author: sender,
+  })
+
+  test('a group counts rounds per conversation, not per spelling of the peer', async () => {
+    const gate = new InboundGate({ loop: { relayLimit: 2 } })
+    const session = 'group:12345'
+    expect((await gate.admit({ event: event as never, peer: '12345', botId: 'bot', session })).allow).toBe(true)
+    gate.recordReply('bot', session)
+    gate.recordReply('bot', session)
+    expect((await gate.admit({ event: event as never, peer: '12345', botId: 'bot', session })).reason).toBe('loop-limit')
+  })
+
+  test('a person speaking clears the conversation, so the bot may answer again', async () => {
+    const gate = new InboundGate({ loop: { relayLimit: 1 } })
+    const session = 'group:12345'
+    gate.recordReply('bot', session)
+    expect((await gate.admit({ event: event as never, peer: '12345', botId: 'bot', session })).reason).toBe('loop-limit')
+
+    gate.resetPeer(session, 'bot')
+    expect((await gate.admit({ event: groupEvent('group:12345:m2', 'person'), peer: '12345', botId: 'bot', session })).allow).toBe(true)
+  })
+
+  test('one conversation never silences another', async () => {
+    const gate = new InboundGate({ loop: { relayLimit: 1 } })
+    gate.recordReply('bot', 'group:12345')
+    expect((await gate.admit({ event: event as never, peer: '12345', botId: 'bot', session: 'group:12345' })).reason).toBe('loop-limit')
+    expect((await gate.admit({ event: event as never, peer: '99999', botId: 'bot', session: 'group:99999' })).allow).toBe(true)
   })
 })

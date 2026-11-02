@@ -1,10 +1,10 @@
 export const TURN_OUTCOMES = [
   'replied',
   'pushed',
-  'suppressed',
+  'ended',
+  'refused',
   'dropped',
   'empty',
-  'refused',
   'failed',
   'rejected',
 ] as const
@@ -42,8 +42,12 @@ export interface TurnStatsSnapshot {
   dropped: number
   /** Turns that already answered through send_text. */
   pushed: number
-  /** Turns a tool closed on purpose, so they answered nothing. */
+  /** Turns a tool closed on purpose, so they answered nothing; the sum of `ended` and `refused`. */
   suppressed: number
+  /** Turns closed quietly with `no_reply`. */
+  ended: number
+  /** Turns the bot refused with `decline`. */
+  refused: number
   /** Turns that ended with an exception instead of one of the endings above. */
   failed: number
   /** Outbound failures counted by the code the adapter reported. */
@@ -65,6 +69,8 @@ export class TurnStats {
   #dropped = 0
   #pushed = 0
   #suppressed = 0
+  #ended = 0
+  #refused = 0
   #failed = 0
   readonly #sendFailures = new Map<string, number>()
 
@@ -120,8 +126,10 @@ export class TurnStats {
     this.#pushed += 1
   }
 
-  suppressed(): void {
+  suppressed(outcome: 'ended' | 'refused' = 'ended'): void {
     this.#suppressed += 1
+    if (outcome === 'refused') this.#refused += 1
+    else this.#ended += 1
   }
 
   failed(): void {
@@ -140,6 +148,8 @@ export class TurnStats {
       dropped: this.#dropped,
       pushed: this.#pushed,
       suppressed: this.#suppressed,
+      ended: this.#ended,
+      refused: this.#refused,
       failed: this.#failed,
       sendFailures: Object.fromEntries(this.#sendFailures),
       sampledAt: this.#now(),

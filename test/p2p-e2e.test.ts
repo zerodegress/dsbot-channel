@@ -669,6 +669,7 @@ describe('closing a peer conversation', () => {
     first: 'no_reply' | 'decline' | 'none',
     later: 'no_reply' | 'decline' | 'none' = first,
     host?: string,
+    options: { reason?: string; relayLimit?: number; budget?: Record<string, unknown> } = {},
   ): Promise<Mounted> {
     const posts: Captured[] = []
     const capture = createServer((request, response) => {
@@ -707,7 +708,10 @@ describe('closing a peer conversation', () => {
         const call = prompted.length === 1 ? first : later
         const tool = registered.find((candidate) => candidate.name === call)
         if (tool !== undefined) {
-          await tool.execute({ reason: 'no' }, { agent: { id: request.sessionId }, concludeTurn: () => undefined } as never)
+          await tool.execute(
+            { reason: options.reason ?? 'policy', note: 'no' },
+            { agent: { id: request.sessionId }, concludeTurn: () => undefined } as never,
+          )
         }
         emit({ type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'a reply that must not leave' }] } } })
         emit({ type: 'turn/end' })
@@ -736,6 +740,14 @@ describe('closing a peer conversation', () => {
 channel: 'p2p:b',
 instance: 'inst-b',
 botName: 'bot-b',
+  ...(options.relayLimit === undefined && options.budget === undefined
+    ? {}
+    : {
+        policy: {
+          ...(options.relayLimit === undefined ? {} : { relayLimit: options.relayLimit }),
+          ...(options.budget === undefined ? {} : { budget: options.budget }),
+        },
+      }),
 transport: {
   peers: [
             {
@@ -771,7 +783,7 @@ transport: {
     try {
       await send(mounted.port, 'evt-1', 'hello')
       await waitFor(() => mounted.posts.length === 1)
-      expect(mounted.posts[0]).toMatchObject({ status: 'declined', final: true, reason: 'no', body: '' })
+      expect(mounted.posts[0]).toMatchObject({ status: 'declined', final: true, reason: 'policy', body: 'no' })
 
       await send(mounted.port, 'evt-2', 'are you there', 'bot-a', 'evt-1')
       await waitFor(() => mounted.prompted.length === 2)
@@ -803,6 +815,47 @@ transport: {
       await waitFor(() => mounted.prompted.length === 2)
       await new Promise((resolve) => setTimeout(resolve, 60))
       expect(mounted.posts).toHaveLength(1)
+    } finally {
+      mounted.close()
+    }
+  })
+
+  test('the reason the model picked is the one on the wire', async () => {
+    const mounted = await mount('decline', 'decline', undefined, { reason: 'too-busy' })
+    try {
+      await send(mounted.port, 'evt-1', 'hello')
+      await waitFor(() => mounted.posts.length === 1)
+      expect(mounted.posts[0]).toMatchObject({ status: 'declined', reason: 'too-busy' })
+    } finally {
+      mounted.close()
+    }
+  })
+
+  test('a refusal counts toward the ceiling, so the next round is stopped', async () => {
+    const mounted = await mount('decline', 'decline', undefined, { relayLimit: 1 })
+    try {
+      await send(mounted.port, 'evt-1', 'hello')
+      await waitFor(() => mounted.posts.length === 1)
+
+      await send(mounted.port, 'evt-2', 'again')
+      await waitFor(() => warnings.some((line) => line.includes('loop-limit')))
+      expect(mounted.prompted).toHaveLength(1)
+    } finally {
+      mounted.close()
+    }
+  })
+
+  test('a refusal is charged at the rejected rate, so a burst hits the ceiling', async () => {
+    const mounted = await mount('decline', 'decline', undefined, { budget: { capacity: 20 } })
+    try {
+      await send(mounted.port, 'evt-1', 'hello')
+      await waitFor(() => mounted.posts.length === 1)
+      await send(mounted.port, 'evt-2', 'hello again')
+      await waitFor(() => mounted.posts.length === 2)
+
+      await send(mounted.port, 'evt-3', 'third')
+      await waitFor(() => warnings.some((line) => line.includes('budget-hard')))
+      expect(mounted.prompted).toHaveLength(2)
     } finally {
       mounted.close()
     }
@@ -1530,7 +1583,7 @@ transport: {
         }
         emit({ type: 'turn/start' })
         const decline = tools.find((tool) => tool.name === 'decline')
-        await decline?.execute({ reason: 'no' }, { agent: { id: request.sessionId }, concludeTurn: () => undefined } as never)
+        await decline?.execute({ reason: 'policy', note: 'no' }, { agent: { id: request.sessionId }, concludeTurn: () => undefined } as never)
         emit({ type: 'turn/end' })
         return { accepted: true }
       },
