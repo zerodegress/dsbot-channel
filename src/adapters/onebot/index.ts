@@ -3,7 +3,13 @@ import { ConfigError, assertBindHost } from '../../config.js'
 import { OneBotAdapter } from './adapter.js'
 import type { OneBotAdapterConfig } from './adapter.js'
 
-const FIELDS = new Set(['selfId', 'listen', 'api', 'accessToken', 'sendTimeoutMs', 'bots'])
+const FIELDS = new Set(['selfId', 'listen', 'api', 'accessToken', 'sendTimeoutMs', 'bots', 'history'])
+
+/** The two address kinds history may be opened for, each off unless the profile says so. */
+export interface OneBotHistoryConfig {
+  group: boolean
+  private: boolean
+}
 
 /** Longest token the transport may carry for its OneBot callback. */
 export const DEFAULT_ONEBOT_SEND_TIMEOUT_MS = 10_000
@@ -68,6 +74,19 @@ function parseApi(value: unknown, timeoutMs: number): { url: string; timeoutMs: 
   return { url: url.replace(/\/$/, ''), timeoutMs }
 }
 
+function parseHistory(value: unknown): OneBotHistoryConfig {
+  const raw = value === undefined ? {} : record(value, 'history')
+  const unknown = Object.keys(raw).filter((key) => key !== 'group' && key !== 'private')
+  if (unknown.length > 0) refuse(`transport.history names a field this adapter does not read: ${unknown.join(', ')}`, 'history')
+  const flag = (field: 'group' | 'private'): boolean => {
+    const one = raw[field]
+    if (one === undefined) return false
+    if (typeof one !== 'boolean') refuse(`transport.history.${field} must be true or false`, `history.${field}`)
+    return one
+  }
+  return { group: flag('group'), private: flag('private') }
+}
+
 function parseBots(value: unknown): string[] {
   if (value === undefined) return []
   if (!Array.isArray(value)) refuse('transport.bots must be a list of ids', 'bots')
@@ -89,6 +108,7 @@ export function parseOneBotConfig(mount: AdapterMount): OneBotAdapterConfig {
     listen: parseListen(raw.listen),
     api: parseApi(raw.api, sendTimeoutMs),
     sendTimeoutMs,
+    history: parseHistory(raw.history),
     ...(optionalText(raw.accessToken, 'accessToken') === undefined ? {} : { accessToken: raw.accessToken as string }),
     bots: parseBots(raw.bots),
   }

@@ -2,8 +2,8 @@ import { timingSafeEqual } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import type { AdapterStatus } from '../../adapter-status.js'
-import { NO_HISTORY, buildListenerHealth, buildStatus } from '../../adapter-status.js'
+import type { AdapterStatus, CapabilitySet } from '../../adapter-status.js'
+import { buildListenerHealth, buildStatus } from '../../adapter-status.js'
 import { answerStatus } from '../shared/status-route.js'
 import type { ChannelSnapshot } from '../../channel-stats.js'
 import { ChannelStats, countersOf } from '../../channel-stats.js'
@@ -28,6 +28,8 @@ export interface OneBotAdapterConfig {
   selfId?: string
   listen: { host: string; port: number; path: string }
   api: { url: string; timeoutMs: number }
+  /** Which addresses a profile lets this link page history for; both off unless written out. */
+  history?: { group: boolean; private: boolean } | undefined
   sendTimeoutMs: number
   accessToken?: string
   bots: readonly string[]
@@ -260,17 +262,7 @@ class Seen {
 export class OneBotAdapter implements ChannelAdapter {
   readonly kind = 'onebot'
   readonly guidance = { peer: ONEBOT_PEER_GUIDANCE, group: ONEBOT_GROUP_GUIDANCE }
-  readonly capabilities = {
-    text: true,
-    image: { in: true, out: true, fromUrl: true, fromHandle: true },
-    file: { in: true, out: true, fromUrl: true, fromHandle: true },
-    voice: { in: true, out: false, fromUrl: false, fromHandle: false },
-    recall: false,
-    history: NO_HISTORY,
-    mention: true,
-    reply: true,
-    stream: false,
-  }
+  readonly capabilities: CapabilitySet
   readonly #config: OneBotAdapterConfig
   readonly #stats: ChannelStats
   readonly #now: () => number
@@ -282,6 +274,20 @@ export class OneBotAdapter implements ChannelAdapter {
 
   constructor(config: OneBotAdapterConfig, options: { warn?: (message: string) => void; now?: () => number } = {}) {
     this.#config = config
+    this.capabilities = {
+      text: true,
+      image: { in: true, out: true, fromUrl: true, fromHandle: true },
+      file: { in: true, out: true, fromUrl: true, fromHandle: true },
+      voice: { in: true, out: false, fromUrl: false, fromHandle: false },
+      recall: false,
+      history: {
+        group: config.history?.group === true,
+        private: config.history?.private === true,
+      },
+      mention: true,
+      reply: true,
+      stream: false,
+    }
     this.#stats = new ChannelStats(options.now)
     this.#now = options.now ?? Date.now
     this.#warn = options.warn
