@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `send_file` sends on OneBot now: `upload_group_file` or `upload_private_file` with the receiver's `name`, a url only when `transport.fileFromUrl: true` says the implementation takes one (most accept a path on their own host), and no download on our side. The receipt is `file_id`, then `message_id`, then a `local:` id when the platform gives neither.
+
 - `read_history` reads earlier messages where the transport can page them: OneBot answers from `get_group_msg_history` and `get_friend_msg_history` when `transport.history` opens that address kind, one page per call, with `next` carrying the cursor for the page before it, and a message that the list ended answering as an empty success rather than a failure.
 - A turn can read the messages it did not answer: `turn.context.messages` keeps that many earlier messages per conversation and puts them in front of the turn as a `[context]` block, while `turn.context.chars` drops the oldest whole message once the text no longer fits. The buffer records every inbound group message after admission, including the ones a policy refused, and leaves out the messages the turn already carries; it is off by default (`messages: 0`) and never holds this bot's own replies.
 - A bot's group message follows `policy.groupBots`: `whenMentioned` (the default) answers it only when it names this bot or everyone, `silent` never answers one, and `answer` treats it like a person. The check runs before `requireMention`, and a transport that cannot tell mentions apart falls back to `silent`.

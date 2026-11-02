@@ -649,7 +649,7 @@ transport: {
     }
 
     const image = await call('send_image', { url: 'https://example.test/a.png', channel: 'p2p:a', target: 'inst-b' })
-    const file = await call('send_file', { url: 'https://example.test/a.txt', channel: 'p2p:a', target: 'inst-b' })
+    const file = await call('send_file', { url: 'https://example.test/a.txt', name: 'a.txt', channel: 'p2p:a', target: 'inst-b' })
     const history = await call('read_history', { channel: 'p2p:a', target: 'inst-b', limit: 10 })
 
     expect(image).toMatchObject({ ok: true })

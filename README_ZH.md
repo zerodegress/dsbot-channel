@@ -69,6 +69,8 @@ OneBot 11 内置。事件接收地址是 `listen.path`，默认 `/onebot/event`�
 
 `read_history` 从能翻页的传输读更早的消息。OneBot 用 `transport.history: { group: true, private: true }` 按地址种类分别打开，默认都关闭——这两个 API 都不属于 OneBot 11；一页返回 `records`，还有更早的消息时附带 `next`，它是下次作为 `before` 传回的游标。
 
+`send_file` 在 OneBot 上真的会发出去：走 `upload_group_file` 或 `upload_private_file`，一个文件一次调用，`name` 必填——接收方需要文件名。只有当 `transport.fileFromUrl: true` 说明该实现接受 url 时，文件才以 url 形式发送（多数实现只认自己机器上的路径），适配器不会去下载它。
+
 ```yaml
 config:
   adapters:

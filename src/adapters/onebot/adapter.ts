@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'node:crypto'
+import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -16,6 +16,7 @@ import type {
   HistoryRecord,
   HistoryResult,
   InboundMessage,
+  OutboundMedia,
   SendFailure,
   SendInput,
   SendResult,
@@ -33,6 +34,8 @@ export interface OneBotAdapterConfig {
   api: { url: string; timeoutMs: number }
   /** Which addresses a profile lets this link page history for; both off unless written out. */
   history?: { group: boolean; private: boolean } | undefined
+  /** Whether this implementation takes a file as an http(s) url; most only take a path on its host. */
+  fileFromUrl?: boolean | undefined
   sendTimeoutMs: number
   accessToken?: string
   bots: readonly string[]
@@ -280,7 +283,7 @@ export class OneBotAdapter implements ChannelAdapter {
     this.capabilities = {
       text: true,
       image: { in: true, out: true, fromUrl: true, fromHandle: true },
-      file: { in: true, out: true, fromUrl: true, fromHandle: true },
+      file: { in: true, out: true, fromUrl: config.fileFromUrl === true, fromHandle: true },
       voice: { in: true, out: false, fromUrl: false, fromHandle: false },
       recall: false,
       history: {
@@ -347,6 +350,8 @@ export class OneBotAdapter implements ChannelAdapter {
     if (target === undefined) {
       return { ok: false, code: 'no_url', retryable: false, reason: `this adapter cannot address "${input.target}"` }
     }
+    const file = (input.media ?? []).find((item) => item.type === 'file')
+    if (file !== undefined) return this.#sendFile(target, file, input.timeoutMs)
     const message = this.#messageOf(input)
     if (message === undefined) {
       return { ok: false, code: 'rejected', retryable: false, reason: 'there is nothing this channel can carry' }
@@ -476,6 +481,109 @@ export class OneBotAdapter implements ChannelAdapter {
     }
     if (parsed.data === null || typeof parsed.data !== 'object') return { ok: true, data: {} }
     return { ok: true, data: parsed.data as Record<string, unknown> }
+  }
+
+  /** Uploads one file; the implementation takes a url only when the profile said it does. */
+  async #sendFile(
+    target: { scope: 'group' | 'c2c'; id: string },
+    item: OutboundMedia,
+    timeoutMs: number | undefined,
+  ): Promise<SendResult> {
+    const capability = this.capabilities.file
+    if (capability.out !== true) {
+      return { ok: false, code: 'unsupported', retryable: false, reason: 'this channel cannot send files' }
+    }
+    if (item.url !== null && capability.fromUrl !== true) {
+      return {
+        ok: false,
+        code: 'unsupported',
+        retryable: false,
+        reason: 'this channel cannot take a file from a url; transport.fileFromUrl is false',
+      }
+    }
+    const file = item.url ?? item.handle
+    if (file === null) {
+      return { ok: false, code: 'no_url', retryable: false, reason: 'the file names neither a url nor a handle' }
+    }
+    const name = item.name
+    if (name === undefined || name.trim().length === 0) {
+      return { ok: false, code: 'rejected', retryable: false, reason: 'a file needs a name' }
+    }
+    const action = target.scope === 'group' ? 'upload_group_file' : 'upload_private_file'
+    const params = target.scope === 'group' ? { group_id: target.id, file, name } : { user_id: target.id, file, name }
+    return this.#uploadCall(action, params, timeoutMs)
+  }
+
+  async #uploadCall(
+    action: string,
+    params: Record<string, unknown>,
+    timeoutMs: number | undefined,
+  ): Promise<SendResult> {
+    const ports = this.#ports
+    if (ports === undefined) {
+      return { ok: false, code: 'unreachable', retryable: true, reason: 'the onebot adapter is not started' }
+    }
+    const token = this.#config.accessToken === undefined ? undefined : await ports.resolveSecret(this.#config.accessToken)
+    if (this.#config.accessToken !== undefined && token === undefined) {
+      return { ok: false, code: 'credential', retryable: false, reason: 'the onebot access token did not resolve' }
+    }
+    let response: Response
+    try {
+      response = await fetch(`${this.#config.api.url}/${action}`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
+        },
+        body: JSON.stringify(params),
+        signal: AbortSignal.timeout(timeoutMs ?? this.#config.sendTimeoutMs),
+      })
+    } catch (error) {
+      const timeout = error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')
+      return {
+        ok: false,
+        code: timeout ? 'timeout' : 'unreachable',
+        retryable: true,
+        reason: timeout ? 'the onebot api did not answer in time' : `the onebot api is unreachable: ${String(error)}`,
+      }
+    }
+    let parsed: { status?: unknown; data?: unknown; message?: unknown }
+    try {
+      parsed = (await response.json()) as typeof parsed
+    } catch {
+      if (response.status === 404) {
+        return { ok: false, code: 'unsupported', retryable: false, reason: 'the implementation has no upload action' }
+      }
+      return {
+        ok: false,
+        code: 'rejected',
+        retryable: response.status >= 500,
+        reason: `the api answered ${response.status} without json`,
+      }
+    }
+    const message = this.#oneLine(parsed.message ?? '')
+    if (response.status === 401 || response.status === 403) {
+      return { ok: false, code: 'unauthorized', retryable: false, reason: message === '' ? 'unauthorized' : message }
+    }
+    if (response.status === 404) {
+      return {
+        ok: false,
+        code: 'unsupported',
+        retryable: false,
+        reason: message === '' ? 'the implementation has no upload action' : message,
+      }
+    }
+    if (!response.ok || parsed.status !== 'ok') {
+      return {
+        ok: false,
+        code: response.status >= 500 ? 'unreachable' : 'rejected',
+        retryable: response.status >= 500,
+        reason: message === '' ? `the api answered ${response.status}` : message,
+      }
+    }
+    const data = (parsed.data ?? {}) as Record<string, unknown>
+    const given = idOf(data.file_id) ?? idOf(data.message_id)
+    return { ok: true, messageId: given ?? `local:${randomUUID()}`, duplicate: false }
   }
 
   /** The text alone when there is no media, otherwise the segments this instance may carry. */

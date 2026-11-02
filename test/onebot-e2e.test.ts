@@ -255,7 +255,7 @@ describe('an OneBot link that carries no media or history yet', () => {
     }
 
     const image = await call('send_image', { url: 'https://example.test/a.png', channel: 'onebot:a', target: 'group:30003', caption: 'look' })
-    const file = await call('send_file', { url: 'https://example.test/a.txt', channel: 'onebot:a', target: 'group:30003' })
+    const file = await call('send_file', { url: 'https://example.test/a.txt', name: 'a.txt', channel: 'onebot:a', target: 'group:30003' })
     const history = await call('read_history', { channel: 'onebot:a', target: 'group:30003', limit: 10 })
 
     expect(image).toMatchObject({ ok: true, messageId: '77' })
@@ -269,7 +269,7 @@ describe('an OneBot link that carries no media or history yet', () => {
       },
     })
     expect(file).toMatchObject({ ok: false, code: 'unsupported_capability' })
-    expect(file.reason).toContain('declares capabilities.file')
+    expect(file.reason).toContain('capabilities.file')
     expect(file.reason).toContain('onebot:a')
     expect(history).toMatchObject({ ok: false, code: 'unsupported_capability' })
     expect(history.reason).toContain('capabilities.history')

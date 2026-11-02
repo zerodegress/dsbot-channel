@@ -213,7 +213,7 @@ export function createSendFile(gate: CapabilityGate) {
       'Send a file to an address on one channel. This build declares no file sender, so a call answers why it cannot.',
     parameters: {
       url: { type: 'string', required: true, description: 'An http(s) address the channel fetches; a local path is not readable by a transport' },
-      caption: { type: 'string', description: 'One optional line to send beside the file' },
+      name: { type: 'string', description: 'The file name the receiver sees; a call without one is refused' },
       channel: { type: 'string', description: 'Adapter instance to send through, e.g. p2p:orca. Omit to use the channel that last messaged this session' },
       target: { type: 'string', description: ADDRESS_NOTE },
       idempotencyKey: { type: 'string', description: 'Repeat this call safely within ten minutes; only a delivered send holds the key' },
@@ -223,11 +223,14 @@ export function createSendFile(gate: CapabilityGate) {
       render: (_args: unknown, value: unknown) => [{ type: 'text' as const, text: String(value) }],
     },
     async execute(
-      args: { url: string; caption?: string; channel?: string; target?: string; idempotencyKey?: string },
+      args: { url: string; name: string; channel?: string; target?: string; idempotencyKey?: string },
       exec: { agent?: { id?: string } },
     ): Promise<string> {
       const problem = urlProblem(args.url)
       if (problem !== undefined) return JSON.stringify(fail('unsupported_argument', problem))
+      if (typeof args.name !== 'string' || args.name.trim().length === 0) {
+        return JSON.stringify(fail('unsupported_argument', 'name must be a non-empty file name'))
+      }
       return JSON.stringify(
         gate.refuseMedia(args, exec?.agent?.id, 'file', 'url', 'send files', 'put a link in a text message instead'),
       )
