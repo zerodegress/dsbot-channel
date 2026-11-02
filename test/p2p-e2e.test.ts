@@ -618,7 +618,37 @@ transport: {
   test('a peer link registers the text tool and the two ways to close a chain', async () => {
     const { tools } = await mountPair()
 
-    expect(tools.map((tool) => tool.name)).toEqual(['send_text', 'no_reply', 'decline'])
+    expect(tools.map((tool) => tool.name)).toEqual([
+      'send_text',
+      'send_image',
+      'send_file',
+      'read_history',
+      'no_reply',
+      'decline',
+    ])
+  })
+
+  test('a peer link carries no image, file or history, and each tool names what it lacks', async () => {
+    const { tools } = await mountPair()
+    const call = async (name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      const tool = tools.find((one) => one.name === name)
+      expect(tool).toBeDefined()
+      return JSON.parse(String(await tool?.execute(args, {}))) as Record<string, unknown>
+    }
+
+    const image = await call('send_image', { url: 'https://example.test/a.png', channel: 'p2p:a', target: 'inst-b' })
+    const file = await call('send_file', { url: 'https://example.test/a.txt', channel: 'p2p:a', target: 'inst-b' })
+    const history = await call('read_history', { channel: 'p2p:a', target: 'inst-b', limit: 10 })
+
+    for (const [result, capability] of [
+      [image, 'image'],
+      [file, 'file'],
+      [history, 'history'],
+    ] as const) {
+      expect(result).toMatchObject({ ok: false, code: 'unsupported_capability' })
+      expect(result.reason).toContain(`capabilities.${capability} is false`)
+      expect(result.reason).toContain('p2p:a')
+    }
   })
 
   test('a push with no arguments answers the peer that just messaged this session', async () => {

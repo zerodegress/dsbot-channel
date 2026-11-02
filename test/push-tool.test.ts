@@ -157,7 +157,7 @@ describe('pushing twice with one key', () => {
 })
 
 describe('what this channel can do', () => {
-  test('only send_text exists, because a peer link carries text alone', () => {
+  test('the text router builds the text tool alone', () => {
     const { router } = harness()
 
     expect(createSendText(router).name).toBe('send_text')

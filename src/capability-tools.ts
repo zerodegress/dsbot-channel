@@ -1,0 +1,168 @@
+import { defineTool } from '@deepseek-ai/dsh-tools'
+import type { CapabilitySet } from './adapter-status.js'
+import type { PushCode, PushRouter } from './push-tool.js'
+
+/** A tool that needs a capability answers this instead of pretending the channel can carry it. */
+export const UNSUPPORTED_CAPABILITY = 'unsupported_capability'
+
+export type CapabilityCode = PushCode | typeof UNSUPPORTED_CAPABILITY
+
+export interface CapabilityFailure {
+  ok: false
+  code: CapabilityCode
+  retryable: boolean
+  reason: string
+}
+
+export interface CapabilityGateOptions {
+  router: PushRouter
+  /** The static capability set the adapter declared at mount time, never a sampled status. */
+  capabilities: (channel: string) => CapabilitySet | undefined
+}
+
+function fail(code: CapabilityCode, reason: string): CapabilityFailure {
+  return { ok: false, code, retryable: false, reason }
+}
+
+/** Names the capability and the channel that lack it, so the model can try another route. */
+export class CapabilityGate {
+  readonly #router: PushRouter
+  readonly #capabilities: CapabilityGateOptions['capabilities']
+
+  constructor(options: CapabilityGateOptions) {
+    this.#router = options.router
+    this.#capabilities = options.capabilities
+  }
+
+  refuse(
+    request: { channel?: string | undefined; target?: string | undefined },
+    sessionId: string | undefined,
+    capability: keyof CapabilitySet,
+    action: string,
+    hint: string,
+  ): CapabilityFailure {
+    const addressed = this.#router.resolve(request, sessionId)
+    if ('ok' in addressed) return addressed
+    const channel = addressed.channel.channel
+    if (this.#capabilities(channel)?.[capability] !== true) {
+      return fail(
+        UNSUPPORTED_CAPABILITY,
+        `channel "${channel}" cannot ${action}: capabilities.${capability} is false; ${hint}`,
+      )
+    }
+    return fail(
+      UNSUPPORTED_CAPABILITY,
+      `channel "${channel}" declares capabilities.${capability}, but this build carries no sender for it yet`,
+    )
+  }
+}
+
+const ADDRESS_NOTE = 'Address on that channel, as the channel names it'
+
+function urlProblem(url: unknown): string | undefined {
+  if (typeof url !== 'string' || url.trim().length === 0) return 'url must be a non-empty string'
+  if (!/^https?:\/\//i.test(url.trim())) {
+    return `url must be an http(s) address the channel can fetch, not "${url.trim()}": a transport cannot read a local path`
+  }
+  return undefined
+}
+
+function limitProblem(limit: unknown): string | undefined {
+  if (limit === undefined) return undefined
+  if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1) {
+    return `limit must be a whole number of at least 1: ${String(limit)}`
+  }
+  return undefined
+}
+
+/** Sends an image to an address; this version has no image sender, so it answers why. */
+export function createSendImage(gate: CapabilityGate) {
+  return defineTool({
+    name: 'send_image',
+    description:
+      'Send an image to an address on one channel. This build declares no image sender, so a call answers why it cannot.',
+    parameters: {
+      url: { type: 'string', required: true, description: 'An http(s) address the channel fetches; a local path is not readable by a transport' },
+      caption: { type: 'string', description: 'One optional line to send beside the image' },
+      channel: { type: 'string', description: 'Adapter instance to send through, e.g. p2p:orca. Omit to use the channel that last messaged this session' },
+      target: { type: 'string', description: ADDRESS_NOTE },
+      idempotencyKey: { type: 'string', description: 'Repeat this call safely within ten minutes; only a delivered send holds the key' },
+    },
+    output: {
+      schema: { type: 'string' as const },
+      render: (_args: unknown, value: unknown) => [{ type: 'text' as const, text: String(value) }],
+    },
+    async execute(
+      args: { url: string; caption?: string; channel?: string; target?: string; idempotencyKey?: string },
+      exec: { agent?: { id?: string } },
+    ): Promise<string> {
+      const problem = urlProblem(args.url)
+      if (problem !== undefined) return JSON.stringify(fail('unsupported_argument', problem))
+      return JSON.stringify(
+        gate.refuse(args, exec?.agent?.id, 'image', 'send images', 'put a link in a text message instead'),
+      )
+    },
+  })
+}
+
+/** Sends a file to an address; this version has no file sender, so it answers why. */
+export function createSendFile(gate: CapabilityGate) {
+  return defineTool({
+    name: 'send_file',
+    description:
+      'Send a file to an address on one channel. This build declares no file sender, so a call answers why it cannot.',
+    parameters: {
+      url: { type: 'string', required: true, description: 'An http(s) address the channel fetches; a local path is not readable by a transport' },
+      caption: { type: 'string', description: 'One optional line to send beside the file' },
+      channel: { type: 'string', description: 'Adapter instance to send through, e.g. p2p:orca. Omit to use the channel that last messaged this session' },
+      target: { type: 'string', description: ADDRESS_NOTE },
+      idempotencyKey: { type: 'string', description: 'Repeat this call safely within ten minutes; only a delivered send holds the key' },
+    },
+    output: {
+      schema: { type: 'string' as const },
+      render: (_args: unknown, value: unknown) => [{ type: 'text' as const, text: String(value) }],
+    },
+    async execute(
+      args: { url: string; caption?: string; channel?: string; target?: string; idempotencyKey?: string },
+      exec: { agent?: { id?: string } },
+    ): Promise<string> {
+      const problem = urlProblem(args.url)
+      if (problem !== undefined) return JSON.stringify(fail('unsupported_argument', problem))
+      return JSON.stringify(
+        gate.refuse(args, exec?.agent?.id, 'file', 'send files', 'put a link in a text message instead'),
+      )
+    },
+  })
+}
+
+/** Reads recent messages from an address; this version has no history transport, so it answers why. */
+export function createReadHistory(gate: CapabilityGate) {
+  return defineTool({
+    name: 'read_history',
+    description:
+      'Read recent messages from an address on one channel. This build declares no history transport, so a call answers why it cannot.',
+    parameters: {
+      channel: { type: 'string', description: 'Adapter instance to read through, e.g. onebot:main. Omit to use the channel that last messaged this session' },
+      target: { type: 'string', description: ADDRESS_NOTE },
+      limit: { type: 'number', description: 'How many recent messages to ask for; a whole number of at least 1' },
+    },
+    output: {
+      schema: { type: 'string' as const },
+      render: (_args: unknown, value: unknown) => [{ type: 'text' as const, text: String(value) }],
+    },
+    async execute(
+      args: { channel?: string; target?: string; limit?: number },
+      exec: { agent?: { id?: string } },
+    ): Promise<string> {
+      const problem = limitProblem(args.limit)
+      if (problem !== undefined) return JSON.stringify(fail('unsupported_argument', problem))
+      return JSON.stringify(
+        gate.refuse(args, exec?.agent?.id, 'history', 'read history', 'ask the peer to resend the messages you need'),
+      )
+    },
+  })
+}
+
+export type SendImageTool = ReturnType<typeof createSendImage>
+export type SendFileTool = ReturnType<typeof createSendFile>
+export type ReadHistoryTool = ReturnType<typeof createReadHistory>

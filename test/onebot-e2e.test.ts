@@ -242,3 +242,29 @@ describe('an address that carries its own destination', () => {
     expect(mounted.calls[1]).toMatchObject({ action: 'send_private_msg', body: { user_id: '20002', message: 'to one member' } })
   })
 })
+
+describe('an OneBot link that carries no media or history yet', () => {
+  test('each of the three tools answers with the capability the channel lacks', async () => {
+    const mounted = await mount()
+    const call = async (name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      const tool = mounted.tools.find((one) => one.name === name)
+      expect(tool).toBeDefined()
+      return JSON.parse(String(await tool?.execute(args, {}))) as Record<string, unknown>
+    }
+
+    const image = await call('send_image', { url: 'https://example.test/a.png', channel: 'onebot:a', target: 'group:30003' })
+    const file = await call('send_file', { url: 'https://example.test/a.txt', channel: 'onebot:a', target: 'group:30003' })
+    const history = await call('read_history', { channel: 'onebot:a', target: 'group:30003', limit: 10 })
+
+    for (const [result, capability] of [
+      [image, 'image'],
+      [file, 'file'],
+      [history, 'history'],
+    ] as const) {
+      expect(result).toMatchObject({ ok: false, code: 'unsupported_capability' })
+      expect(result.reason).toContain(`capabilities.${capability} is false`)
+      expect(result.reason).toContain('onebot:a')
+    }
+    expect(mounted.calls).toHaveLength(0)
+  })
+})
