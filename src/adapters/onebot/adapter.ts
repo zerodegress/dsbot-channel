@@ -18,7 +18,7 @@ import type {
   SendResult,
 } from '../../contract.js'
 import type { AuthorKind, MediaInput, MediaRef, Mentioned, Scope } from '../../event-types.js'
-import { buildEvent } from '../../event-build.js'
+import { buildEvent, handleProblem } from '../../event-build.js'
 import { ADAPTER_META_MAX_BYTES } from '../../adapter-meta.js'
 
 export interface OneBotAdapterConfig {
@@ -368,6 +368,14 @@ export class OneBotAdapter implements ChannelAdapter {
       const capability = this.capabilities.image
       if (capability.out !== true) {
         this.#warn?.('dsbot-channel: dropped an image from the send: capabilities.image.out is false')
+        continue
+      }
+      if (item.url === null && item.handle === null) {
+        this.#warn?.('dsbot-channel: dropped a media item from the send: it names neither a url nor a handle')
+        continue
+      }
+      if (item.url === null && (typeof item.handle !== 'string' || handleProblem(item.handle) !== undefined)) {
+        this.#warn?.('dsbot-channel: dropped a media item from the send: its handle is not one printable token')
         continue
       }
       const source = item.url !== null ? capability.fromUrl : capability.fromHandle

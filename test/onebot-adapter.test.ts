@@ -275,6 +275,21 @@ describe('the onebot sender', () => {
     expect(calls[2]?.body.message).toBe('text')
     expect(warns.some((line) => line.includes('another instance'))).toBe(true)
 
+    await adapter.send({
+      target: 'group:12345',
+      eventId: 'evt-5',
+      body: 'still here',
+      media: [
+        { type: 'image', url: null, handle: null },
+        { type: 'image', url: null, handle: 'two words' },
+      ],
+      sender: 'bot-a',
+      instance: 'inst-a',
+    })
+    expect(calls[3]?.body.message).toBe('still here')
+    expect(warns.some((line) => line.includes('neither a url nor a handle'))).toBe(true)
+    expect(warns.some((line) => line.includes('not one printable token'))).toBe(true)
+
     const nothing = await adapter.send({
       target: 'group:12345',
       eventId: 'evt-4',
