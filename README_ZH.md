@@ -19,10 +19,10 @@ ds-bot 的消息网关：多个外部平台的事件进到同一个 Bot，回答
 ## 安装
 
 ```sh
-dsh plugin --profile PROFILE_NAME add dsbot-channel
+dsh plugin --profile web add dsbot-channel
 ```
 
-`PROFILE_NAME` 是 Bot 运行所用的 profile 名，例如 `web` 或 `tui`。
+`web` 是随宿主提供的一个 profile。如果 Bot 跑在别的 profile 下，把 `web` 换成那个名字。该 profile 尚不存在时，这条命令会用模板新建，所以新读者不必先手动建一个。
 
 要改插件本身，改用源码安装：
 
