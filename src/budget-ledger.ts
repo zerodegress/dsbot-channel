@@ -53,7 +53,10 @@ export interface Usage {
 }
 
 export interface LimitState {
-  byScope: Record<string, LimitLevel>
+  /** The level per ledger key: `global`, `bot:<id>`, and the adapter's session key. */
+  byKey: Record<string, LimitLevel>
+  /** The same levels, named by the dimension each key belongs to. */
+  byDimension: { global: LimitLevel; bot: LimitLevel; conversation: LimitLevel }
   aggregate: LimitLevel
   triggeredBy: string[]
 }
@@ -180,17 +183,10 @@ export class BudgetLedger {
   /** The state a reader may see, computed without touching a lock or creating a window. */
   peek(botId: string, session: string): LimitState {
     const at = this.now()
-    const byScope: Record<string, LimitLevel> = {}
-    const triggeredBy: string[] = []
-    let aggregate: LimitLevel = 'normal'
-    for (const key of this.keysFor(botId, session)) {
+    return this.stateFrom(botId, session, (key) => {
       const ratio = this.spentOn(key, at) / this.limits.capacity
-      const level = this.levelFor(key, ratio, at)
-      byScope[key] = level
-      if (level !== 'normal') triggeredBy.push(key)
-      if (level === 'hard') aggregate = 'hard'
-    }
-    return { byScope, aggregate, triggeredBy }
+      return this.levelFor(key, ratio, at)
+    })
   }
 
   private spentOn(key: string, at: number): number {
@@ -199,17 +195,28 @@ export class BudgetLedger {
 
   check(botId: string, session: string): LimitState {
     const at = this.now()
-    const byScope: Record<string, LimitLevel> = {}
+    return this.stateFrom(botId, session, (key) => {
+      const ratio = this.window(key).sum(at) / this.limits.capacity
+      return this.levelOf(key, ratio, at)
+    })
+  }
+
+  /** Builds both readings of one pass, so a key and the dimension it belongs to cannot disagree. */
+  private stateFrom(botId: string, session: string, levelOf: (key: string) => LimitLevel): LimitState {
+    const byKey: Record<string, LimitLevel> = {}
+    const byDimension: LimitState['byDimension'] = { global: 'normal', bot: 'normal', conversation: 'normal' }
     const triggeredBy: string[] = []
     let aggregate: LimitLevel = 'normal'
-    for (const key of this.keysFor(botId, session)) {
-      const ratio = this.window(key).sum(at) / this.limits.capacity
-      const level = this.levelOf(key, ratio, at)
-      byScope[key] = level
+    this.keysFor(botId, session).forEach((key, index) => {
+      const level = levelOf(key)
+      byKey[key] = level
+      if (index === 0) byDimension.global = level
+      else if (index === 1) byDimension.bot = level
+      else byDimension.conversation = level
       if (level !== 'normal') triggeredBy.push(key)
       if (level === 'hard') aggregate = 'hard'
-    }
-    return { byScope, aggregate, triggeredBy }
+    })
+    return { byKey, byDimension, aggregate, triggeredBy }
   }
 
   /** Records a charge under its own key, so a replay of the same event is charged once. */

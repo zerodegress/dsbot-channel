@@ -9,10 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A limit state names each level by the dimension it belongs to: `byDimension` reports `global`, `bot` and `conversation` beside the key map, so a reader no longer parses a session key to learn which dimension tripped.
 - `turn-stats` separates a quiet end from a refusal: `suppressed` stays the sum, with `ended` and `refused` beside it, and the tools report which one they took.
 
 ### Changed
 
+- `LimitState.byScope` is now `byKey`: the field maps ledger keys (`global`, `bot:<id>`, and the adapter's session key) to levels, while `reply.byScope` maps a scope (`c2c`/`group`/`p2p`) to a reply mode. A caller that read the old name no longer compiles.
 - `decline` takes a `reason` from the closed set a channel can tell the sender, plus an optional `note`, counts toward the reply ceiling like a reply does, and is charged at the rejected rate instead of being refunded.
 
 ### Fixed

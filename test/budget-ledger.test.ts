@@ -55,14 +55,47 @@ describe('limit state', () => {
     const ledger = new BudgetLedger(limits, DEFAULT_BUDGET)
     for (let i = 0; i < 5; i += 1) ledger.settle(ledger.reserve('b', 'group:1', 'bot', 20), 'accepted')
     const state = ledger.check('b', 'group:2')
-    expect(state.byScope.global).toBe('hard')
+    expect(state.byKey.global).toBe('hard')
     expect(state.aggregate).toBe('hard')
   })
 
   test('one bot hitting its limit does not limit another', () => {
     const ledger = new BudgetLedger(limits, DEFAULT_BUDGET)
     for (let i = 0; i < 5; i += 1) ledger.settle(ledger.reserve('b', 'group:1', 'bot', 20), 'accepted')
-    expect(ledger.check('other', 'group:9').byScope['bot:other']).toBe('normal')
+    expect(ledger.check('other', 'group:9').byKey['bot:other']).toBe('normal')
+  })
+
+  test('names each level by the dimension it belongs to', () => {
+    const ledger = new BudgetLedger({ hardLimit: 0.9, capacity: 100 }, DEFAULT_BUDGET)
+    ledger.setUsage({ global: 10, 'bot:b': 95, 'group:1': 20 })
+    const state = ledger.check('b', 'group:1')
+    expect(state.byDimension).toEqual({ global: 'normal', bot: 'hard', conversation: 'normal' })
+    expect(state.triggeredBy).toEqual(['bot:b'])
+    expect(state.aggregate).toBe('hard')
+  })
+
+  test('the dimension and the key name the same level at the same moment', () => {
+    const ledger = new BudgetLedger(limits, DEFAULT_BUDGET)
+    for (let i = 0; i < 5; i += 1) ledger.settle(ledger.reserve('b', 'group:1', 'bot', 20), 'accepted')
+    const state = ledger.check('b', 'group:1')
+    expect(state.byDimension).toEqual({
+      global: state.byKey.global,
+      bot: state.byKey['bot:b'],
+      conversation: state.byKey['group:1'],
+    })
+    expect(state.triggeredBy).toEqual(['global', 'bot:b', 'group:1'])
+  })
+
+  test('a peek reports the dimensions without locking anything', () => {
+    const ledger = new BudgetLedger({ hardLimit: 0.9, capacity: 100 }, DEFAULT_BUDGET)
+    ledger.setUsage({ global: 10, 'bot:b': 95, 'group:1': 20 })
+    expect(ledger.peek('b', 'group:1').byDimension).toEqual({
+      global: 'normal',
+      bot: 'hard',
+      conversation: 'normal',
+    })
+    expect(ledger.snapshot().locks).toHaveLength(0)
+    expect(ledger.check('b', 'group:1').byDimension).toEqual(ledger.peek('b', 'group:1').byDimension)
   })
 })
 
@@ -155,6 +188,6 @@ describe('hysteresis', () => {
     const saved = ledger.snapshot()
     const restored = new BudgetLedger(limits, DEFAULT_BUDGET)
     restored.restore(saved)
-    expect(restored.check('b', 'group:1').byScope.global).toBe('hard')
+    expect(restored.check('b', 'group:1').byKey.global).toBe('hard')
   })
 })
