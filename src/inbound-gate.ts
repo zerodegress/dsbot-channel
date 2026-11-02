@@ -1,9 +1,14 @@
 import type { BudgetLedger, LimitLevel } from './budget-ledger.js'
 import { ConfigError } from './config.js'
+import type { AuthorKind } from './event-types.js'
 import type { Pipeline, PipelineEvent, PipelineResult } from './pipeline.js'
 
 export const DEFAULT_LOOP_MAX_TURNS = 3
 export const DEFAULT_LOOP_IDLE_RESET_MS = 300_000
+
+/** How a bot's message in a group is treated, decided before any mention rule runs. */
+export const GROUP_BOT_POLICIES = ['whenMentioned', 'silent', 'answer'] as const
+export type GroupBotPolicy = (typeof GROUP_BOT_POLICIES)[number]
 
 export interface LoopConfig {
   /** Consecutive rounds with one peer before the ceiling stops the next one. */
@@ -16,6 +21,8 @@ export interface GateOptions {
   loop?: LoopConfig | undefined
   /** Refuse a group message that named neither this bot nor everyone. */
   requireMention?: boolean | undefined
+  /** How a bot's group message is treated: only when it names this bot, never, or like a person. */
+  groupBots?: GroupBotPolicy | undefined
   pipeline?: Pipeline | undefined
   ledger?: BudgetLedger | undefined
   now?: (() => number) | undefined
@@ -26,13 +33,22 @@ export interface AdmitInput {
   /** The peer this message came from. */
   peer: string
   botId: string
+  /** Who sent it: the adapter reports this and core never derives it from the peer. */
+  author?: AuthorKind | undefined
   /** The key the adapter supplied; core never derives one from the peer. */
   session: string
   /** The pipeline this turn runs, when the caller resolves one per session. */
   pipeline?: Pipeline | undefined
 }
 
-export type GateReason = 'allowed' | 'loop-limit' | 'not_addressed' | 'pipeline-deny' | 'pipeline-restrict' | 'budget-hard'
+export type GateReason =
+  | 'allowed'
+  | 'loop-limit'
+  | 'not_addressed'
+  | 'bot-speaker'
+  | 'pipeline-deny'
+  | 'pipeline-restrict'
+  | 'budget-hard'
 
 export interface GateDecision {
   allow: boolean
@@ -103,6 +119,19 @@ export class InboundGate {
 
   async admit(input: AdmitInput): Promise<GateDecision> {
     const { event, botId } = input
+    if (event.scope === 'group' && input.author === 'bot') {
+      const mode = this.options.groupBots ?? 'whenMentioned'
+      if (mode === 'silent') {
+        return { allow: false, reason: 'bot-speaker', detail: 'groupBots=silent' }
+      }
+      if (mode === 'whenMentioned' && !event.mentioned.self && !event.mentioned.all) {
+        return {
+          allow: false,
+          reason: 'bot-speaker',
+          detail: `groupBots=whenMentioned; self=${event.mentioned.self} others=${event.mentioned.others} all=${event.mentioned.all}`,
+        }
+      }
+    }
     if (this.options.requireMention === true && event.scope === 'group' && !event.mentioned.self && !event.mentioned.all) {
       return {
         allow: false,

@@ -181,7 +181,7 @@ async function mountPrompted(kind: string, adapterKind = 'x-demo'): Promise<{ ct
         channel: 'x:a',
         instance: 'inst-a',
         botName: 'bot-a',
-        policy: { allow: { peers: ['inst-a'] } },
+        policy: { allow: { peers: ['inst-a'] }, groupBots: 'answer' },
         transport: { sourceKind: kind, reportedKind: 'p2p' },
       },
     ],
