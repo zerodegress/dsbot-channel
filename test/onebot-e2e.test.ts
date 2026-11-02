@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'vitest'
+import { registryPlugin } from '../src/registry-plugin.js'
 import { createServer, request as httpRequest } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
@@ -103,6 +104,7 @@ async function mount(policy: Record<string, unknown> = {}, bots: string[] = []):
       })
     },
   })
+  await ctx.plugin(registryPlugin)
   const fork = await ctx.plugin(entry, {
     adapters: [
       {
@@ -252,19 +254,26 @@ describe('an OneBot link that carries no media or history yet', () => {
       return JSON.parse(String(await tool?.execute(args, {}))) as Record<string, unknown>
     }
 
-    const image = await call('send_image', { url: 'https://example.test/a.png', channel: 'onebot:a', target: 'group:30003' })
+    const image = await call('send_image', { url: 'https://example.test/a.png', channel: 'onebot:a', target: 'group:30003', caption: 'look' })
     const file = await call('send_file', { url: 'https://example.test/a.txt', channel: 'onebot:a', target: 'group:30003' })
     const history = await call('read_history', { channel: 'onebot:a', target: 'group:30003', limit: 10 })
 
-    expect(image).toMatchObject({ ok: false, code: 'unsupported_capability' })
-    expect(image.reason).toContain('declares capabilities.image')
-    expect(image.reason).toContain('onebot:a')
+    expect(image).toMatchObject({ ok: true, messageId: '77' })
+    expect(mounted.calls[0]).toMatchObject({
+      action: 'send_group_msg',
+      body: {
+        message: [
+          { type: 'text', data: { text: 'look' } },
+          { type: 'image', data: { file: 'https://example.test/a.png' } },
+        ],
+      },
+    })
     expect(file).toMatchObject({ ok: false, code: 'unsupported_capability' })
     expect(file.reason).toContain('declares capabilities.file')
     expect(file.reason).toContain('onebot:a')
     expect(history).toMatchObject({ ok: false, code: 'unsupported_capability' })
     expect(history.reason).toContain('capabilities.history is false')
     expect(history.reason).toContain('onebot:a')
-    expect(mounted.calls).toHaveLength(0)
+    expect(mounted.calls).toHaveLength(1)
   })
 })

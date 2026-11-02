@@ -1,5 +1,6 @@
 import type { AdapterStatus, CapabilitySet } from './adapter-status.js'
 import type { Author, Body, DeclaredMeta, Source, TransportMeta } from './event-types.js'
+import type { MediaOwner, MediaType } from './event-types.js'
 import type { PipelineEvent } from './pipeline.js'
 
 /** Why core refused to take an inbound message; the adapter maps it onto its own error. */
@@ -91,6 +92,15 @@ export interface RefuseInput {
 
 export type RefuseResult = { ok: true } | { ok: false; code: SendFailureCode; reason: string }
 
+/** One media item on the way out: a url anyone can fetch, a handle only its owner can resolve. */
+export interface OutboundMedia {
+  type: MediaType
+  url: string | null
+  handle: string | null
+  /** Required with a handle: the instance that issued it, which must be the one sending. */
+  owner?: MediaOwner | undefined
+}
+
 export interface SendInput {
   /** The adapter's own address for the recipient; core never parses it. */
   target: string
@@ -102,6 +112,8 @@ export interface SendInput {
   /** The text being answered; the adapter trims it for the peer's header. */
   inReplyToText?: string | undefined
   body: string
+  /** Media to carry with the text, in order; an adapter drops what it cannot carry. */
+  media?: readonly OutboundMedia[] | undefined
   sender: string
   instance: string
   sentAt?: number | undefined

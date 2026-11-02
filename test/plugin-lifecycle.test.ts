@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest'
+import { registryPlugin } from '../src/registry-plugin.js'
 import { createServer, request } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
@@ -96,6 +97,7 @@ function post(port: number, body: unknown): Promise<number> {
 describe('plugin lifecycle', () => {
   test('serves requests while mounted and releases the port on dispose', async () => {
     const ctx = await contextWithCredentials()
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry.default, config())
     const listeners = ctx.get('dsbot-channel.peers') as Listener[]
   const listener = listeners[0]!
@@ -107,6 +109,7 @@ describe('plugin lifecycle', () => {
 
   test('refuses to mount with a wildcard bind address', async () => {
     const ctx = await contextWithCredentials()
+    await ctx.plugin(registryPlugin)
     await expect(ctx.plugin(entry.default, config({ listen: { host: '0.0.0.0', port: 0 } }))).rejects.toThrow(
       ConfigError,
     )
@@ -114,19 +117,25 @@ describe('plugin lifecycle', () => {
 
   test('refuses to mount without a peer secret', async () => {
     const ctx = await contextWithCredentials()
+    await ctx.plugin(registryPlugin)
     await expect(ctx.plugin(entry.default, config({ peers: [] }))).rejects.toThrow(/at least one peer/)
   })
 
   test('refuses an inflight ttl that does not exceed the turn ceiling', async () => {
     const ctx = await contextWithCredentials()
+    await ctx.plugin(registryPlugin)
     await expect(ctx.plugin(entry.default, config({ inflightTtlMs: 5000 }))).rejects.toThrow(ConfigError)
+    await ctx.plugin(registryPlugin)
     await expect(ctx.plugin(entry.default, config({ inflightTtlMs: 120_000 }))).rejects.toThrow(/must exceed/)
+    await ctx.plugin(registryPlugin)
     await expect(ctx.plugin(entry.default, config({ sentAtWindowMs: 0 }))).rejects.toThrow(/sentAtWindowMs/)
+    await ctx.plugin(registryPlugin)
     await expect(ctx.plugin(entry.default, config({ sentAtWindowMs: 1.5 }))).rejects.toThrow(/sentAtWindowMs/)
   })
 
   test('does not silently rewrite the configured inflight ttl', async () => {
     const ctx = await contextWithCredentials()
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry.default, config({ inflightTtlMs: 120_001 }))
     expect(ctx.get('dsbot-channel.peers')).toHaveLength(1)
     await fork.dispose()
@@ -138,6 +147,7 @@ describe('plugin lifecycle', () => {
 
   test('starts idle when no adapter is declared', async () => {
     const ctx = await contextWithCredentials()
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry.default, { adapters: [] })
     expect(ctx.get('dsbot-channel.peers')).toBeUndefined()
     await fork.dispose()
@@ -159,6 +169,7 @@ describe('plugin lifecycle', () => {
     const one = adapter({ channel: 'p2p:one', listen: { host: '127.0.0.1', port: freePort } })
     const two = adapter({ channel: 'p2p:two', botName: 'bot-b', listen: { host: '127.0.0.1', port: takenPort } })
 
+    await ctx.plugin(registryPlugin)
     await expect(ctx.plugin(entry.default, { adapters: [one, two] })).rejects.toThrow(/EADDRINUSE/)
 
     const rebound = await new Promise<boolean>((resolve) => {
@@ -173,6 +184,7 @@ describe('plugin lifecycle', () => {
   test('refuses a duplicate adapter channel', async () => {
     const ctx = await contextWithCredentials()
     const cfg = { adapters: [adapter(), adapter({ botName: 'bot-b' })] }
+    await ctx.plugin(registryPlugin)
     await expect(ctx.plugin(entry.default, cfg)).rejects.toThrow(/duplicate adapter channel/)
   })
 })
@@ -180,6 +192,8 @@ describe('plugin lifecycle', () => {
 describe('running peer messages', () => {
   test('activates once both services appear', async () => {
     const ctx = new Context()
+    await ctx.plugin(registryPlugin)
+    await ctx.plugin(registryPlugin)
     await ctx.plugin(entry.default, config())
     expect(ctx.get('dsbot-channel.peers')).toBeUndefined()
 
@@ -216,6 +230,7 @@ describe('running peer messages', () => {
 
   test('mounts adapters once the session service is present', async () => {
     const ctx = await contextWithCredentials()
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry.default, config())
     expect(ctx.get('dsbot-channel.peers')).toHaveLength(1)
     await fork.dispose()
@@ -225,6 +240,7 @@ describe('running peer messages', () => {
 describe('the shipped empty base', () => {
   test('binds no port when the adapter list is empty', async () => {
     const ctx = await contextWithCredentials()
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry.default, { adapters: [] })
 
     const taken = await new Promise<boolean>((resolve) => {

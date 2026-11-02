@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
+import { registryPlugin } from '../src/registry-plugin.js'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
@@ -93,6 +94,7 @@ async function mountReceiver(): Promise<Mounted> {
       scope.set('sessionController', prompts)
     },
   })
+  await ctx.plugin(registryPlugin)
   const fork = await ctx.plugin(entry, {
     adapters: [
       {

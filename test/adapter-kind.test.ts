@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
-import { registerAdapter } from '../src/adapter-registry.js'
-import type { AdapterMount } from '../src/adapter-registry.js'
-import { buildListenerHealth, buildStatus, NO_MEDIA } from '../src/adapter-status.js'
+import { defineAdapterPlugin } from '../src/adapter-registry.js'
+import type { AdapterFactory, AdapterMount } from '../src/adapter-registry.js'
+import { registryPlugin } from '../src/registry-plugin.js'
+import { NO_MEDIA, buildListenerHealth, buildStatus } from '../src/adapter-status.js'
 import type {
   AdapterPorts,
   ChannelAdapter,
@@ -138,11 +139,14 @@ class StubAdapter implements ChannelAdapter {
   }
 }
 
-registerAdapter('x-demo', (mount: AdapterMount) => new StubAdapter([message(mount.transport.sourceKind as string ?? 'x-demo')]))
-registerAdapter('x-liar', (mount: AdapterMount) => new StubAdapter([message('p2p')], mount.transport.reportedKind as string))
-registerAdapter('x-group', () => new StubAdapter([groupMessage()], 'x-group'))
-registerAdapter('x-media', () => new StubAdapter([mediaMessage()], 'x-media'))
-registerAdapter('x-strict', () => new StubAdapter([strictMessage()], 'x-strict', (key) => (key === 'x-ok' ? undefined : `this adapter does not address "${key}"`)))
+const creators: Record<string, AdapterFactory> = {
+  'x-demo': (mount: AdapterMount) => new StubAdapter([message((mount.transport.sourceKind as string) ?? 'x-demo')]),
+  'x-liar': (mount: AdapterMount) => new StubAdapter([message('p2p')], mount.transport.reportedKind as string),
+  'x-group': () => new StubAdapter([groupMessage()], 'x-group'),
+  'x-media': () => new StubAdapter([mediaMessage()], 'x-media'),
+  'x-strict': () =>
+    new StubAdapter([strictMessage()], 'x-strict', (key) => (key === 'x-ok' ? undefined : `this adapter does not address "${key}"`)),
+}
 
 async function mountWith(kind: string, adapterKind = 'x-demo'): Promise<Context> {
   return mountPrompted(kind, adapterKind).then((one) => one.ctx)
@@ -166,6 +170,10 @@ async function mountPrompted(kind: string, adapterKind = 'x-demo'): Promise<{ ct
       })
     },
   })
+  await ctx.plugin(registryPlugin)
+  await ctx.plugin(defineAdapterPlugin({ kind: adapterKind, create: creators[adapterKind]! }))
+  await ctx.plugin(registryPlugin)
+  await ctx.plugin(registryPlugin)
   await ctx.plugin(entry, {
     adapters: [
       {

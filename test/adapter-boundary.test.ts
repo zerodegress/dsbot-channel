@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest'
+import { registryPlugin } from '../src/registry-plugin.js'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -22,6 +23,8 @@ async function mount(raw: unknown): Promise<void> {
       })
     },
   })
+  await ctx.plugin(registryPlugin)
+  await ctx.plugin(registryPlugin)
   await ctx.plugin(entry, raw)
 }
 
@@ -88,7 +91,12 @@ describe('the core does not reach into a transport', () => {
   test('no file outside src/adapters and the composition root names the adapter directory', () => {
     const root = join(import.meta.dirname, '..', 'src')
     const offenders = sources(root)
-      .filter((path) => !path.includes(`${join('src', 'adapters')}`) && !path.endsWith(join('src', 'index.ts')))
+      .filter(
+        (path) =>
+          !path.includes(`${join('src', 'adapters')}`) &&
+          !path.endsWith(join('src', 'index.ts')) &&
+          !path.endsWith(join('src', 'registry-plugin.ts')),
+      )
       .filter((path) => readFileSync(path, 'utf8').includes('adapters/'))
     expect(offenders).toEqual([])
   })
@@ -147,7 +155,7 @@ describe('the package surface', () => {
 
   test('still publishes what a host mounts the plugin with', async () => {
     const entry = await import('../src/index.js')
-    for (const name of ['apply', 'plugin', 'Config', 'registerAdapter', 'buildEvent', 'Pipeline', 'buildStatus']) {
+    for (const name of ['apply', 'plugin', 'Config', 'defineAdapterPlugin', 'registryPlugin', 'buildEvent', 'Pipeline', 'buildStatus']) {
       expect(name in entry).toBe(true)
     }
   })

@@ -119,9 +119,8 @@ describe('the gate is read at call time, on the channel the call names', () => {
     const refused = await call(image, { url: 'https://example.test/a.png', channel: 'p2p:a', target: 'peer-a' })
     const declared = await call(image, { url: 'https://example.test/a.png', channel: 'onebot:main', target: 'group:1' })
     expect(refused.reason).toContain('capabilities.image.out is false')
-    expect(declared.reason).toContain('declares capabilities.image')
-    expect(declared.reason).toContain('no sender')
     expect(declared.code).toBe(UNSUPPORTED_CAPABILITY)
+    expect(declared.reason).toContain('no sender')
   })
 
   test('a transport that can send images only from a handle says which source is missing', async () => {

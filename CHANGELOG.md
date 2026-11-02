@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `send_image` really sends on OneBot: an http(s) url becomes an image segment in the same message as the caption, one API call per send, and a caption rides the text field instead of a second one. A transport that cannot send images still answers `unsupported_capability`, and a handle is only usable by the instance that issued it. `send_file` remains unimplemented.
 - A `prepare` node runs now: an adapter may supply a synchronous `prepare` hook that sees the event and the session key, and it runs before every turn that reaches the node, as a side effect only — it cannot answer, is never charged, and never touches the guidance ledger, which stays once per conversation. A profile that declares the node fails to load unless every adapter answering for that bot carries the hook, and a session layer is refused the moment it introduces the node on a bot without one, rather than failing on every turn; a hook that throws is reported and the turn continues.
 - `send_image`, `send_file` and `read_history` sit beside `send_text`: each names a channel and an address, checks that transport's static capability set when it is called, and answers `unsupported_capability` naming the bit and the channel when the transport cannot carry it. No transport carries media or history in this version, so every call answers that way; a local path is refused as an argument rather than sent.
 - A limit state names each level by the dimension it belongs to: `byDimension` reports `global`, `bot` and `conversation` beside the key map, so a reader no longer parses a session key to learn which dimension tripped.
@@ -16,12 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A context owns its adapter registry: `dsbot-channel/registry` provides it, an adapter plugin injects it, and the gateway reads it, so two copies of the package no longer each keep a module-level map that the other cannot see. The profile mounts `dsbot-channel/registry`, then the adapters, then `dsbot-channel`; a missing registry now fails the mount and names the plugin to add, and an adapter mounted after the gateway fails with the kinds the gateway could see.
 - `CapabilitySet` answers media in four parts — `{ in, out, fromUrl, fromHandle }` for `image`, `file` and `voice` — instead of one boolean, and a media tool asks both whether the transport can send the type and whether it can do so from the source it was given. OneBot declares images and files in every direction and voice inbound only; p2p declares no media. The owner stays out of the content hash, so the same media seen from two instances is still the same content.
 - `LimitState.byScope` is now `byKey`: the field maps ledger keys (`global`, `bot:<id>`, and the adapter's session key) to levels, while `reply.byScope` maps a scope (`c2c`/`group`/`p2p`) to a reply mode. A caller that read the old name no longer compiles.
 - `decline` takes a `reason` from the closed set a channel can tell the sender, plus an optional `note`, counts toward the reply ceiling like a reply does, and is charged at the rejected rate instead of being refunded.
 
 ### Removed
 
+- `registerAdapter` is gone from the entry. A third-party transport ships as a plugin built with `defineAdapterPlugin({ kind, create })`, which registers with the context's registry when it mounts; the old module-level call would register into one copy's map and leave the gateway's copy empty.
 - `judge` and `push` are gone from `CHARGE_KINDS` and from the point table: nothing charged either kind, the `judge` node cannot be bound in this version, and the push tool never touched the ledger. `points` holds `accepted` and `rejected` only, a turn is always charged as a bot call, and `TurnBilling` no longer takes a `chargeKind`.
 
 ### Fixed

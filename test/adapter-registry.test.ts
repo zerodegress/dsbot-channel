@@ -1,113 +1,190 @@
 import { describe, expect, test } from 'vitest'
-import { adapterFactory, checkAdapterKind, knownAdapterKinds, registerAdapter } from '../src/adapter-registry.js'
-import { createP2PAdapter, parseP2PConfig } from '../src/adapters/p2p/index.js'
-import { ConfigError } from '../src/config.js'
-import type { AdapterMount } from '../src/adapter-registry.js'
-import type { ChannelAdapter } from '../src/contract.js'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { Context } from '@deepseek-ai/cordis'
+import entry, { plugin as gatewayPlugin } from '../src/index.js'
+import { REGISTRY_SERVICE, defineAdapterPlugin } from '../src/adapter-registry.js'
+import type { AdapterRegistry } from '../src/adapter-registry.js'
+import { registryPlugin } from '../src/registry-plugin.js'
+import { NO_MEDIA, buildListenerHealth, buildStatus } from '../src/adapter-status.js'
+import type { AdapterStatus } from '../src/adapter-status.js'
+import type { ChannelAdapter, SendResult } from '../src/contract.js'
+import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
 
-function mount(transport: Record<string, unknown>): AdapterMount {
-  return { kind: 'p2p', channel: 'p2p:a', instance: 'inst-a', botName: 'bot-a', transport }
+const REF = '{{SECRET_registry}}'
+const credentials = staticCredentials({ [REF]: 'shared-value' })
+
+class StubAdapter implements ChannelAdapter {
+  readonly kind = 'x-a'
+  readonly guidance = { peer: 'peer guidance', group: 'group guidance' }
+  readonly capabilities = {
+    text: true,
+    image: NO_MEDIA,
+    file: NO_MEDIA,
+    voice: NO_MEDIA,
+    recall: false,
+    history: false,
+    mention: false,
+    reply: true,
+    stream: false,
+  }
+
+  checkConfig(): void {}
+  checkSessionKey(): string | undefined {
+    return undefined
+  }
+  checkTarget(): string | undefined {
+    return undefined
+  }
+  describeTargets(): string {
+    return 'room-1'
+  }
+  status(): AdapterStatus {
+    return buildStatus({
+      channel: 'x:a',
+      account: 'inst-a',
+      bot: 'bot-a',
+      health: buildListenerHealth({ listenState: 'stopped', boundPort: null, lastAuthenticatedAt: null, queueDepth: 0 }),
+      counters: {
+        authFailures: 0,
+        unknownPaths: 0,
+        underruns: 0,
+        protocolMismatches: 0,
+        sendFailures: {},
+        lastFailure: null,
+      },
+      capabilities: this.capabilities,
+      attributes: { stableMessageId: true },
+      quota: { softLimit: 0, hardLimit: 0 },
+      sampledAt: 1,
+      queueDepth: 0,
+    })
+  }
+  async send(): Promise<SendResult> {
+    return { ok: true, messageId: 'm-1', duplicate: false }
+  }
+  async start(): Promise<{ stop: () => Promise<void> }> {
+    return { stop: () => Promise.resolve() }
+  }
 }
 
-describe('the adapter registry', () => {
-  test('a registered kind resolves to its factory and the list names it', () => {
-    expect(knownAdapterKinds()).toContain('p2p')
-    expect(adapterFactory('p2p')).toBe(createP2PAdapter)
+const adapterPlugin = defineAdapterPlugin({ kind: 'x-a', create: () => new StubAdapter() })
+
+const profile = {
+  adapters: [{ kind: 'x-a', channel: 'x:a', instance: 'inst-a', botName: 'bot-a', transport: {} }],
+}
+
+async function services(ctx: Context): Promise<void> {
+  await ctx.plugin({
+    name: 'probe-services',
+    apply(scope: Context) {
+      scope.provide('credentials')
+      scope.set('credentials', credentials)
+      scope.provide('sessionController')
+      scope.set('sessionController', {
+        create: () => Promise.resolve({ sessionId: 'session-1' }),
+        prompt: () => Promise.resolve({ accepted: true }),
+      })
+    },
+  })
+}
+
+describe('the registry a context owns', () => {
+  test('the registry plugin registers the two built-in kinds', async () => {
+    const ctx = new Context()
+    await ctx.plugin(registryPlugin)
+    const registry = ctx.get(REGISTRY_SERVICE) as AdapterRegistry
+    expect(registry.known().sort()).toEqual(['onebot', 'p2p'])
+    expect(typeof registry.factory('p2p')).toBe('function')
   })
 
-  test('a mount-time kind is built-in or third-party shaped', () => {
-    expect(() => checkAdapterKind('p2p')).not.toThrow()
-    expect(() => checkAdapterKind('onebot')).not.toThrow()
-    expect(() => checkAdapterKind('x-demo')).not.toThrow()
-    expect(() => checkAdapterKind('demo')).toThrow(/built-in name or match x-/)
-    expect(() => checkAdapterKind('qqbot')).toThrow(/built-in name or match x-/)
+  test('a third-party kind keeps its own namespace and registers once', async () => {
+    const ctx = new Context()
+    await ctx.plugin(registryPlugin)
+    const registry = ctx.get(REGISTRY_SERVICE) as AdapterRegistry
+    const fake = (() => new StubAdapter()) as never
+    registry.register('x-probe', fake)
+    expect(registry.has('x-probe')).toBe(true)
+    expect(() => registry.register('p2p', fake)).toThrow(/reserved for the built-in transport/)
+    expect(() => registry.register('probe', fake)).toThrow(/match x-\[a-z0-9-\]+/)
+    expect(() => registry.register('x-Bad', fake)).toThrow(/match x-\[a-z0-9-\]+/)
+    expect(() => registry.register(`x-${'a'.repeat(40)}`, fake)).toThrow(/at most 32/)
+    expect(() => registry.register('x-probe', fake)).toThrow(/already registered/)
   })
 
-  test('an unknown kind names what is registered', () => {
-    expect(() => adapterFactory('nope')).toThrow(ConfigError)
-    expect(() => adapterFactory('nope')).toThrow(/no adapter serves kind "nope".*known: p2p/)
-  })
-
-  test('a third-party kind registers under its own namespace', () => {
-    const fake = (): ChannelAdapter => ({}) as ChannelAdapter
-    registerAdapter('x-probe', fake)
-    expect(adapterFactory('x-probe')).toBe(fake)
-    expect(knownAdapterKinds()).toContain('x-probe')
-  })
-
-  test('a third-party kind cannot take a built-in name or an unnamed shape', () => {
-    const fake = (): ChannelAdapter => ({}) as ChannelAdapter
-    expect(() => registerAdapter('p2p', fake)).toThrow(/reserved for the built-in transport/)
-    expect(() => registerAdapter('probe', fake)).toThrow(/match x-\[a-z0-9-\]+/)
-    expect(() => registerAdapter('x-Bad', fake)).toThrow(/match x-\[a-z0-9-\]+/)
-    expect(() => registerAdapter('x-', fake)).toThrow()
-    expect(() => registerAdapter(`x-${'a'.repeat(40)}`, fake)).toThrow(/at most 32/)
-  })
-
-  test('the same kind cannot be registered twice', () => {
-    const fake = (): ChannelAdapter => ({}) as ChannelAdapter
-    registerAdapter('x-twice', fake)
-    expect(() => registerAdapter('x-twice', fake)).toThrow(/already registered/)
-  })
-})
-
-describe('the p2p transport block', () => {
-  test('reads peers, listen, dedupe and the windows', () => {
-    const parsed = parseP2PConfig(
-      mount({
-        peers: [{ instance: 'inst-b', secret: '{{SECRET_a}}', url: 'http://127.0.0.1:1', botName: 'bot-b' }],
-        listen: { host: '127.0.0.1', port: 7123 },
-        dedupe: { ttlMs: 1000, limit: 10 },
-        inflightTtlMs: 300_000,
-        sentAtWindowMs: 60_000,
-        maxBodyBytes: 1024,
-        waitMs: 5,
-      }),
-    )
-    expect(parsed).toMatchObject({
-      channel: 'p2p:a',
-      instance: 'inst-a',
-      botName: 'bot-a',
-      listen: { host: '127.0.0.1', port: 7123 },
-      dedupe: { ttlMs: 1000, limit: 10 },
-      inflightTtlMs: 300_000,
-      sentAtWindowMs: 60_000,
+  test('a second registry in one context is reported, not silently dropped', async () => {
+    const ctx = new Context()
+    const said: string[] = []
+    ctx.logger.exporter({
+      levels: { default: 3 },
+      export(message: { args: unknown[] }) {
+        said.push(message.args.map((arg) => String(arg)).join(' '))
+      },
     })
-    expect(parsed.peers[0]).toMatchObject({ instance: 'inst-b', botName: 'bot-b' })
+    await ctx.plugin(registryPlugin)
+    await ctx.plugin(registryPlugin)
+    expect(said.some((line) => line.includes('already exists'))).toBe(true)
+    expect((ctx.get(REGISTRY_SERVICE) as AdapterRegistry).known().sort()).toEqual(['onebot', 'p2p'])
   })
 
-  test('refuses a field it never reads', () => {
-    expect(() => parseP2PConfig(mount({ peers: [{ instance: 'b', secret: 's' }], bogus: 1 }))).toThrow(
-      /transport names a field this adapter does not read: bogus/,
-    )
-  })
-
-  test('refuses an empty peer list and a malformed peer', () => {
-    expect(() => parseP2PConfig(mount({ peers: [] }))).toThrow(/at least one peer/)
-    expect(() => parseP2PConfig(mount({ peers: [{ instance: 'b' }] }))).toThrow(/secret/)
-    expect(() => parseP2PConfig(mount({ peers: [{ instance: '', secret: 's' }] }))).toThrow(/instance/)
-  })
-
-  test('refuses a port that is not a whole number', () => {
-    expect(() =>
-      parseP2PConfig(mount({ peers: [{ instance: 'b', secret: 's' }], listen: { port: -1 } })),
-    ).toThrow(/listen.port/)
+  test('two contexts never see each other', async () => {
+    const one = new Context()
+    const other = new Context()
+    await one.plugin(registryPlugin)
+    await other.plugin(registryPlugin)
+    const first = one.get(REGISTRY_SERVICE) as AdapterRegistry
+    const second = other.get(REGISTRY_SERVICE) as AdapterRegistry
+    first.register('x-a', () => new StubAdapter())
+    expect(first.has('x-a')).toBe(true)
+    expect(second.has('x-a')).toBe(false)
+    expect(second.known()).not.toContain('x-a')
   })
 })
 
-describe('one kind, one implementation, many adapters', () => {
-  test('one factory serves several mounts of the same kind', () => {
-    const factory = adapterFactory('p2p')
-    const first = factory(
-      { kind: 'p2p', channel: 'p2p:a', instance: 'inst-a', botName: 'bot-a', transport: { peers: [{ instance: 'inst-b', secret: 'x' }] } },
-      { warn: () => undefined },
-    )
-    const second = factory(
-      { kind: 'p2p', channel: 'p2p:b', instance: 'inst-b', botName: 'bot-b', transport: { peers: [{ instance: 'inst-a', secret: 'x' }] } },
-      { warn: () => undefined },
-    )
-    expect(first.kind).toBe('p2p')
-    expect(second.kind).toBe('p2p')
-    expect(second).not.toBe(first)
+describe('the order a profile mounts three plugins in', () => {
+  test('a registry, then the adapter, then the gateway mounts and listens', async () => {
+    const ctx = new Context()
+    await services(ctx)
+    await ctx.plugin(registryPlugin)
+    await ctx.plugin(adapterPlugin)
+    await ctx.plugin(registryPlugin)
+    const fork = await ctx.plugin(entry, profile)
+    expect(ctx.get('dsbot-channel.peers')).toHaveLength(1)
+    await fork.dispose()
+  })
+
+  test('a missing registry plugin is refused, naming the plugin to mount', async () => {
+    const ctx = new Context()
+    await services(ctx)
+    await expect(ctx.plugin(entry, profile)).rejects.toThrow(/no adapter registry.*dsbot-channel\/registry/)
+  })
+
+  test('an adapter mounted after the gateway is the other error, with the kinds it saw', async () => {
+    const ctx = new Context()
+    await services(ctx)
+    await ctx.plugin(registryPlugin)
+    await ctx.plugin(registryPlugin)
+    await expect(ctx.plugin(entry, profile)).rejects.toThrow(/no adapter serves kind "x-a".*known: p2p, onebot/)
+    await ctx.plugin(registryPlugin)
+    await expect(ctx.plugin(entry, profile)).rejects.toThrow(/between "dsbot-channel\/registry" and "dsbot-channel"/)
+  })
+})
+
+describe('what must not come back', () => {
+  test('the gateway does not inject the registry it only reads', () => {
+    expect(gatewayPlugin.inject).not.toContain(REGISTRY_SERVICE)
+    expect(gatewayPlugin.inject).toContain('credentials')
+  })
+
+  test('no module holds a registry of its own, and no adapter registers itself', () => {
+    const root = join(import.meta.dirname, '..', 'src')
+    const files = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((found) => {
+        const path = join(dir, found.name)
+        return found.isDirectory() ? files(path) : found.name.endsWith('.ts') ? [path] : []
+      })
+    const all = files(root)
+    expect(all.filter((path) => /^const \w+ = new Map</m.test(readFileSync(path, 'utf8')))).toEqual([])
+    expect(all.filter((path) => readFileSync(path, 'utf8').includes('registerBuiltinAdapter'))).toEqual([])
   })
 })

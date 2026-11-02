@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
-import { registerAdapter } from '../src/adapter-registry.js'
-import { buildListenerHealth, buildStatus, NO_MEDIA } from '../src/adapter-status.js'
+import { defineAdapterPlugin } from '../src/adapter-registry.js'
+import { registryPlugin } from '../src/registry-plugin.js'
+import { NO_MEDIA, buildListenerHealth, buildStatus } from '../src/adapter-status.js'
 import type {
   AdapterPorts,
   ChannelAdapter,
@@ -95,7 +96,7 @@ class GroupAdapter implements ChannelAdapter {
   }
 }
 
-registerAdapter('x-group', () => new GroupAdapter())
+const groupAdapter = { kind: 'x-group', create: () => new GroupAdapter() }
 
 async function mount(policy: Record<string, unknown>, adapter = 'x-group'): Promise<{ prompts: number[]; created: number[] }> {
   const prompts: number[] = []
@@ -119,6 +120,10 @@ async function mount(policy: Record<string, unknown>, adapter = 'x-group'): Prom
       })
     },
   })
+  await ctx.plugin(registryPlugin)
+  await ctx.plugin(defineAdapterPlugin(groupAdapter))
+  await ctx.plugin(registryPlugin)
+  await ctx.plugin(registryPlugin)
   await ctx.plugin(entry, {
     adapters: [
       {

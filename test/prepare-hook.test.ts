@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
-import { registerAdapter } from '../src/adapter-registry.js'
+import { defineAdapterPlugin } from '../src/adapter-registry.js'
+import { registryPlugin } from '../src/registry-plugin.js'
 import { NO_MEDIA, buildListenerHealth, buildStatus } from '../src/adapter-status.js'
 import type { AdapterStatus, CapabilitySet } from '../src/adapter-status.js'
 import type { AdapterHandle, AdapterPorts, ChannelAdapter, InboundMessage, SendResult } from '../src/contract.js'
@@ -141,20 +142,24 @@ let nextQueue: Queued[] = []
 let nextExplodes = false
 const created: PlainStub[] = []
 
-function registerStubs(): void {
-  registerAdapter('x-prepare', () => {
-    const stub = new PreparingStub('x-prepare', nextQueue, [], nextExplodes)
-    created.push(stub)
-    return stub
-  })
-  registerAdapter('x-noprepare', () => {
-    const stub = new PlainStub('x-noprepare', nextQueue, [])
-    created.push(stub)
-    return stub
-  })
+const stubs = {
+  'x-prepare': defineAdapterPlugin({
+    kind: 'x-prepare',
+    create: () => {
+      const stub = new PreparingStub('x-prepare', nextQueue, [], nextExplodes)
+      created.push(stub)
+      return stub
+    },
+  }),
+  'x-noprepare': defineAdapterPlugin({
+    kind: 'x-noprepare',
+    create: () => {
+      const stub = new PlainStub('x-noprepare', nextQueue, [])
+      created.push(stub)
+      return stub
+    },
+  }),
 }
-
-registerStubs()
 
 interface MountOptions {
   queue?: Queued[]
@@ -205,6 +210,9 @@ async function mount(options: MountOptions = {}): Promise<Context> {
       ? [{ kind: 'x-noprepare', channel: 'x:b', instance: 'inst-b', botName: 'bot-a', transport: {} }]
       : []),
   ]
+  await ctx.plugin(registryPlugin)
+  await ctx.plugin(stubs['x-prepare'])
+  if (options.extraAdapter === true) await ctx.plugin(stubs['x-noprepare'])
   const fork = await ctx.plugin(entry, {
     adapters,
     ...(options.pipeline === undefined ? {} : { pipeline: options.pipeline }),
@@ -298,6 +306,7 @@ describe('a prepare node a session layer introduces', () => {
         })
       },
     })
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
       adapters: [
         {
@@ -349,6 +358,7 @@ describe('a prepare node the adapters cannot supply', () => {
         })
       },
     })
+    await ctx.plugin(registryPlugin)
     await expect(
       ctx.plugin(entry, {
         adapters: [
