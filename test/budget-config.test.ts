@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { DEFAULT_HARD_LIMIT, createLedger } from '../src/budget-config.js'
 
 function spend(ledger: ReturnType<typeof createLedger>, points: number, session = 'p2p:peer-a'): void {
-  ledger.reserve('bot-a', session, 'judge', points)
+  ledger.reserve('bot-a', session, 'bot', points)
 }
 
 describe('an adapter builds its ledger from configuration', () => {

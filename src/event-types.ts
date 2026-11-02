@@ -8,7 +8,7 @@ export const SOURCE_KIND_MAX = 64
 export const SCOPES = ['c2c', 'group', 'p2p'] as const
 export type Scope = (typeof SCOPES)[number]
 
-export const CHARGE_KINDS = ['judge', 'bot', 'push'] as const
+export const CHARGE_KINDS = ['bot'] as const
 export type ChargeKind = (typeof CHARGE_KINDS)[number]
 
 export interface Source {

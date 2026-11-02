@@ -3,10 +3,8 @@ import type { ChargeKind } from './event-types.js'
 export type LimitLevel = 'normal' | 'hard'
 
 export interface BudgetPoints {
-  judge: number
   accepted: number
   rejected: number
-  push: number
 }
 
 export interface Hysteresis {
@@ -20,7 +18,7 @@ export interface BudgetSettings {
 }
 
 export const DEFAULT_BUDGET: BudgetSettings = {
-  points: { judge: 1, accepted: 20, rejected: 10, push: 5 },
+  points: { accepted: 20, rejected: 10 },
   hysteresis: { hardReleaseBelow: 0.95, hardHoldMs: 60_000 },
 }
 
@@ -109,9 +107,7 @@ export class BudgetLedger {
     this.now = now
   }
 
-  pointsFor(kind: ChargeKind, outcome: 'accepted' | 'rejected' = 'accepted'): number {
-    if (kind === 'judge') return this.settings.points.judge
-    if (kind === 'push') return this.settings.points.push
+  pointsFor(outcome: 'accepted' | 'rejected' = 'accepted'): number {
     return this.settings.points[outcome]
   }
 
@@ -261,7 +257,7 @@ export class BudgetLedger {
     if (hold.settled) throw new Error('hold already settled')
     hold.settled = true
     if (hold.duplicate) return this.usage(hold.botId, hold.sessionKey)
-    const final = hold.chargeKind === 'bot' ? this.pointsFor('bot', outcome) : hold.amount
+    const final = this.pointsFor(outcome)
     const delta = final - hold.amount
     if (delta !== 0) this.charge(this.keysFor(hold.botId, hold.sessionKey), delta)
     return this.usage(hold.botId, hold.sessionKey)
@@ -276,12 +272,12 @@ export class BudgetLedger {
   }
 
   /** Checks and charges synchronously, so no other turn can slip in between. */
-  decide(botId: string, session: string, chargeKind: ChargeKind, run: () => boolean): Decision {
+  decide(botId: string, session: string, run: () => boolean): Decision {
     if (run.constructor.name === 'AsyncFunction') throw new Error('decide requires a sync predicate')
     const state = this.check(botId, session)
     if (state.aggregate === 'hard') return { allowed: false, limitState: 'hard', triggeredBy: state.triggeredBy }
     if (!run()) return { allowed: false, limitState: state.aggregate, triggeredBy: state.triggeredBy }
-    this.charge(this.keysFor(botId, session), this.pointsFor(chargeKind))
+    this.charge(this.keysFor(botId, session), this.pointsFor())
     return { allowed: true, limitState: state.aggregate, triggeredBy: state.triggeredBy }
   }
 

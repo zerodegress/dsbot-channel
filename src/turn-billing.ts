@@ -1,10 +1,8 @@
 import type { BudgetLedger, Hold } from './budget-ledger.js'
 import { chargeKey } from './event-build.js'
-import type { ChargeKind } from './event-types.js'
 
 export interface TurnBillingOptions {
   ledger?: BudgetLedger | undefined
-  chargeKind?: ChargeKind | undefined
 }
 
 /** Reserves what a turn may cost before it starts, settles it once it ends. */
@@ -15,9 +13,8 @@ export class TurnBilling {
   begin(botId: string, session: string, eventKey?: string): Hold | undefined {
     const ledger = this.options.ledger
     if (!ledger) return undefined
-    const kind = this.options.chargeKind ?? 'bot'
-    const chargeId = eventKey === undefined ? undefined : chargeKey(eventKey, botId, kind)
-    return ledger.reserve(botId, session, kind, ledger.pointsFor(kind, 'accepted'), chargeId)
+    const chargeId = eventKey === undefined ? undefined : chargeKey(eventKey, botId, 'bot')
+    return ledger.reserve(botId, session, 'bot', ledger.pointsFor('accepted'), chargeId)
   }
 
   accept(hold: Hold | undefined): void {

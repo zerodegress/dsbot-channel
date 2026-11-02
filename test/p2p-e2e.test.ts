@@ -1886,6 +1886,12 @@ policy
     }
   })
 
+  test('a point table in a profile is an unknown field', async () => {
+    await expect(mountWith({ budget: { capacity: 100, points: { accepted: 5 } } })).rejects.toThrow(
+      /unknown config fields: points/,
+    )
+  })
+
   test('a budget without a capacity is refused by the schema', async () => {
     await expect(mountWith({ budget: {} })).rejects.toThrow(/capacity/)
   })

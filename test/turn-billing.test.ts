@@ -69,13 +69,6 @@ describe('charges follow the session the gate checks', () => {
     billing.accept(billing.begin('bot-a', 'p2p:peer-a'))
     expect(spent(instance)).toBe(40)
   })
-
-  test('a judge turn is charged the judge price, not the bot price', () => {
-    const instance = ledger()
-    const billing = new TurnBilling({ ledger: instance, chargeKind: 'judge' })
-    billing.accept(billing.begin('bot-a', 'p2p:peer-a'))
-    expect(spent(instance)).toBe(1)
-  })
 })
 
 describe('a hold is settled once', () => {

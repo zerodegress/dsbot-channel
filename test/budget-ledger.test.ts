@@ -1,20 +1,21 @@
 import { describe, expect, test } from 'vitest'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { BudgetLedger, DEFAULT_BUDGET } from '../src/budget-ledger.js'
+import { CHARGE_KINDS } from '../src/event-types.js'
 
 const limits = { hardLimit: 1, capacity: 100 }
 
 describe('points', () => {
-  test('judge costs 1, an accepted bot call 20 and a rejected one 10', () => {
+  test('an accepted bot call costs 20 and a rejected one 10', () => {
     const ledger = new BudgetLedger(limits, DEFAULT_BUDGET)
-    expect(ledger.pointsFor('judge')).toBe(1)
-    expect(ledger.pointsFor('bot', 'accepted')).toBe(20)
-    expect(ledger.pointsFor('bot', 'rejected')).toBe(10)
+    expect(ledger.pointsFor('accepted')).toBe(20)
+    expect(ledger.pointsFor('rejected')).toBe(10)
   })
 
-  test('a push costs 5 by default and is configurable', () => {
-    expect(new BudgetLedger(limits, DEFAULT_BUDGET).pointsFor('push')).toBe(5)
-    const custom = new BudgetLedger(limits, { ...DEFAULT_BUDGET, points: { ...DEFAULT_BUDGET.points, push: 7 } })
-    expect(custom.pointsFor('push')).toBe(7)
+  test('the point table names no tier a caller could not reach', () => {
+    expect(Object.keys(DEFAULT_BUDGET.points).sort()).toEqual(['accepted', 'rejected'])
+    expect(CHARGE_KINDS).toEqual(['bot'])
   })
 })
 
@@ -102,7 +103,7 @@ describe('limit state', () => {
 describe('reserve, settle and refund', () => {
   test('a reservation counts before settlement', () => {
     const ledger = new BudgetLedger(limits, DEFAULT_BUDGET)
-    ledger.reserve('b', 'group:1', 'judge', 1)
+    ledger.reserve('b', 'group:1', 'bot', 1)
     expect(ledger.usage('b', 'group:1').global).toBe(1)
   })
 
@@ -129,16 +130,16 @@ describe('reserve, settle and refund', () => {
 describe('check and charge are one synchronous step', () => {
   test('decide runs the callback and charges', () => {
     const ledger = new BudgetLedger(limits, DEFAULT_BUDGET)
-    const result = ledger.decide('b', 'group:1', 'judge', () => true)
+    const result = ledger.decide('b', 'group:1', () => true)
     expect(result.allowed).toBe(true)
-    expect(ledger.usage('b', 'group:1').global).toBe(1)
+    expect(ledger.usage('b', 'group:1').global).toBe(20)
   })
 
   test('a denied decision charges nothing', () => {
     const ledger = new BudgetLedger(limits, DEFAULT_BUDGET)
     for (let i = 0; i < 5; i += 1) ledger.settle(ledger.reserve('b', 'group:1', 'bot', 20), 'accepted')
     const before = ledger.usage('b', 'group:2').global
-    const result = ledger.decide('b', 'group:2', 'bot', () => true)
+    const result = ledger.decide('b', 'group:2', () => true)
     expect(result.allowed).toBe(false)
     expect(result.limitState).toBe('hard')
     expect(ledger.usage('b', 'group:2').global).toBe(before)
@@ -146,7 +147,7 @@ describe('check and charge are one synchronous step', () => {
 
   test('decide refuses an async predicate', () => {
     const ledger = new BudgetLedger(limits, DEFAULT_BUDGET)
-    expect(() => ledger.decide('b', 'group:1', 'bot', (async () => true) as never)).toThrow(/sync/)
+    expect(() => ledger.decide('b', 'group:1', (async () => true) as never)).toThrow(/sync/)
   })
 })
 
@@ -189,5 +190,24 @@ describe('hysteresis', () => {
     const restored = new BudgetLedger(limits, DEFAULT_BUDGET)
     restored.restore(saved)
     expect(restored.check('b', 'group:1').byKey.global).toBe('hard')
+  })
+})
+
+function sources(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((found) => {
+    const path = join(dir, found.name)
+    if (found.isDirectory()) return sources(path)
+    return found.name.endsWith('.ts') ? [path] : []
+  })
+}
+
+describe('the point table has one reader', () => {
+  test('only the ledger and the turn billing name a point value', () => {
+    const root = join(import.meta.dirname, '..', 'src')
+    const readers = new Set(['budget-ledger.ts', 'turn-billing.ts'])
+    const offenders = sources(root)
+      .filter((path) => !readers.has(path.slice(path.lastIndexOf('/') + 1)))
+      .filter((path) => readFileSync(path, 'utf8').includes('pointsFor'))
+    expect(offenders).toEqual([])
   })
 })
