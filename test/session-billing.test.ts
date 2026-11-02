@@ -71,7 +71,7 @@ describe('the key one message uses everywhere', () => {
     const budget = ledger()
     const key = 'p2p:inst-b'
     const pipelines = new SessionPipelines({
-      bots: new Map([['bot-a', { base: templateNodes(), denyRules: false, allowRules: true }]]),
+      bots: new Map([['bot-a', { base: templateNodes(), denyRules: false, allowRules: true, prepare: false }]]),
     })
 
     pipelines.forSession('bot-a', key, { remove: ['allow'] })

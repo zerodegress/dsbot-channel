@@ -22,6 +22,7 @@ import { usageSnapshot } from './usage-view.js'
 import type { BotLedger } from './usage-view.js'
 import { PeerSessions } from './peer-sessions.js'
 import type { SessionControllerLike, SessionEventLike } from './peer-sessions.js'
+import type { PipelineEvent } from './pipeline.js'
 import { unboundReason, unboundRuleReason } from './pipeline-bindable.js'
 import type { PipelineNodeSpec, PipelineSettings } from './pipeline-config.js'
 import { DEFAULT_PIPELINE } from './pipeline-config.js'
@@ -246,7 +247,7 @@ function botScopes(config: ChannelConfig): Map<string, BotFacts> {
     const allow = (compiled.deps.allowRules ?? []).length > 0
     const base = declaredNodes(config, adapter) ?? compiled.specs
     if (seen === undefined) {
-      bots.set(adapter.botName, { base, denyRules: deny, allowRules: allow, deps: compiled.deps })
+      bots.set(adapter.botName, { base, denyRules: deny, allowRules: allow, prepare: false, deps: compiled.deps })
       continue
     }
     if (stable(seen.base) !== stable(base)) {
@@ -294,6 +295,50 @@ function checkPolicy(adapter: AdapterConfig, index: number): void {
     throw new ConfigError(
       `budget hardLimit must be above 0 and at most 1: ${budget.hardLimit}`,
       path('budget.hardLimit'),
+    )
+  }
+}
+
+/** Binds this turn's hook; the bot level deps stay identical across adapters, which #77 compares.
+ *  The node context is not read: the hook sees the event built for this message, not the pipeline's copy. */
+function bindPrepare(
+  deps: PipelineDeps,
+  transport: ChannelAdapter,
+  event: PipelineEvent,
+  sessionKey: string,
+  warn: (message: string) => void,
+): PipelineDeps {
+  const prepare = transport.prepare
+  if (prepare === undefined) return deps
+  return {
+    ...deps,
+    prepare: () => {
+      try {
+        prepare.call(transport, { event, sessionKey })
+      } catch (error) {
+        warn(`dsbot-channel: prepare for ${event.eventKey} on ${transport.kind} failed: ${String(error)}`)
+      }
+    },
+  }
+}
+
+/** A prepare node runs only when every adapter answering for that bot carries the hook. */
+function checkPrepareSupport(bots: Map<string, BotFacts>, channels: readonly MountedChannel[]): void {
+  const perBot = new Map<string, MountedChannel[]>()
+  for (const channel of channels) {
+    const list = perBot.get(channel.config.botName) ?? []
+    list.push(channel)
+    perBot.set(channel.config.botName, list)
+  }
+  for (const [bot, facts] of bots) {
+    const missing = (perBot.get(bot) ?? []).filter((channel) => typeof channel.adapter.prepare !== 'function')
+    facts.prepare = missing.length === 0
+    const node = facts.base.find((one) => one.type === 'prepare')
+    if (node === undefined || missing.length === 0) continue
+    const names = missing.map((channel) => `"${channel.config.channel}" (${channel.adapter.kind})`).join(', ')
+    throw new ConfigError(
+      `node "${node.id}": bot "${bot}" declares a prepare node, but adapter ${names} cannot prepare; every adapter answering for a bot must carry the hook`,
+      ['adapters'],
     )
   }
 }
@@ -376,6 +421,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const pipelines = new SessionPipelines({ bots })
   const channels = mountAdapters(config, settings, warn)
   checkGuidance(channels)
+  checkPrepareSupport(bots, channels)
   const reply = compileReply(config.reply)
   // A guard against a future edit to the notice text, not profile validation: the block is core-owned.
   if (TOOL_MODE_NOTICE.length > TOOL_MODE_NOTICE_MAX) {
@@ -602,16 +648,20 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         const chainConflict = chainKeys.check(message.chainId, message.eventKey)
         if (chainConflict !== undefined) return { ok: false, code: 'chain_conflict', reason: chainConflict }
         const specs = pipelines.pipelineFor(adapter.botName, message.sessionKey)
-        const pipeline = specs.length > 0 ? buildPipeline(specs, runtime.deps, settings) : undefined
+        const event: PipelineEvent = {
+          eventKey: message.eventKey,
+          scope: message.source.scope,
+          mentioned: message.transport.mentioned,
+          text: message.rawText,
+          ...(message.source.peer === null ? {} : { peer: message.source.peer }),
+        }
+        const pipeline =
+          specs.length > 0
+            ? buildPipeline(specs, bindPrepare(runtime.deps, transport, event, message.sessionKey, warn), settings)
+            : undefined
         if (message.author.kind === 'person') runtime.gate.resetPeer(message.sessionKey, adapter.botName)
         const decision = await runtime.gate.admit({
-          event: {
-            eventKey: message.eventKey,
-            scope: message.source.scope,
-            mentioned: message.transport.mentioned,
-            text: message.rawText,
-            ...(message.source.peer === null ? {} : { peer: message.source.peer }),
-          },
+          event,
           peer: message.source.peer ?? message.replyTarget,
           botId: adapter.botName,
           session: message.sessionKey,
