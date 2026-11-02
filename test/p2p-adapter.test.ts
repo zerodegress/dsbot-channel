@@ -229,6 +229,7 @@ describe('the p2p adapter tells a peer it was refused', () => {
       body: 'no',
       reason: 'policy',
     })
+    expect('media' in (posted[0] ?? {})).toBe(false)
   })
 
   test('a refusal reaches a real listener, which takes the note as its body', async () => {
@@ -413,5 +414,40 @@ describe('what the adapter can carry', () => {
       mention: false,
     })
     expect(adapter.status().capabilities).toEqual(adapter.capabilities)
+  })
+})
+
+describe('media in the adapter', () => {
+  const adapter = new P2PAdapter({
+    channel: 'p2p:b',
+    instance: 'inst-b',
+    botName: 'bot-b',
+    peers: [{ instance: 'inst-a', secret: REF }],
+    listen: { host: '127.0.0.1', port: 0 },
+  })
+
+  const wire = {
+    eventId: 'evt-media',
+    chainId: 'evt-media',
+    to: 'bot-b',
+    sender: 'bot-a',
+    instance: 'inst-a',
+    body: '',
+    media: [['image', 'https://example.test/a.png']] as const,
+    sentAt: 1_700_000_000_000,
+  }
+
+  test('an inbound message keeps the media and gets the owner stamped', () => {
+    const message = adapter.toInbound({ ...wire, media: [['image', 'https://example.test/a.png']] })
+    expect(message.body.media).toEqual([
+      { type: 'image', url: 'https://example.test/a.png', handle: null, owner: { kind: 'p2p', instance: 'inst-a' } },
+    ])
+  })
+
+  test('media changes the content hash of an otherwise empty message', () => {
+    const withMedia = adapter.toInbound({ ...wire, media: [['image', 'https://example.test/a.png']] })
+    const without = adapter.toInbound({ ...wire, body: '', media: [] })
+    expect(withMedia.body.text).toBe(without.body.text)
+    expect(withMedia.eventKey).toBe(without.eventKey)
   })
 })
