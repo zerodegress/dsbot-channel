@@ -99,7 +99,12 @@ config:
     coalesceMs: 1200
     maxBatch: 10
     maxChars: 8000
+    context:
+      messages: 30
+      chars: 2000
 ```
+
+`turn.context.messages` 会保留该会话最近这么多条消息，以 `[context]` 块放在回合正文之前，让回答知道前面发生了什么；`chars` 是这块的字符上限，超出时按整条丢弃最旧的消息。默认关闭（`0`），预算 `2000`。
 
 在 adapter 上设 `status: false` 可不注册它的状态路由。
 
