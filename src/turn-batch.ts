@@ -1,4 +1,4 @@
-/** How many queued messages make the next turn, under the limits a profile declared. */
+/** One message in the queue, with the characters it brings to a joined body. */
 export interface PendingMessage {
   eventKey: string
   /** Characters this message contributes once joined into the batch body. */
@@ -10,11 +10,7 @@ export interface BatchLimits {
   maxChars: number
 }
 
-/**
- * Takes a prefix of the queue as one turn. A message is never split or dropped for being large:
- * when the batch is still empty it is taken whole, because the character limit bounds how many
- * messages go together, not whether a single message may arrive at all.
- */
+/** How many queued messages make the next turn; a single oversized message still goes alone. */
 export function takeBatch(pending: readonly PendingMessage[], limits: BatchLimits): number {
   if (pending.length === 0) return 0
   let chars = 0
