@@ -63,6 +63,8 @@ config:
 
 设 `policy.requireMention: true` 后，群消息如果既没有点名 bot、也没有 @ 所有人，就会被拒掉。它需要能分辨提及的传输，所以适用于 `onebot`，不适用于 `p2p`。
 
+群里由 bot 发出的消息按 `policy.groupBots` 处理：默认 `whenMentioned`，只有点名本 bot 或 @ 所有人才回答；`silent` 一律不答；`answer` 当普通人处理。这条判断先于 `requireMention`，分辨不了提及的传输会退化为 `silent`。
+
 OneBot 11 内置。事件接收地址是 `listen.path`，默认 `/onebot/event`；本版接收媒体但不出站发送媒体。
 
 ```yaml

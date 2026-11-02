@@ -199,11 +199,14 @@ async function mount(options: MountOptions = {}): Promise<Context> {
       channel: 'x:a',
       instance: 'inst-a',
       botName: 'bot-a',
-      ...(options.denied === true
-        ? { policy: { deny: { words: ['spam'] }, allow: { peers: ['inst-a'] } } }
-        : options.allow === true
-          ? { policy: { allow: { peers: ['inst-a'] } } }
-          : {}),
+      policy: {
+        groupBots: 'answer',
+        ...(options.denied === true
+          ? { deny: { words: ['spam'] }, allow: { peers: ['inst-a'] } }
+          : options.allow === true
+            ? { allow: { peers: ['inst-a'] } }
+            : {}),
+      },
       transport: {},
     },
     ...(options.extraAdapter === true

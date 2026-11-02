@@ -63,6 +63,8 @@ config:
 
 Set `policy.requireMention: true` to refuse group messages that mention neither the bot nor everyone. It needs a transport that can tell mentions apart, so it applies to `onebot` rather than `p2p`.
 
+A message a bot sends in a group follows `policy.groupBots`: `whenMentioned` (the default) answers it only when it names this bot or everyone, `silent` never answers one, and `answer` treats it like a person. That check runs before `requireMention`, and a transport that cannot tell mentions apart falls back to `silent`.
+
 OneBot 11 is built in. It receives events on `listen.path`, which defaults to `/onebot/event`; media is received but not sent in this version.
 
 ```yaml
