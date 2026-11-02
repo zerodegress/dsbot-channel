@@ -552,13 +552,14 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         channel: adapter.channel,
         sessionKey: message.sessionKey,
         outcome,
+        mergedKeys: [message.eventKey, ...rest.map((one) => one.eventKey)],
         ...(code === undefined ? {} : { code }),
       })
     }
     let hold: Hold | undefined
     try {
       hold = runtime.billing.begin(adapter.botName, message.sessionKey, message.eventKey)
-      const mode = reply.modeFor(replyFactsOf(message))
+      const mode = reply.modeFor(replyFactsOf(last))
       const blocks: string[] = []
       if (injected.claim(message.sessionKey)) {
         const guidance = transport.guidance[message.source.scope === 'group' ? 'group' : 'peer']
