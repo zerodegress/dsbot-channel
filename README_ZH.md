@@ -65,9 +65,9 @@ config:
 | `turn.maxChars` | `8000` | 批次预算 |
 | `turn.context.messages` | `0` | 历史条数 |
 | `turn.context.chars` | `2000` | 上下文预算 |
-| `transport.history.group` | `false` | 读群历史 |
-| `transport.history.private` | `false` | 读私聊历史 |
-| `transport.fileFromUrl` | `false` | 用 url 发文件 |
+| `transport.history.group` | `false` | OneBot：读群历史 |
+| `transport.history.private` | `false` | OneBot：读私聊历史 |
+| `transport.fileFromUrl` | `false` | OneBot：用 url 发文件 |
 | `status` | `true` | 状态路由 |
 
 ## 许可证

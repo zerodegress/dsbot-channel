@@ -65,9 +65,9 @@ config:
 | `turn.maxChars` | `8000` | batch budget |
 | `turn.context.messages` | `0` | earlier messages |
 | `turn.context.chars` | `2000` | context budget |
-| `transport.history.group` | `false` | read group history |
-| `transport.history.private` | `false` | read private history |
-| `transport.fileFromUrl` | `false` | file from a url |
+| `transport.history.group` | `false` | OneBot: group history |
+| `transport.history.private` | `false` | OneBot: private history |
+| `transport.fileFromUrl` | `false` | OneBot: file from a url |
 | `status` | `true` | status route |
 
 ## License
