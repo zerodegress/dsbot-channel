@@ -47,6 +47,7 @@
   },
   "scripts": {
     "build": "pnpm clean && rolldown -c && tsc -p tsconfig.json",
+    "build:debug": "SOURCE_MAP=1 pnpm build",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "typecheck": "tsc -p tsconfig.test.json",
     "lint": "eslint .",
