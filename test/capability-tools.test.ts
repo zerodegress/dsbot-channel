@@ -9,6 +9,7 @@ import {
 import { PushRouter } from '../src/push-tool.js'
 import type { PushChannel, PushSource } from '../src/push-tool.js'
 import type { CapabilitySet } from '../src/adapter-status.js'
+import { NO_MEDIA } from '../src/adapter-status.js'
 import type { SendResult } from '../src/contract.js'
 
 const channels: PushChannel[] = [
@@ -24,9 +25,9 @@ const addresses: Record<string, string[]> = {
 function caps(over: Partial<CapabilitySet> = {}): CapabilitySet {
   return {
     text: true,
-    image: false,
-    file: false,
-    voice: false,
+    image: NO_MEDIA,
+    file: NO_MEDIA,
+    voice: NO_MEDIA,
     recall: false,
     history: false,
     mention: false,
@@ -76,7 +77,7 @@ describe('a tool whose capability the channel never declared', () => {
     const { image } = harness(empty)
     const result = await call(image, { url: 'https://example.test/a.png', channel: 'p2p:a', target: 'peer-a' })
     expect(result).toMatchObject({ ok: false, code: UNSUPPORTED_CAPABILITY, retryable: false })
-    expect(result.reason).toContain('capabilities.image is false')
+    expect(result.reason).toContain('capabilities.image.out is false')
     expect(result.reason).toContain('p2p:a')
   })
 
@@ -84,7 +85,7 @@ describe('a tool whose capability the channel never declared', () => {
     const { file } = harness(empty)
     const result = await call(file, { url: 'https://example.test/a.txt', channel: 'onebot:main', target: 'group:1' })
     expect(result).toMatchObject({ ok: false, code: UNSUPPORTED_CAPABILITY })
-    expect(result.reason).toContain('capabilities.file is false')
+    expect(result.reason).toContain('capabilities.file.out is false')
     expect(result.reason).toContain('onebot:main')
   })
 
@@ -114,13 +115,20 @@ describe('a tool whose capability the channel never declared', () => {
 
 describe('the gate is read at call time, on the channel the call names', () => {
   test('two channels answer differently in the same build', async () => {
-    const { image } = harness({ 'p2p:a': caps(), 'onebot:main': caps({ image: true }) })
+    const { image } = harness({ 'p2p:a': caps(), 'onebot:main': caps({ image: { ...NO_MEDIA, out: true, fromUrl: true } }) })
     const refused = await call(image, { url: 'https://example.test/a.png', channel: 'p2p:a', target: 'peer-a' })
     const declared = await call(image, { url: 'https://example.test/a.png', channel: 'onebot:main', target: 'group:1' })
-    expect(refused.reason).toContain('capabilities.image is false')
+    expect(refused.reason).toContain('capabilities.image.out is false')
     expect(declared.reason).toContain('declares capabilities.image')
     expect(declared.reason).toContain('no sender')
     expect(declared.code).toBe(UNSUPPORTED_CAPABILITY)
+  })
+
+  test('a transport that can send images only from a handle says which source is missing', async () => {
+    const { image } = harness({ 'p2p:a': caps(), 'onebot:main': caps({ image: { ...NO_MEDIA, out: true } }) })
+    const result = await call(image, { url: 'https://example.test/a.png', channel: 'onebot:main', target: 'group:1' })
+    expect(result).toMatchObject({ ok: false, code: 'unsupported_capability' })
+    expect(result.reason).toContain('capabilities.image.fromUrl is false')
   })
 
   test('without a channel the session source is used, exactly as send_text does', async () => {

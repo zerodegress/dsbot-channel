@@ -1,5 +1,6 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { CapabilitySet } from './adapter-status.js'
+import type { MediaType } from './event-types.js'
 import type { PushCode, PushRouter } from './push-tool.js'
 
 /** A tool that needs a capability answers this instead of pretending the channel can carry it. */
@@ -37,7 +38,7 @@ export class CapabilityGate {
   refuse(
     request: { channel?: string | undefined; target?: string | undefined },
     sessionId: string | undefined,
-    capability: keyof CapabilitySet,
+    capability: 'text' | 'mention' | 'reply' | 'recall' | 'history' | 'stream',
     action: string,
     hint: string,
   ): CapabilityFailure {
@@ -53,6 +54,35 @@ export class CapabilityGate {
     return fail(
       UNSUPPORTED_CAPABILITY,
       `channel "${channel}" declares capabilities.${capability}, but this build carries no sender for it yet`,
+    )
+  }
+
+  /** A media call asks two questions: can this transport send the type, and from the source it was given. */
+  refuseMedia(
+    request: { channel?: string | undefined; target?: string | undefined },
+    sessionId: string | undefined,
+    type: MediaType,
+    source: 'url' | 'handle',
+    action: string,
+    hint: string,
+  ): CapabilityFailure {
+    const addressed = this.#router.resolve(request, sessionId)
+    if ('ok' in addressed) return addressed
+    const channel = addressed.channel.channel
+    const capability = this.#capabilities(channel)?.[type]
+    if (capability?.out !== true) {
+      return fail(UNSUPPORTED_CAPABILITY, `channel "${channel}" cannot ${action}: capabilities.${type}.out is false; ${hint}`)
+    }
+    const from = source === 'url' ? capability.fromUrl : capability.fromHandle
+    if (from !== true) {
+      return fail(
+        UNSUPPORTED_CAPABILITY,
+        `channel "${channel}" cannot ${action}: capabilities.${type}.${source === 'url' ? 'fromUrl' : 'fromHandle'} is false; ${hint}`,
+      )
+    }
+    return fail(
+      UNSUPPORTED_CAPABILITY,
+      `channel "${channel}" declares capabilities.${type}, but this build carries no sender for it yet`,
     )
   }
 }
@@ -99,7 +129,7 @@ export function createSendImage(gate: CapabilityGate) {
       const problem = urlProblem(args.url)
       if (problem !== undefined) return JSON.stringify(fail('unsupported_argument', problem))
       return JSON.stringify(
-        gate.refuse(args, exec?.agent?.id, 'image', 'send images', 'put a link in a text message instead'),
+        gate.refuseMedia(args, exec?.agent?.id, 'image', 'url', 'send images', 'put a link in a text message instead'),
       )
     },
   })
@@ -129,7 +159,7 @@ export function createSendFile(gate: CapabilityGate) {
       const problem = urlProblem(args.url)
       if (problem !== undefined) return JSON.stringify(fail('unsupported_argument', problem))
       return JSON.stringify(
-        gate.refuse(args, exec?.agent?.id, 'file', 'send files', 'put a link in a text message instead'),
+        gate.refuseMedia(args, exec?.agent?.id, 'file', 'url', 'send files', 'put a link in a text message instead'),
       )
     },
   })

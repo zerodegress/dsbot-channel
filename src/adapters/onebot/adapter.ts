@@ -17,7 +17,7 @@ import type {
   SendInput,
   SendResult,
 } from '../../contract.js'
-import type { AuthorKind, MediaRef, Mentioned, Scope } from '../../event-types.js'
+import type { AuthorKind, MediaInput, MediaRef, Mentioned, Scope } from '../../event-types.js'
 import { buildEvent } from '../../event-build.js'
 import { ADAPTER_META_MAX_BYTES } from '../../adapter-meta.js'
 
@@ -99,8 +99,8 @@ function mentionsOf(segments: unknown, selfId: string | undefined): Mentioned {
   return mentioned
 }
 
-function mediaOf(segments: unknown): { media: MediaRef[]; dropped: number } {
-  const media: MediaRef[] = []
+function mediaOf(segments: unknown): { media: MediaInput[]; dropped: number } {
+  const media: MediaInput[] = []
   let dropped = 0
   if (!Array.isArray(segments)) return { media, dropped }
   for (const segment of segments) {
@@ -109,11 +109,12 @@ function mediaOf(segments: unknown): { media: MediaRef[]; dropped: number } {
     const type = typeof one.type === 'string' ? MEDIA_FOR_SEGMENT[one.type] : undefined
     if (type === undefined) continue
     const url = typeof one.data?.url === 'string' && one.data.url.length > 0 ? one.data.url : null
-    if (url === null) {
+    const handle = typeof one.data?.file === 'string' && one.data.file.length > 0 ? one.data.file : null
+    if (url === null && handle === null) {
       dropped += 1
       continue
     }
-    media.push({ type, url })
+    media.push({ type, url, handle })
   }
   return { media, dropped }
 }
@@ -160,7 +161,7 @@ export function mapOneBotEvent(
   const rawText = segmentText(event.message)
   const { media, dropped } = mediaOf(event.message)
   if (dropped > 0) {
-    warn?.(`dsbot-channel: dropped ${dropped} onebot media reference(s) from ${messageId} that carried no url`)
+    warn?.(`dsbot-channel: dropped ${dropped} onebot media reference(s) from ${messageId} that carried neither a url nor a file name`)
   }
   const nickname = typeof event.sender?.card === 'string' && event.sender.card.length > 0
     ? event.sender.card
@@ -261,9 +262,9 @@ export class OneBotAdapter implements ChannelAdapter {
   readonly guidance = { peer: ONEBOT_PEER_GUIDANCE, group: ONEBOT_GROUP_GUIDANCE }
   readonly capabilities = {
     text: true,
-    image: false,
-    file: false,
-    voice: false,
+    image: { in: true, out: true, fromUrl: true, fromHandle: true },
+    file: { in: true, out: true, fromUrl: true, fromHandle: true },
+    voice: { in: true, out: false, fromUrl: false, fromHandle: false },
     recall: false,
     history: false,
     mention: true,

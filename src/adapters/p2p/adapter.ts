@@ -1,5 +1,5 @@
 import type { AdapterStatus } from '../../adapter-status.js'
-import { buildListenerHealth, buildStatus } from '../../adapter-status.js'
+import { NO_MEDIA, buildListenerHealth, buildStatus } from '../../adapter-status.js'
 import type { ChannelSnapshot } from '../../channel-stats.js'
 import { countersOf } from '../../channel-stats.js'
 import { ChannelStats } from '../../channel-stats.js'
@@ -75,9 +75,9 @@ export class P2PAdapter implements ChannelAdapter {
   readonly guidance = { peer: PEER_GUIDANCE, group: GROUP_GUIDANCE }
   readonly capabilities = {
     text: true,
-    image: false,
-    file: false,
-    voice: false,
+    image: NO_MEDIA,
+    file: NO_MEDIA,
+    voice: NO_MEDIA,
     recall: false,
     history: false,
     mention: false,

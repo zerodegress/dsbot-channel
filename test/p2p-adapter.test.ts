@@ -406,7 +406,7 @@ describe('what the adapter can carry', () => {
   test('it declares text and replies at mount time, and the status agrees', () => {
     const adapter = new P2PAdapter(config(7123))
 
-    expect(adapter.capabilities).toMatchObject({ text: true, reply: true, image: false, mention: false })
+    expect(adapter.capabilities).toMatchObject({ text: true, reply: true, image: { in: false, out: false }, mention: false })
     expect(adapter.status().capabilities).toEqual(adapter.capabilities)
   })
 })

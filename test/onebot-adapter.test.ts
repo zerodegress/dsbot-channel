@@ -269,7 +269,13 @@ describe('the onebot status', () => {
     const status = adapter.status()
     expect(status).toMatchObject({ channel: 'onebot:a', account: 'inst-a', bot: 'bot-a' })
     expect(status.health).toMatchObject({ kind: 'listener', listenState: 'listening' })
-    expect(status.capabilities).toMatchObject({ text: true, mention: true, reply: true, image: false })
+    expect(status.capabilities).toMatchObject({
+      text: true,
+      mention: true,
+      reply: true,
+      image: { in: true, out: true, fromUrl: true, fromHandle: true },
+      voice: { in: true, out: false },
+    })
     expect(adapter.capabilities).toEqual(status.capabilities)
     expect('refuse' in adapter).toBe(false)
   })

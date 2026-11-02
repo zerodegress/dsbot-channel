@@ -653,12 +653,14 @@ transport: {
     for (const [result, capability] of [
       [image, 'image'],
       [file, 'file'],
-      [history, 'history'],
     ] as const) {
       expect(result).toMatchObject({ ok: false, code: 'unsupported_capability' })
-      expect(result.reason).toContain(`capabilities.${capability} is false`)
+      expect(result.reason).toContain(`capabilities.${capability}.out is false`)
       expect(result.reason).toContain('p2p:a')
     }
+    expect(history).toMatchObject({ ok: false, code: 'unsupported_capability' })
+    expect(history.reason).toContain('capabilities.history is false')
+    expect(history.reason).toContain('p2p:a')
   })
 
   test('a push with no arguments answers the peer that just messaged this session', async () => {

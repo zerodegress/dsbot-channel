@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'vitest'
 import { request } from 'node:http'
+import { NO_MEDIA } from '../src/adapter-status.js'
 import { DedupeTable } from '../src/adapters/p2p/p2p-dedupe.js'
 import { checkListenerConfig, startListener } from '../src/adapters/p2p/p2p-listener.js'
 import { ChannelStats } from '../src/channel-stats.js'
@@ -87,7 +88,7 @@ const statusFixture = () => ({
     sendFailures: {},
     lastFailure: null,
   },
-  capabilities: { text: true, image: false, file: false, voice: false, recall: false, history: false, mention: false, reply: true, stream: false },
+  capabilities: { text: true, image: NO_MEDIA, file: NO_MEDIA, voice: NO_MEDIA, recall: false, history: false, mention: false, reply: true, stream: false },
   attributes: { stableMessageId: true },
   quota: { softLimit: 0, hardLimit: 0 },
   sampledAt: 1,

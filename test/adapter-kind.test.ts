@@ -4,7 +4,7 @@ import entry from '../src/index.js'
 import { defineAdapterPlugin } from '../src/adapter-registry.js'
 import type { AdapterFactory, AdapterMount } from '../src/adapter-registry.js'
 import { registryPlugin } from '../src/registry-plugin.js'
-import { buildListenerHealth, buildStatus } from '../src/adapter-status.js'
+import { NO_MEDIA, buildListenerHealth, buildStatus } from '../src/adapter-status.js'
 import type {
   AdapterPorts,
   ChannelAdapter,
@@ -34,7 +34,11 @@ function mediaMessage(): InboundMessage {
     ...message('x-media'),
     eventKey: 'inst-a:media-1',
     chainId: 'inst-a:media-1',
-    body: { text: 'look', media: [{ type: 'image', url: 'https://example.test/a.png' }], replyTo: null },
+    body: {
+      text: 'look',
+      media: [{ type: 'image', url: 'https://example.test/a.png', handle: null, owner: { kind: 'x-media', instance: 'inst-a' } }],
+      replyTo: null,
+    },
     rawText: 'look',
   }
 }
@@ -66,9 +70,9 @@ class StubAdapter implements ChannelAdapter {
   readonly guidance = { peer: 'peer guidance', group: 'group guidance' }
   readonly capabilities = {
     text: true,
-    image: false,
-    file: false,
-    voice: false,
+    image: NO_MEDIA,
+    file: NO_MEDIA,
+    voice: NO_MEDIA,
     recall: false,
     history: false,
     mention: false,
@@ -220,7 +224,12 @@ describe('a media reference a third-party adapter carries', () => {
     expect(verdicts).toEqual([{ ok: true }])
     await new Promise((resolve) => setTimeout(resolve, 10))
     expect(prompts).toHaveLength(1)
-    expect(messages.at(-1)?.body.media[0]).toEqual({ type: 'image', url: 'https://example.test/a.png' })
+    expect(messages.at(-1)?.body.media[0]).toEqual({
+      type: 'image',
+      url: 'https://example.test/a.png',
+      handle: null,
+      owner: { kind: 'x-media', instance: 'inst-a' },
+    })
   })
 })
 

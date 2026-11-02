@@ -6,7 +6,7 @@ import entry, { plugin as gatewayPlugin } from '../src/index.js'
 import { REGISTRY_SERVICE, defineAdapterPlugin } from '../src/adapter-registry.js'
 import type { AdapterRegistry } from '../src/adapter-registry.js'
 import { registryPlugin } from '../src/registry-plugin.js'
-import { buildListenerHealth, buildStatus } from '../src/adapter-status.js'
+import { NO_MEDIA, buildListenerHealth, buildStatus } from '../src/adapter-status.js'
 import type { AdapterStatus } from '../src/adapter-status.js'
 import type { ChannelAdapter, SendResult } from '../src/contract.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
@@ -19,9 +19,9 @@ class StubAdapter implements ChannelAdapter {
   readonly guidance = { peer: 'peer guidance', group: 'group guidance' }
   readonly capabilities = {
     text: true,
-    image: false,
-    file: false,
-    voice: false,
+    image: NO_MEDIA,
+    file: NO_MEDIA,
+    voice: NO_MEDIA,
     recall: false,
     history: false,
     mention: false,
