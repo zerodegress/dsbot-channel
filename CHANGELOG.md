@@ -5,11 +5,21 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - 2026-11-02
+## [Unreleased]
 
 ### Added
 
 - `turn-stats` separates a quiet end from a refusal: `suppressed` stays the sum, with `ended` and `refused` beside it, and the tools report which one they took.
+
+### Fixed
+
+- A refusal now reaches the peer it refuses: `decline` posted an empty body, which the receiving parser rejects, so every refusal came back `400` and the sender never learned it was declined. The chosen reason travels as `reason`, and the note (or `declined` when there is none) travels as `body`.
+- The reply ceiling counts per conversation on every transport now: `admit` and `recordReply` used two spellings of the peer, so on OneBot the count never matched and `relayLimit` never fired, while a person speaking never cleared it. Both go through one key, and a person's message resets it.
+
+## [0.1.0] - 2026-11-02
+
+### Added
+
 - `meta.adapter` carries the transport's own raw payload, untouched: core never parses it, it takes no part in the event key or the content hash, and a reader may look at it. OneBot stores `raw_message` there, p2p stores the envelope fields the wire carried; a payload over 8 KB is left out with a warning rather than truncated.
 - Two read-only surfaces for a host: `dsbot-channel.usage` reports each bot's limits and what every conversation spent, and `dsbot-channel.turns` reports the recent turns with their window, outcome and duration in a bounded ring buffer. Neither is read on a decision path, and no record carries a message body.
 - A read-only status route on every listening transport: `/p2p/v1/status` and `/onebot/status` both answer an `AdapterStatus` to a loopback caller, and `AdapterStatus` gains required `counters` (auth failures, unknown paths, underruns, protocol mismatches, send failures by code, last failure).
@@ -32,8 +42,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- A refusal now reaches the peer it refuses: `decline` posted an empty body, which the receiving parser rejects, so every refusal came back `400` and the sender never learned it was declined. The chosen reason travels as `reason`, and the note (or `declined` when there is none) travels as `body`.
-- The reply ceiling counts per conversation on every transport now: `admit` and `recordReply` used two spellings of the peer, so on OneBot the count never matched and `relayLimit` never fired, while a person speaking never cleared it. Both go through one key, and a person's message resets it.
 - A hand off that throws before returning a promise is reported like any other failure instead of answering 500: the event stays claimed, so a peer that resends gets a duplicate rather than a second turn, and a deterministic fault can no longer put one message in a resend loop.
 - A reply carries its own `reply:<uuid>` id and names the message it answers in `inReplyTo`; the chain root travels as a signed `chainId`, so an event id no longer grows with every hop and a closed chain stays closed.
 - A peer on the previous protocol is refused with `401` and the distinct code `protocol_mismatch`, which the transport also counts with the time it last happened.
