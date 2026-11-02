@@ -3,11 +3,22 @@ export type ConnectionState = 'online' | 'reconnecting' | 'offline'
 export const LISTEN_STATES = ['listening', 'failed', 'stopped'] as const
 export type ListenState = (typeof LISTEN_STATES)[number]
 
+/** What one transport can do with one media type, in each direction and from each source. */
+export interface MediaCapability {
+  in: boolean
+  out: boolean
+  fromUrl: boolean
+  fromHandle: boolean
+}
+
+/** A media capability nobody claims: all four answers false. */
+export const NO_MEDIA: MediaCapability = { in: false, out: false, fromUrl: false, fromHandle: false }
+
 export interface CapabilitySet {
   text: boolean
-  image: boolean
-  file: boolean
-  voice: boolean
+  image: MediaCapability
+  file: MediaCapability
+  voice: MediaCapability
   recall: boolean
   history: boolean
   /** The platform can tell this bot's own mentions from mentions of others and of everyone. */

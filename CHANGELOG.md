@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `CapabilitySet` answers media in four parts — `{ in, out, fromUrl, fromHandle }` for `image`, `file` and `voice` — instead of one boolean, and a media tool asks both whether the transport can send the type and whether it can do so from the source it was given. OneBot declares images and files in every direction and voice inbound only; p2p declares no media. The owner stays out of the content hash, so the same media seen from two instances is still the same content.
 - `LimitState.byScope` is now `byKey`: the field maps ledger keys (`global`, `bot:<id>`, and the adapter's session key) to levels, while `reply.byScope` maps a scope (`c2c`/`group`/`p2p`) to a reply mode. A caller that read the old name no longer compiles.
 - `decline` takes a `reason` from the closed set a channel can tell the sender, plus an optional `note`, counts toward the reply ceiling like a reply does, and is charged at the rejected rate instead of being refunded.
 

@@ -256,15 +256,15 @@ describe('an OneBot link that carries no media or history yet', () => {
     const file = await call('send_file', { url: 'https://example.test/a.txt', channel: 'onebot:a', target: 'group:30003' })
     const history = await call('read_history', { channel: 'onebot:a', target: 'group:30003', limit: 10 })
 
-    for (const [result, capability] of [
-      [image, 'image'],
-      [file, 'file'],
-      [history, 'history'],
-    ] as const) {
-      expect(result).toMatchObject({ ok: false, code: 'unsupported_capability' })
-      expect(result.reason).toContain(`capabilities.${capability} is false`)
-      expect(result.reason).toContain('onebot:a')
-    }
+    expect(image).toMatchObject({ ok: false, code: 'unsupported_capability' })
+    expect(image.reason).toContain('declares capabilities.image')
+    expect(image.reason).toContain('onebot:a')
+    expect(file).toMatchObject({ ok: false, code: 'unsupported_capability' })
+    expect(file.reason).toContain('declares capabilities.file')
+    expect(file.reason).toContain('onebot:a')
+    expect(history).toMatchObject({ ok: false, code: 'unsupported_capability' })
+    expect(history.reason).toContain('capabilities.history is false')
+    expect(history.reason).toContain('onebot:a')
     expect(mounted.calls).toHaveLength(0)
   })
 })

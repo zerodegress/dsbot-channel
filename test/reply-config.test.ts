@@ -116,7 +116,7 @@ describe('choosing a mode', () => {
   })
 
   test('body media distinguishes any from none', () => {
-    const withMedia = facts({ body: { text: 'x', media: [{ type: 'image', url: 'u' }] } })
+    const withMedia = facts({ body: { text: 'x', media: [{ type: 'image', url: 'u', handle: null, owner: { kind: 'p2p', instance: 'inst-a' } }] } })
     const anyPlan = compileReply({ rules: [{ when: { body: { media: 'any' } }, mode: 'tool' }] })
     const nonePlan = compileReply({ rules: [{ when: { body: { media: 'none' } }, mode: 'tool' }] })
     expect(anyPlan.modeFor(withMedia)).toBe('tool')

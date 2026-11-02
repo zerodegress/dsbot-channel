@@ -31,15 +31,37 @@ export interface Author {
 export const MEDIA_TYPES = ['image', 'file', 'voice'] as const
 export type MediaType = (typeof MEDIA_TYPES)[number]
 
-/** A media reference is what core and a reader can address: a url, never a transport's own token. */
-export interface MediaRef {
+/** Longest handle a transport may name a media item by; a handle is a token, not free text. */
+export const HANDLE_MAX = 256
+
+/** The transport instance that can resolve a handle; core stamps it, an adapter cannot claim it. */
+export interface MediaOwner {
+  kind: string
+  instance: string
+}
+
+/** What an adapter reports about one media item: a portable url, a handle of its own, or both. */
+export interface MediaInput {
   type: MediaType
-  url: string
+  url: string | null
+  handle: string | null
+}
+
+/** A media reference an event carries, with the instance that owns its handle. */
+export interface MediaRef extends MediaInput {
+  owner: MediaOwner
 }
 
 export interface Body {
   text: string
   media: MediaRef[]
+  replyTo: string | null
+}
+
+/** What an adapter hands to `buildEvent`, before core stamps the owner. */
+export interface BodyInput {
+  text: string
+  media: readonly MediaInput[]
   replyTo: string | null
 }
 
@@ -100,7 +122,7 @@ export interface Event {
 export interface EventInput {
   source: Source
   author: Author
-  body: Body
+  body: BodyInput
   transport: TransportMeta
   declared: DeclaredMeta
   /** The transport's raw payload; core only carries it. */
