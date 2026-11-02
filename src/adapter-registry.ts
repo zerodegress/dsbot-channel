@@ -118,6 +118,7 @@ export function defineAdapterPlugin(options: AdapterPluginOptions): {
     inject: [REGISTRY_SERVICE],
     apply(ctx: Context): void {
       const registry = ctx.get(REGISTRY_SERVICE) as AdapterRegistry | undefined
+      // Defensive only: `inject` keeps this plugin from running before the registry exists.
       if (registry === undefined) {
         throw new ConfigError(
           `adapter "${options.kind}" found no registry: mount "dsbot-channel/registry" before this plugin`,

@@ -112,6 +112,21 @@ describe('the registry a context owns', () => {
     expect(() => registry.register('x-probe', fake)).toThrow(/already registered/)
   })
 
+  test('a second registry in one context is reported, not silently dropped', async () => {
+    const ctx = new Context()
+    const said: string[] = []
+    ctx.logger.exporter({
+      levels: { default: 3 },
+      export(message: { args: unknown[] }) {
+        said.push(message.args.map((arg) => String(arg)).join(' '))
+      },
+    })
+    await ctx.plugin(registryPlugin)
+    await ctx.plugin(registryPlugin)
+    expect(said.some((line) => line.includes('already exists'))).toBe(true)
+    expect((ctx.get(REGISTRY_SERVICE) as AdapterRegistry).known().sort()).toEqual(['onebot', 'p2p'])
+  })
+
   test('two contexts never see each other', async () => {
     const one = new Context()
     const other = new Context()

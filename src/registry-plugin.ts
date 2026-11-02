@@ -1,4 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis'
+import { createWarn } from './warn.js'
 import { AdapterRegistry, REGISTRY_SERVICE } from './adapter-registry.js'
 import { createOneBotAdapter } from './adapters/onebot/index.js'
 import { createP2PAdapter } from './adapters/p2p/index.js'
@@ -7,7 +8,10 @@ import { createP2PAdapter } from './adapters/p2p/index.js'
 export const registryPlugin = {
   name: 'dsbot-channel/registry',
   apply(ctx: Context): void {
-    if (ctx.get(REGISTRY_SERVICE) !== undefined) return
+    if (ctx.get(REGISTRY_SERVICE) !== undefined) {
+      createWarn(ctx)('dsbot-channel: a registry already exists in this context; the second mount keeps the first')
+      return
+    }
     const registry = new AdapterRegistry()
     registry.builtin('p2p', createP2PAdapter)
     registry.builtin('onebot', createOneBotAdapter)
