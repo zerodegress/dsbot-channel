@@ -3,7 +3,7 @@ import { ConfigError, assertBindHost } from '../../config.js'
 import { OneBotAdapter } from './adapter.js'
 import type { OneBotAdapterConfig } from './adapter.js'
 
-const FIELDS = new Set(['selfId', 'listen', 'api', 'accessToken', 'sendTimeoutMs', 'bots', 'history'])
+const FIELDS = new Set(['selfId', 'listen', 'api', 'accessToken', 'sendTimeoutMs', 'bots', 'history', 'fileFromUrl'])
 
 /** The two address kinds history may be opened for, each off unless the profile says so. */
 export interface OneBotHistoryConfig {
@@ -87,6 +87,12 @@ function parseHistory(value: unknown): OneBotHistoryConfig {
   return { group: flag('group'), private: flag('private') }
 }
 
+function parseFileFromUrl(value: unknown): boolean {
+  if (value === undefined) return false
+  if (typeof value !== 'boolean') refuse('transport.fileFromUrl must be true or false', 'fileFromUrl')
+  return value
+}
+
 function parseBots(value: unknown): string[] {
   if (value === undefined) return []
   if (!Array.isArray(value)) refuse('transport.bots must be a list of ids', 'bots')
@@ -109,6 +115,7 @@ export function parseOneBotConfig(mount: AdapterMount): OneBotAdapterConfig {
     api: parseApi(raw.api, sendTimeoutMs),
     sendTimeoutMs,
     history: parseHistory(raw.history),
+    fileFromUrl: parseFileFromUrl(raw.fileFromUrl),
     ...(optionalText(raw.accessToken, 'accessToken') === undefined ? {} : { accessToken: raw.accessToken as string }),
     bots: parseBots(raw.bots),
   }

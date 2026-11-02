@@ -60,6 +60,7 @@ export type SendFailureCode =
 
 export interface SendSuccess {
   ok: true
+  /** The transport's receipt for this send; opaque, never parsed, and `local:` when it gives none. */
   messageId: string
   duplicate: boolean
 }
@@ -126,6 +127,8 @@ export interface OutboundMedia {
   type: MediaType
   url: string | null
   handle: string | null
+  /** The name a file carries; required when `type` is `file`, ignored otherwise. */
+  name?: string | undefined
   /** Required with a handle: the instance that issued it, which must be the one sending. */
   owner?: MediaOwner | undefined
 }
