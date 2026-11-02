@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { createHash } from 'node:crypto'
-import { signEnvelope, verifyRequest } from '../src/adapters/p2p/p2p-auth.js'
+import { canonicalEnvelope, signEnvelope, verifyRequest } from '../src/adapters/p2p/p2p-auth.js'
 import type { Envelope } from '../src/adapters/p2p/p2p-auth.js'
 
 const digest = (body: string) => createHash('sha256').update(body, 'utf8').digest('hex')
@@ -132,5 +132,31 @@ describe('signature mode', () => {
       .digest('base64')
     const result = verifyRequest({ peers, signature: legacy, envelope: envelope(), claimedInstance: 'peer-a' })
     expect(result.ok).toBe(false)
+  })
+})
+
+describe('the bytes a text-only envelope signs', () => {
+  const base: Envelope = {
+    eventId: 'e-1',
+    chainId: 'e-1',
+    to: 'bot-b',
+    sender: 'bot-a',
+    instance: 'inst-a',
+    body: 'hello',
+    sentAt: 1_700_000_000_000,
+  }
+
+  test('are exactly the fields the old wire carried, with no media key', () => {
+    expect(canonicalEnvelope(base)).toBe(
+      '{"eventId":"e-1","chainId":"e-1","to":"bot-b","sender":"bot-a","instance":"inst-a","body":"hello","sentAt":1700000000000}',
+    )
+  })
+
+  test('carry media last, and only when there is some', () => {
+    const withMedia = { ...base, media: [['image', 'https://example.test/a.png'] as const] }
+    expect(canonicalEnvelope(withMedia)).toBe(
+      '{"eventId":"e-1","chainId":"e-1","to":"bot-b","sender":"bot-a","instance":"inst-a","body":"hello","sentAt":1700000000000,"media":[["image","https://example.test/a.png"]]}',
+    )
+    expect(canonicalEnvelope({ ...base, media: [] })).toBe(canonicalEnvelope(base))
   })
 })

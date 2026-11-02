@@ -38,6 +38,8 @@ export interface P2PSendInput {
   /** The event this message answers, so the peer knows what it refers to. */
   inReplyTo?: string
   inReplyToExcerpt?: string
+  /** Media to carry, as `[type, url]`; every url must be an http(s) address. */
+  media?: readonly (readonly [string, string])[]
 }
 
 function failure(code: SendFailureCode, retryable: boolean, reason: string): SendFailure {
@@ -130,6 +132,7 @@ export async function sendToPeer(input: P2PSendInput): Promise<SendResult> {
     ...(input.final === undefined ? {} : { final: input.final }),
     ...(input.inReplyTo === undefined ? {} : { inReplyTo: input.inReplyTo }),
     ...(input.inReplyToExcerpt === undefined ? {} : { inReplyToExcerpt: input.inReplyToExcerpt }),
+    ...(input.media === undefined || input.media.length === 0 ? {} : { media: input.media }),
   }
   const signature = signEnvelope(secret, envelope)
   const payload = canonicalEnvelope(envelope)
