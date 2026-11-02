@@ -338,10 +338,14 @@ export class OneBotAdapter implements ChannelAdapter {
     if (target === undefined) {
       return { ok: false, code: 'no_url', retryable: false, reason: `this adapter cannot address "${input.target}"` }
     }
+    const message = this.#messageOf(input)
+    if (message === undefined) {
+      return { ok: false, code: 'rejected', retryable: false, reason: 'there is nothing this channel can carry' }
+    }
     const action = target.scope === 'group' ? 'send_group_msg' : 'send_private_msg'
     const params = target.scope === 'group'
-      ? { group_id: target.id, message: input.body }
-      : { user_id: target.id, message: input.body }
+      ? { group_id: target.id, message }
+      : { user_id: target.id, message }
     const answered = await this.#call(action, params, input.timeoutMs)
     if (!answered.ok) {
       this.#stats.sendFailed(answered.code)
@@ -349,6 +353,40 @@ export class OneBotAdapter implements ChannelAdapter {
     }
     this.#rememberChain(String(answered.messageId), input.chainId ?? input.eventId)
     return answered
+  }
+
+
+  /** The text alone when there is no media, otherwise the segments this instance may carry. */
+  #messageOf(input: SendInput): string | { type: string; data: Record<string, string> }[] | undefined {
+    const segments: { type: string; data: Record<string, string> }[] = []
+    if (input.body.length > 0) segments.push({ type: 'text', data: { text: input.body } })
+    for (const item of input.media ?? []) {
+      if (item.type !== 'image') {
+        this.#warn?.(`dsbot-channel: dropped a ${item.type} from the send: this version sends images only`)
+        continue
+      }
+      const capability = this.capabilities.image
+      if (capability.out !== true) {
+        this.#warn?.('dsbot-channel: dropped an image from the send: capabilities.image.out is false')
+        continue
+      }
+      const source = item.url !== null ? capability.fromUrl : capability.fromHandle
+      if (source !== true) {
+        this.#warn?.('dsbot-channel: dropped an image from the send: this channel cannot take it from that source')
+        continue
+      }
+      if (item.url === null) {
+        const owner = item.owner
+        if (owner === undefined || owner.kind !== this.kind || owner.instance !== this.#config.instance) {
+          this.#warn?.('dsbot-channel: dropped an image whose handle belongs to another instance')
+          continue
+        }
+      }
+      segments.push({ type: 'image', data: { file: (item.url ?? item.handle) as string } })
+    }
+    if (segments.length === 0) return undefined
+    if (segments.length === 1 && segments[0]!.type === 'text') return input.body
+    return segments
   }
 
   async start(ports: AdapterPorts): Promise<AdapterHandle> {
