@@ -1,5 +1,6 @@
 import type { AdapterStatus, CapabilitySet } from './adapter-status.js'
 import type { Author, Body, DeclaredMeta, Source, TransportMeta } from './event-types.js'
+import type { PipelineEvent } from './pipeline.js'
 
 /** Why core refused to take an inbound message; the adapter maps it onto its own error. */
 export const INBOUND_REJECTIONS = [
@@ -158,7 +159,18 @@ export interface ChannelAdapter {
    * refusal; core falls back to closing silently when it is absent.
    */
   refuse?(input: RefuseInput): Promise<RefuseResult>
+  /**
+   * Runs before every turn that reaches the prepare node, as a side effect only: it cannot
+   * answer, cannot see the prompt and is never charged. Synchronous by contract.
+   */
+  prepare?(input: PrepareInput): void
   start(ports: AdapterPorts): Promise<AdapterHandle>
+}
+
+/** Everything an adapter's per-turn hook may read: the event and the conversation it belongs to. */
+export interface PrepareInput {
+  event: PipelineEvent
+  sessionKey: string
 }
 
 /** Longest session key core accepts before asking the adapter. */
