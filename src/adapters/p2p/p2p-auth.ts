@@ -27,6 +27,8 @@ export interface Envelope {
   final?: boolean | undefined
   inReplyTo?: string | undefined
   inReplyToExcerpt?: string | undefined
+  /** Only present when the message carries media, so a text-only envelope keeps its old bytes. */
+  media?: readonly (readonly [string, string])[] | undefined
 }
 
 export interface AuthInput {
@@ -58,6 +60,7 @@ export function canonicalEnvelope(envelope: Envelope): string {
     ...(envelope.final === undefined ? {} : { final: envelope.final }),
     ...(envelope.inReplyTo === undefined ? {} : { inReplyTo: envelope.inReplyTo }),
     ...(envelope.inReplyToExcerpt === undefined ? {} : { inReplyToExcerpt: envelope.inReplyToExcerpt }),
+    ...(envelope.media === undefined || envelope.media.length === 0 ? {} : { media: envelope.media }),
   })
 }
 
