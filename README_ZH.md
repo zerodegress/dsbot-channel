@@ -67,6 +67,8 @@ config:
 
 OneBot 11 内置。事件接收地址是 `listen.path`，默认 `/onebot/event`；本版接收媒体但不出站发送媒体。
 
+`read_history` 从能翻页的传输读更早的消息。OneBot 用 `transport.history: { group: true, private: true }` 按地址种类分别打开，默认都关闭——这两个 API 都不属于 OneBot 11；一页返回 `records`，还有更早的消息时附带 `next`，它是下次作为 `before` 传回的游标。
+
 ```yaml
 config:
   adapters:

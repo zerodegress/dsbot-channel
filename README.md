@@ -67,6 +67,8 @@ A message a bot sends in a group follows `policy.groupBots`: `whenMentioned` (th
 
 OneBot 11 is built in. It receives events on `listen.path`, which defaults to `/onebot/event`; media is received but not sent in this version.
 
+`read_history` reads earlier messages from a transport that can page them. OneBot opens it per address kind with `transport.history: { group: true, private: true }`, both off by default because neither API belongs to OneBot 11; a page answers `records` and, when more remain, `next` — the cursor to pass back as `before`.
+
 ```yaml
 config:
   adapters:
