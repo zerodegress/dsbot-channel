@@ -82,4 +82,12 @@ describe('the onebot transport block', () => {
       /transport.history names a field this adapter does not read: dm/,
     )
   })
+
+  test('reads the file source switch, false unless a profile opens it', () => {
+    expect(parseOneBotConfig(mount({ api: { url: 'http://x' } })).fileFromUrl).toBe(false)
+    expect(parseOneBotConfig(mount({ api: { url: 'http://x' }, fileFromUrl: true })).fileFromUrl).toBe(true)
+    expect(() => parseOneBotConfig(mount({ api: { url: 'http://x' }, fileFromUrl: 'yes' }))).toThrow(
+      /transport.fileFromUrl must be true or false/,
+    )
+  })
 })

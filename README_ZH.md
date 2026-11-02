@@ -61,7 +61,11 @@ config:
 | `reply.byScope` | — | 按作用域 |
 | `turn.coalesceMs` | `0` | 合并窗口 |
 | `turn.maxBatch` | `10` | 每批条数 |
+| `turn.maxChars` | `8000` | 批次预算 |
 | `turn.context.messages` | `0` | 历史条数 |
+| `transport.history.group` | `false` | 读群历史 |
+| `transport.history.private` | `false` | 读私聊历史 |
+| `transport.fileFromUrl` | `false` | 用 url 发文件 |
 | `status` | `true` | 状态路由 |
 
 ## 许可证

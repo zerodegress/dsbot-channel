@@ -649,13 +649,13 @@ transport: {
     }
 
     const image = await call('send_image', { url: 'https://example.test/a.png', channel: 'p2p:a', target: 'inst-b' })
-    const file = await call('send_file', { url: 'https://example.test/a.txt', channel: 'p2p:a', target: 'inst-b' })
+    const file = await call('send_file', { url: 'https://example.test/a.txt', name: 'a.txt', channel: 'p2p:a', target: 'inst-b' })
     const history = await call('read_history', { channel: 'p2p:a', target: 'inst-b', limit: 10 })
 
     expect(image).toMatchObject({ ok: true })
     expect(typeof image.messageId).toBe('string')
     expect(file).toMatchObject({ ok: false, code: 'unsupported_capability' })
-    expect(file.reason).toContain('no sender')
+    expect(file.reason).toContain('capabilities.file.out is false')
     expect(file.reason).toContain('p2p:a')
     expect(history).toMatchObject({ ok: false, code: 'unsupported_capability' })
     expect(history.reason).toContain('capabilities.history')

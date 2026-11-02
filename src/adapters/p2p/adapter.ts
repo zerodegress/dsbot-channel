@@ -76,7 +76,7 @@ export class P2PAdapter implements ChannelAdapter {
   readonly capabilities = {
     text: true,
     image: { in: true, out: true, fromUrl: true, fromHandle: false },
-    file: { in: true, out: true, fromUrl: true, fromHandle: false },
+    file: { in: true, out: false, fromUrl: false, fromHandle: false },
     voice: { in: true, out: true, fromUrl: true, fromHandle: false },
     recall: false,
     history: NO_HISTORY,

@@ -7,7 +7,7 @@ import {
   createSendImage,
 } from '../src/capability-tools.js'
 import { PushRouter } from '../src/push-tool.js'
-import type { PushChannel, PushSource } from '../src/push-tool.js'
+import type { PushChannel, PushRequest, PushSource } from '../src/push-tool.js'
 import type { CapabilitySet } from '../src/adapter-status.js'
 import { NO_MEDIA } from '../src/adapter-status.js'
 import type { HistoryInput, HistoryResult, SendResult } from '../src/contract.js'
@@ -48,6 +48,7 @@ function harness(
   capabilities: Record<string, CapabilitySet | undefined>,
   source?: PushSource,
   history?: (channel: string, input: HistoryInput) => Promise<HistoryResult>,
+  sender = true,
 ): Harness {
   const sends: unknown[] = []
   const router = new PushRouter({
@@ -64,6 +65,7 @@ function harness(
   const gate = new CapabilityGate({
     router,
     capabilities: (channel) => capabilities[channel],
+    ...(sender ? { push: (request: PushRequest, sessionId?: string) => router.push(request, sessionId) } : {}),
     ...(history === undefined ? {} : { history }),
   })
   return {
@@ -91,7 +93,12 @@ describe('a tool whose capability the channel never declared', () => {
 
   test('send_file names the file bit and the channel', async () => {
     const { file } = harness(empty)
-    const result = await call(file, { url: 'https://example.test/a.txt', channel: 'onebot:main', target: 'group:1' })
+    const result = await call(file, {
+      url: 'https://example.test/a.txt',
+      name: 'a.txt',
+      channel: 'onebot:main',
+      target: 'group:1',
+    })
     expect(result).toMatchObject({ ok: false, code: UNSUPPORTED_CAPABILITY })
     expect(result.reason).toContain('capabilities.file.out is false')
     expect(result.reason).toContain('onebot:main')
@@ -115,7 +122,7 @@ describe('a tool whose capability the channel never declared', () => {
   test('nothing is sent on a refused call', async () => {
     const gate = harness(empty)
     await call(gate.image, { url: 'https://example.test/a.png', channel: 'p2p:a', target: 'peer-a' })
-    await call(gate.file, { url: 'https://example.test/a.txt', channel: 'p2p:a', target: 'peer-a' })
+    await call(gate.file, { url: 'https://example.test/a.txt', name: 'a.txt', channel: 'p2p:a', target: 'peer-a' })
     await call(gate.history, { channel: 'p2p:a', target: 'peer-a' })
     expect(gate.sends).toEqual([])
   })
@@ -123,7 +130,12 @@ describe('a tool whose capability the channel never declared', () => {
 
 describe('the gate is read at call time, on the channel the call names', () => {
   test('two channels answer differently in the same build', async () => {
-    const { image } = harness({ 'p2p:a': caps(), 'onebot:main': caps({ image: { ...NO_MEDIA, out: true, fromUrl: true } }) })
+    const { image } = harness(
+      { 'p2p:a': caps(), 'onebot:main': caps({ image: { ...NO_MEDIA, out: true, fromUrl: true } }) },
+      undefined,
+      undefined,
+      false,
+    )
     const refused = await call(image, { url: 'https://example.test/a.png', channel: 'p2p:a', target: 'peer-a' })
     const declared = await call(image, { url: 'https://example.test/a.png', channel: 'onebot:main', target: 'group:1' })
     expect(refused.reason).toContain('capabilities.image.out is false')
@@ -226,5 +238,57 @@ describe('reading history asks the adapter, never the address', () => {
       { channel: 'onebot:main', input: { target: 'group:1', limit: 50 } },
       { channel: 'onebot:main', input: { target: 'group:1', limit: 200, before: 's9' } },
     ])
+  })
+
+})
+
+describe('a file argument is answered before the capability', () => {
+  test('a missing name is refused on a channel that could send it', async () => {
+    const gate = harness({ 'onebot:main': caps({ file: { in: true, out: true, fromUrl: true, fromHandle: true } }) })
+    const result = await call(gate.file, { url: 'https://example.test/a.txt', channel: 'onebot:main', target: 'group:1' })
+    expect(result).toMatchObject({ ok: false, code: 'unsupported_argument' })
+    expect(result.reason).toContain('name')
+    expect(gate.sends).toEqual([])
+  })
+
+  test('a missing name is still the first answer on a channel that cannot', async () => {
+    const gate = harness(empty)
+    const result = await call(gate.file, { url: 'https://example.test/a.txt', channel: 'p2p:a', target: 'peer-a' })
+    expect(result).toMatchObject({ ok: false, code: 'unsupported_argument' })
+    expect(result.reason).toContain('name')
+    expect(gate.sends).toEqual([])
+  })
+
+  test('a file with a name is sent through the push router', async () => {
+    const gate = harness({ 'onebot:main': caps({ file: { in: true, out: true, fromUrl: true, fromHandle: true } }) })
+    const result = await call(gate.file, {
+      url: 'https://example.test/a.txt',
+      name: 'a.txt',
+      channel: 'onebot:main',
+      target: 'group:1',
+    })
+
+    expect(result).toEqual({ ok: true, messageId: 'sent-1' })
+    expect(gate.sends).toHaveLength(1)
+    expect(gate.sends[0]).toMatchObject({
+      text: '',
+      channel: 'onebot:main',
+      target: 'group:1',
+      media: [{ type: 'file', url: 'https://example.test/a.txt', handle: null, name: 'a.txt' }],
+    })
+  })
+
+  test('a channel without fileFromUrl refuses a file before it is sent', async () => {
+    const gate = harness({ 'onebot:main': caps({ file: { in: true, out: true, fromUrl: false, fromHandle: false } }) })
+    const result = await call(gate.file, {
+      url: 'https://example.test/a.txt',
+      name: 'a.txt',
+      channel: 'onebot:main',
+      target: 'group:1',
+    })
+
+    expect(result).toMatchObject({ ok: false, code: UNSUPPORTED_CAPABILITY })
+    expect(result.reason).toContain('capabilities.file.fromUrl')
+    expect(gate.sends).toEqual([])
   })
 })

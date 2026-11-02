@@ -61,7 +61,11 @@ config:
 | `reply.byScope` | — | mode per scope |
 | `turn.coalesceMs` | `0` | merge window |
 | `turn.maxBatch` | `10` | messages per batch |
+| `turn.maxChars` | `8000` | batch budget |
 | `turn.context.messages` | `0` | earlier messages |
+| `transport.history.group` | `false` | read group history |
+| `transport.history.private` | `false` | read private history |
+| `transport.fileFromUrl` | `false` | file from a url |
 | `status` | `true` | status route |
 
 ## License
