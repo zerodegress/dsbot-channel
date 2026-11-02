@@ -1,6 +1,6 @@
 {
   "name": "dsbot-channel",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A message gateway for ds-bot: events from several external platforms reach one bot, and answers go back to the conversation they came from",
   "keywords": [
     "cordis",
