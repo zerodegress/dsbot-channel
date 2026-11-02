@@ -4,7 +4,7 @@ The channel layer for ds-bot: one bot sends and receives across several platform
 
 [中文说明](./README_ZH.md)
 
-It follows the direction the DSH team is exploring with its Super Agent prototype in three concrete places: an answer goes back to the conversation that asked (`inReplyTo`), speaking is an explicit decision (`no_reply`, `decline`, the relay round limit, pipeline gates), and every turn is metered per bot, so acting for a team does not spend the team's attention unseen.
+It follows the direction the DSH team is exploring with its Super Agent prototype in three concrete places: an answer goes back to the conversation it came from and carries the id of the message it answers (`inReplyTo`); speaking is an explicit decision (`no_reply`, `decline`, the relay round limit, pipeline gates); and with `policy.budget` set, every turn is metered per bot, so acting for a team does not spend the team's attention unseen.
 
 ## Requirements
 

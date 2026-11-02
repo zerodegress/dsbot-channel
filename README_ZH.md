@@ -4,7 +4,7 @@ ds-bot 的通道层：让一个 Bot 在多个平台上收发消息，并决定�
 
 [English](./README.md)
 
-它朝 DSH 团队用 Super Agent 原型探索的方向走，落在三件具体的事上：回答投回提出问题的那个会话（`inReplyTo`）；开口本身是一个显式决定（`no_reply`、`decline`、relay 回合上限、管道闸门）；每一轮按 Bot 记账，替一个团队行动不至于悄悄花掉这个团队的注意力。
+它朝 DSH 团队用 Super Agent 原型探索的方向走，落在三件具体的事上：回答投回它来的那个会话，并带上它所回复的那条消息的 id（`inReplyTo`）；开口本身是一个显式决定（`no_reply`、`decline`、relay 回合上限、管道闸门）；配了 `policy.budget` 时，每一轮按 Bot 记账，替一个团队行动不至于悄悄花掉这个团队的注意力。
 
 ## 环境要求
 
