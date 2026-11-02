@@ -313,7 +313,7 @@ describe('listener', () => {
     const fakeRequest = {
       method: 'GET',
       url: '/p2p/v1/status',
-      headers: { 'x-forwarded-for': '100.64.0.7', 'x-forwarded-host': 'orca-gw' },
+      headers: { 'x-forwarded-for': '192.0.2.7', 'x-forwarded-host': 'proxy.example' },
       socket: { remoteAddress: '127.0.0.1' },
     } as unknown as Parameters<typeof listener.handle>[0]
     const fakeResponse = {
@@ -387,7 +387,7 @@ describe('listener', () => {
       method: 'GET',
       url: '/p2p/v1/status',
       headers: {},
-      socket: { remoteAddress: '{{INTERNAL_IP}}' },
+      socket: { remoteAddress: '203.0.113.9' },
     } as unknown as Parameters<typeof listener.handle>[0]
     const fakeResponse = {
       writeHead: (status: number) => {
