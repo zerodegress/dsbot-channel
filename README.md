@@ -1,15 +1,18 @@
 # dsbot-channel
 
-A cordis plugin for ds-bot that carries messages between instances over a peer link.
+The channel layer for ds-bot: one bot sends and receives across several platforms, and decides when to speak.
 
 [中文说明](./README_ZH.md)
+
+It follows the direction the DSH team is exploring with its Super Agent prototype in three concrete places: an answer goes back to the conversation that asked (`inReplyTo`), speaking is an explicit decision (`no_reply`, `decline`, the relay round limit, pipeline gates), and every turn is metered per bot, so acting for a team does not spend the team's attention unseen.
 
 ## Requirements
 
 - Node.js `^20.19.0` or `>=22.12.0`
 - pnpm
-- The host credentials service, for peer secrets
+- The host credentials service, for adapter secrets
 - The host session controller service, for running turns
+- The host tools service, when a profile can choose tool mode
 
 ## Install
 
@@ -44,7 +47,7 @@ config:
 
 `kind` names the transport and defaults to `p2p`; the built-in kinds are `p2p` and `onebot`, and any other transport registers as `x-[a-z0-9-]+`, at most 32 characters.
 
-Set `policy.requireMention: true` on an adapter to refuse group messages that mention neither the bot nor everyone.
+Set `policy.requireMention: true` to refuse group messages that mention neither the bot nor everyone. It needs a transport that can tell mentions apart, so it applies to `onebot` rather than `p2p`.
 
 OneBot 11 is built in. It receives events on `listen.path`, which defaults to `/onebot/event`; media is received but not sent in this version.
 
@@ -76,7 +79,7 @@ config:
 
 Set `status: false` on an adapter to leave its status route unregistered.
 
-The patch ships disabled. Set `disabled: false` on that row to start the listener.
+The patch ships enabled with no adapters, so the base starts idle; a profile declares its own adapters to start a listener.
 
 ## Development
 
@@ -87,3 +90,9 @@ pnpm test
 pnpm typecheck
 pnpm lint
 ```
+
+## License
+
+MIT. See [LICENSE](./LICENSE).
+
+[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
