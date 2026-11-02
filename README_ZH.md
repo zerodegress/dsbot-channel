@@ -26,9 +26,9 @@ ds-bot 的消息网关：多个外部平台的事件进到同一个 Bot，回答
 dsh plugin --profile web add dsbot-channel
 ```
 
-`web` 是随宿主提供的一个 profile。如果 Bot 跑在别的 profile 下，把 `web` 换成那个名字。该 profile 尚不存在时，这条命令会用模板新建，所以新读者不必先手动建一个。
+`web` 可以换成其他安装了 ds-bot 的 profile。
 
-要改插件本身，改用源码安装：
+亦可从源码构建安装：
 
 ```sh
 pnpm install

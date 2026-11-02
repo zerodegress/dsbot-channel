@@ -26,9 +26,9 @@ You can also install it from a terminal:
 dsh plugin --profile web add dsbot-channel
 ```
 
-`web` is a profile that ships with the host. If the bot runs under another profile, replace `web` with that name. The command initializes the profile from a template when it does not exist yet, so a new reader does not have to create one first.
+`web` can be replaced with any profile that has ds-bot installed.
 
-To work on the plugin itself, install from a checkout instead:
+Alternatively, build and install from source:
 
 ```sh
 pnpm install
