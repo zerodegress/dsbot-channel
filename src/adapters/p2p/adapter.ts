@@ -1,5 +1,5 @@
 import type { AdapterStatus } from '../../adapter-status.js'
-import { NO_MEDIA, buildListenerHealth, buildStatus } from '../../adapter-status.js'
+import { buildListenerHealth, buildStatus } from '../../adapter-status.js'
 import type { ChannelSnapshot } from '../../channel-stats.js'
 import { countersOf } from '../../channel-stats.js'
 import { ChannelStats } from '../../channel-stats.js'
@@ -75,9 +75,9 @@ export class P2PAdapter implements ChannelAdapter {
   readonly guidance = { peer: PEER_GUIDANCE, group: GROUP_GUIDANCE }
   readonly capabilities = {
     text: true,
-    image: NO_MEDIA,
-    file: NO_MEDIA,
-    voice: NO_MEDIA,
+    image: { in: true, out: true, fromUrl: true, fromHandle: false },
+    file: { in: true, out: true, fromUrl: true, fromHandle: false },
+    voice: { in: true, out: true, fromUrl: true, fromHandle: false },
     recall: false,
     history: false,
     mention: false,
@@ -203,12 +203,16 @@ export class P2PAdapter implements ChannelAdapter {
       ...(peer.url === undefined ? {} : { url: peer.url }),
       ...(peer.host === undefined ? {} : { host: peer.host }),
     }
+    const media = (input.media ?? [])
+      .filter((item) => item.url !== null)
+      .map((item) => [item.type, item.url as string] as const)
     const result = await sendToPeer({
       peer: target,
       ...(input.chainId === undefined ? {} : { chainId: input.chainId }),
       credentials: this.#credentials(ports),
       to,
       body: input.body,
+      ...(media.length === 0 ? {} : { media }),
       eventId: input.eventId,
       sender: input.sender,
       instance: this.#config.instance,
