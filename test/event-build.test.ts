@@ -78,6 +78,16 @@ describe('a media reference the core carries', () => {
     expect(other.meta.derived.contentHash).toBe(one.meta.derived.contentHash)
   })
 
+  test('a usable url survives a handle core cannot read', () => {
+    const built = buildEvent(media({ type: 'image', url: 'https://example.test/a.png', handle: 'two words' }))
+    expect(built.body.media[0]).toEqual({
+      type: 'image',
+      url: 'https://example.test/a.png',
+      handle: null,
+      owner,
+    })
+  })
+
   test('the media type stays a closed set', () => {
     expect(() => buildEvent(media({ type: 'video', url: 'u', handle: null }))).toThrow(/type must be one of/)
   })

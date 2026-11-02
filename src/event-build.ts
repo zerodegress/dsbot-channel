@@ -45,14 +45,16 @@ function assertMedia(media: readonly MediaInput[], owner: MediaOwner): MediaRef[
       throw new Error(`media[${index}].type must be one of ${MEDIA_TYPES.join(', ')}, got "${String(item.type)}"`)
     }
     const url = item.url ?? null
-    const handle = item.handle ?? null
+    const rawHandle = item.handle ?? null
+    if (url === null && rawHandle === null) {
+      throw new Error(`media[${index}] needs a url or a handle`)
+    }
     if (url !== null && (typeof url !== 'string' || url.length === 0)) {
       throw new Error(`media[${index}].url must be a non-empty string or null`)
     }
-    if (url === null && handle === null) {
-      throw new Error(`media[${index}] needs a url or a handle`)
-    }
-    if (handle !== null && (typeof handle !== 'string' || handleProblem(handle) !== undefined)) return
+    const handle =
+      rawHandle !== null && typeof rawHandle === 'string' && handleProblem(rawHandle) === undefined ? rawHandle : null
+    if (url === null && handle === null) return
     kept.push({ type: item.type, url, handle, owner })
   })
   return kept
