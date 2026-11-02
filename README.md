@@ -11,7 +11,7 @@ A message gateway for ds-bot: events from several external platforms reach one b
 - Node.js `^20.19.0` or `>=22.12.0`, and pnpm
 - The host services: credentials (adapter secrets), session controller (turns), tools (tool mode)
 
-Tested against DS-Bot 0.2.x.
+Tested against DS-Bot 0.2.x (0.2.5 at the time of this release); later releases are not guaranteed.
 
 ## Install
 
@@ -49,7 +49,7 @@ config:
         accessToken: ONEBOT_TOKEN
 ```
 
-`kind` (`p2p` or `onebot`), `channel`, `instance`, `botName` and `transport` are required, and `channel` must be unique. `secret` and `accessToken` are reference names in the host credentials service, not the secrets themselves.
+`channel`, `instance`, `botName` and `transport` are required, and `channel` must be unique. `kind` defaults to `p2p`; `onebot` is the other built-in, and a third-party transport registers as `x-[a-z0-9-]+`, at most 32 characters. `secret` and `accessToken` are reference names in the host credentials service, not the secrets themselves.
 
 | Field | Default | Meaning |
 | --- | --- | --- |
@@ -59,10 +59,12 @@ config:
 | `policy.budget.hardLimit` | `1` | ratio that refuses |
 | `reply.default` | `auto` | how a turn answers |
 | `reply.byScope` | — | mode per scope |
+| `reply.rules` | — | ordered overrides |
 | `turn.coalesceMs` | `0` | merge window |
 | `turn.maxBatch` | `10` | messages per batch |
 | `turn.maxChars` | `8000` | batch budget |
 | `turn.context.messages` | `0` | earlier messages |
+| `turn.context.chars` | `2000` | context budget |
 | `transport.history.group` | `false` | read group history |
 | `transport.history.private` | `false` | read private history |
 | `transport.fileFromUrl` | `false` | file from a url |

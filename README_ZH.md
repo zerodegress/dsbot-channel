@@ -11,7 +11,7 @@ ds-bot 的消息网关：多个外部平台的事件进到同一个 Bot，回答
 - Node.js `^20.19.0` 或 `>=22.12.0`，以及 pnpm
 - 宿主的三个服务：凭据（解析密钥）、会话控制（跑回合）、tools（tool 模式）
 
-已在 DS-Bot 0.2.x 上测试。
+已在 DS-Bot 0.2.x 上测试（本版发布时为 0.2.5）；不保证与后续版本兼容。
 
 ## 安装
 
@@ -49,7 +49,7 @@ config:
         accessToken: ONEBOT_TOKEN
 ```
 
-`kind`（`p2p` 或 `onebot`）、`channel`、`instance`、`botName`、`transport` 都是必填，`channel` 不能重复。`secret` 与 `accessToken` 填的是宿主任凭服务里的引用名，不是密钥本身。
+`channel`、`instance`、`botName`、`transport` 必填，`channel` 不能重复。`kind` 默认 `p2p`；另一个内置是 `onebot`，第三方传输用 `x-[a-z0-9-]+` 的名字，最长 32 字符。`secret` 与 `accessToken` 填的是宿主任凭服务里的引用名，不是密钥本身。
 
 | 字段 | 默认值 | 作用 |
 | --- | --- | --- |
@@ -59,10 +59,12 @@ config:
 | `policy.budget.hardLimit` | `1` | 拒绝比例 |
 | `reply.default` | `auto` | 回合怎么答 |
 | `reply.byScope` | — | 按作用域 |
+| `reply.rules` | — | 有序覆盖规则 |
 | `turn.coalesceMs` | `0` | 合并窗口 |
 | `turn.maxBatch` | `10` | 每批条数 |
 | `turn.maxChars` | `8000` | 批次预算 |
 | `turn.context.messages` | `0` | 历史条数 |
+| `turn.context.chars` | `2000` | 上下文预算 |
 | `transport.history.group` | `false` | 读群历史 |
 | `transport.history.private` | `false` | 读私聊历史 |
 | `transport.fileFromUrl` | `false` | 用 url 发文件 |
