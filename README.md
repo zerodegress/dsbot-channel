@@ -19,10 +19,10 @@ Whether to speak at all is an explicit decision — `no_reply`, `decline`, the r
 ## Install
 
 ```sh
-dsh plugin --profile <your-profile> add dsbot-channel
+dsh plugin --profile PROFILE_NAME add dsbot-channel
 ```
 
-`<your-profile>` is the profile the bot runs under, for example `web` or `tui`.
+`PROFILE_NAME` is the profile the bot runs under, for example `web` or `tui`.
 
 To work on the plugin itself, install from a checkout instead:
 
