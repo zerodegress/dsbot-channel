@@ -484,7 +484,7 @@ describe('listener hand off', () => {
     open.push(listener)
     const reply = await post(listener.address().port, message())
     expect(reply.status).toBe(200)
-    expect(seen).toEqual([message()])
+    expect(seen).toEqual([{ ...message(), media: [] }])
   })
 
   test('never hands over a duplicate or an unauthenticated delivery', async () => {

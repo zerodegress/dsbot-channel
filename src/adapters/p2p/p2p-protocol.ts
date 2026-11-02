@@ -4,6 +4,7 @@ import { SecretRefError, resolvePeers } from './p2p-secrets.js'
 import type { DedupeTable } from './p2p-dedupe.js'
 import type { ChannelStats } from '../../channel-stats.js'
 import { EXCERPT_CHARS } from './p2p-mapping.js'
+import { MEDIA_TYPES } from '../../event-types.js'
 
 export const P2P_ROUTE = '/p2p/v1/message'
 
@@ -19,6 +20,10 @@ export const EVENT_ID_MAX = 256
 
 /** A chain root is an event id, so it gets the same room. */
 export const CHAIN_ID_MAX = 256
+
+export const MEDIA_MAX_ITEMS = 16
+export const MEDIA_URL_MAX = 2048
+export const MEDIA_TOTAL_MAX = 8 * 1024
 
 function isToken(text: string): boolean {
   for (const char of text) {
@@ -45,6 +50,7 @@ export interface P2PPayload {
   sender?: unknown
   instance?: unknown
   body?: unknown
+  media?: unknown
   sentAt?: unknown
   [key: string]: unknown
 }
@@ -63,6 +69,7 @@ export interface ParsedMessage {
   sender: string
   instance: string
   body: string
+  media: readonly (readonly [string, string])[]
   sentAt: number
   status?: typeof DECLINED
   reason?: string
@@ -77,7 +84,12 @@ export type Parsed =
 
 export function parseRequest(payload: P2PPayload, maxBodyBytes = MAX_BODY_BYTES): Parsed {
   const { eventId, to, sender, instance, body, sentAt } = payload
+  const parsed = parseMedia(payload.media)
+  if (!parsed.ok) return { ok: false, status: 400, reason: parsed.reason }
+  // An empty body is accepted only when the request carries media; a message with neither is refused.
+  const carriesMedia = parsed.value.length > 0
   for (const [name, value] of Object.entries({ eventId, to, sender, instance, body })) {
+    if (name === 'body' && carriesMedia && typeof value === 'string') continue
     if (typeof value !== 'string' || value.length === 0) return { ok: false, status: 400, reason: `${name} must be a non-empty string` }
   }
   if (typeof sentAt !== 'number' || !Number.isFinite(sentAt)) return { ok: false, status: 400, reason: 'sentAt must be a number' }
@@ -87,7 +99,7 @@ export function parseRequest(payload: P2PPayload, maxBodyBytes = MAX_BODY_BYTES)
   if (!isToken(sender as string)) {
     return { ok: false, status: 400, reason: 'sender must be a token: printable characters, no whitespace' }
   }
-  const text = body as string
+  const text = typeof body === 'string' ? body : ''
   if (Buffer.byteLength(text, 'utf8') > maxBodyBytes) return { ok: false, status: 413, reason: 'body exceeds the size limit' }
   const status = payload.status
   if (status !== undefined && status !== DECLINED) {
@@ -130,6 +142,7 @@ export function parseRequest(payload: P2PPayload, maxBodyBytes = MAX_BODY_BYTES)
       sender: sender as string,
       instance: instance as string,
       body: text,
+      media: parsed.value,
       sentAt,
       ...(status === undefined ? {} : { status }),
       ...(reason === undefined ? {} : { reason }),
@@ -138,6 +151,27 @@ export function parseRequest(payload: P2PPayload, maxBodyBytes = MAX_BODY_BYTES)
       ...(inReplyToExcerpt === undefined ? {} : { inReplyToExcerpt }),
     },
   }
+}
+
+/** Media is a list of [type, url] pairs; anything else is refused whole, never trimmed. */
+function parseMedia(raw: unknown): { ok: true; value: readonly (readonly [string, string])[] } | { ok: false; reason: string } {
+  if (raw === undefined) return { ok: true, value: [] }
+  if (!Array.isArray(raw)) return { ok: false, reason: 'media must be an array of [type, url] pairs' }
+  if (raw.length > MEDIA_MAX_ITEMS) return { ok: false, reason: `media carries at most ${MEDIA_MAX_ITEMS} items` }
+  const value: [string, string][] = []
+  for (const item of raw) {
+    if (!Array.isArray(item) || item.length !== 2) return { ok: false, reason: 'each media item must be a [type, url] pair' }
+    const [type, url] = item as [unknown, unknown]
+    if (typeof type !== 'string' || !(MEDIA_TYPES as readonly string[]).includes(type)) {
+      return { ok: false, reason: `media type must be one of ${MEDIA_TYPES.join(', ')}` }
+    }
+    if (typeof url !== 'string' || url.length === 0 || url.length > MEDIA_URL_MAX || !/^https?:\/\/[^\s]+$/i.test(url)) {
+      return { ok: false, reason: `media url must be an http(s) address of at most ${MEDIA_URL_MAX} characters` }
+    }
+    value.push([type, url])
+  }
+  if (JSON.stringify(value).length > MEDIA_TOTAL_MAX) return { ok: false, reason: `media must fit in ${MEDIA_TOTAL_MAX} bytes` }
+  return { ok: true, value }
 }
 
 export interface HandleInput {

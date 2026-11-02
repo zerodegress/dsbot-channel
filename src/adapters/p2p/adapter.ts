@@ -1,5 +1,5 @@
 import type { AdapterStatus } from '../../adapter-status.js'
-import { NO_MEDIA, buildListenerHealth, buildStatus } from '../../adapter-status.js'
+import { buildListenerHealth, buildStatus } from '../../adapter-status.js'
 import type { ChannelSnapshot } from '../../channel-stats.js'
 import { countersOf } from '../../channel-stats.js'
 import { ChannelStats } from '../../channel-stats.js'
@@ -75,9 +75,9 @@ export class P2PAdapter implements ChannelAdapter {
   readonly guidance = { peer: PEER_GUIDANCE, group: GROUP_GUIDANCE }
   readonly capabilities = {
     text: true,
-    image: NO_MEDIA,
-    file: NO_MEDIA,
-    voice: NO_MEDIA,
+    image: { in: true, out: true, fromUrl: true, fromHandle: false },
+    file: { in: true, out: true, fromUrl: true, fromHandle: false },
+    voice: { in: true, out: true, fromUrl: true, fromHandle: false },
     recall: false,
     history: false,
     mention: false,
@@ -203,12 +203,29 @@ export class P2PAdapter implements ChannelAdapter {
       ...(peer.url === undefined ? {} : { url: peer.url }),
       ...(peer.host === undefined ? {} : { host: peer.host }),
     }
+    const offered = input.media ?? []
+    const usable = offered.filter((item) => item.url !== null && /^https?:\/\/[^\s]+$/i.test(item.url))
+    if (offered.length > 0 && usable.length < offered.length) {
+      this.#options.warn?.(
+        `dsbot-channel: dropped ${offered.length - usable.length} media item(s) from ${input.eventId}: p2p carries http(s) urls only`,
+      )
+    }
+    if (usable.length === 0 && input.body.length === 0) {
+      return {
+        ok: false,
+        code: 'no_url',
+        retryable: false,
+        reason: 'every media item was dropped and the body is empty, so there is nothing a peer could accept',
+      }
+    }
+    const media = usable.map((item) => [item.type, item.url as string] as const)
     const result = await sendToPeer({
       peer: target,
       ...(input.chainId === undefined ? {} : { chainId: input.chainId }),
       credentials: this.#credentials(ports),
       to,
       body: input.body,
+      ...(media.length === 0 ? {} : { media }),
       eventId: input.eventId,
       sender: input.sender,
       instance: this.#config.instance,
