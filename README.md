@@ -65,11 +65,11 @@ Set `policy.requireMention: true` to refuse group messages that mention neither 
 
 A message a bot sends in a group follows `policy.groupBots`: `whenMentioned` (the default) answers it only when it names this bot or everyone, `silent` never answers one, and `answer` treats it like a person. That check runs before `requireMention`, and a transport that cannot tell mentions apart falls back to `silent`.
 
-OneBot 11 is built in. It receives events on `listen.path`, which defaults to `/onebot/event`; media is received but not sent in this version.
+OneBot 11 is built in. It receives events on `listen.path`, which defaults to `/onebot/event`; media travels both ways through the implementation's api.
 
 `read_history` reads earlier messages from a transport that can page them. OneBot opens it per address kind with `transport.history: { group: true, private: true }`, both off by default because neither API belongs to OneBot 11; a page answers `records` and, when more remain, `next` — the cursor to pass back as `before`.
 
-`send_file` really sends on OneBot: `upload_group_file` or `upload_private_file`, one call per file, with `name` required because the receiver needs one. A file travels as a url only when `transport.fileFromUrl: true` says the implementation takes one — most only accept a path on their own host — and the adapter never downloads it.
+`send_file` really sends on OneBot: `upload_group_file` or `upload_private_file`, one call per file, with `name` required because the receiver needs one. A file travels as a url only when `transport.fileFromUrl: true` says the implementation takes one — most only accept a path on their own host — and the adapter never downloads it. The built-in p2p link carries a url only, so `send_file` answers `unsupported_capability` there; send the link in a message instead.
 
 ```yaml
 config:

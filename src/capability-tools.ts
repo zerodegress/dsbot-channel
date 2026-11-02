@@ -85,10 +85,16 @@ export class CapabilityGate {
     const channel = addressed.channel.channel
     const capability = this.#capabilities(channel)?.file
     if (capability?.out !== true) {
-      return fail(UNSUPPORTED_CAPABILITY, `channel "${channel}" cannot send files: capabilities.file.out is false`)
+      return fail(
+        UNSUPPORTED_CAPABILITY,
+        `channel "${channel}" cannot send files: capabilities.file.out is false; put a link in a text message instead`,
+      )
     }
     if (capability.fromUrl !== true) {
-      return fail(UNSUPPORTED_CAPABILITY, `channel "${channel}" cannot send files: capabilities.file.fromUrl is false`)
+      return fail(
+        UNSUPPORTED_CAPABILITY,
+        `channel "${channel}" cannot send files: capabilities.file.fromUrl is false; put a link in a text message instead`,
+      )
     }
     if (this.#push === undefined) {
       return fail(UNSUPPORTED_CAPABILITY, `channel "${channel}" has no sender wired in this build`)
@@ -241,7 +247,7 @@ export function createSendFile(gate: CapabilityGate) {
   return defineTool({
     name: 'send_file',
     description:
-      'Send a file to an address on one channel: the channel fetches an http(s) url, and the receiver sees it under `name`.',
+      'Send a file to an address on one channel: the url is handed to the platform, and the receiver sees it under `name`.',
     parameters: {
       url: { type: 'string', required: true, description: 'An http(s) address the channel fetches; a local path is not readable by a transport' },
       name: { type: 'string', description: 'The file name the receiver sees; a call without one is refused' },
