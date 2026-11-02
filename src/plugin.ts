@@ -289,6 +289,12 @@ function checkPolicy(adapter: AdapterConfig, index: number): void {
       path('budget.capacity'),
     )
   }
+  if (budget?.hardLimit !== undefined && (!Number.isFinite(budget.hardLimit) || budget.hardLimit <= 0 || budget.hardLimit > 1)) {
+    throw new ConfigError(
+      `budget hardLimit must be above 0 and at most 1: ${budget.hardLimit}`,
+      path('budget.hardLimit'),
+    )
+  }
 }
 
 /** One bot speaks with one voice: every adapter answering for it hands core the same guidance. */

@@ -47,4 +47,32 @@ describe('an adapter builds its ledger from configuration', () => {
     now += 61 * 60_000
     expect(ledger.check('bot-a', 'p2p:peer-a').aggregate).toBe('normal')
   })
+
+  test('a decimal ratio trips exactly on the point it names', () => {
+    const ledger = createLedger({ capacity: 100, hardLimit: 0.3 })
+    spend(ledger, 29)
+    expect(ledger.check('bot-a', 'p2p:peer-a').aggregate).toBe('normal')
+    spend(ledger, 1)
+    expect(ledger.check('bot-a', 'p2p:peer-a').aggregate).toBe('hard')
+    spend(ledger, 1)
+    expect(ledger.check('bot-a', 'p2p:peer-a').aggregate).toBe('hard')
+  })
+
+  test('a ratio between two points trips on the first point above it', () => {
+    const ledger = createLedger({ capacity: 10, hardLimit: 0.25 })
+    spend(ledger, 2)
+    expect(ledger.check('bot-a', 'p2p:peer-a').aggregate).toBe('normal')
+    spend(ledger, 1)
+    expect(ledger.check('bot-a', 'p2p:peer-a').aggregate).toBe('hard')
+  })
+
+  test('a released lock comes back at the point the release ratio names', () => {
+    let now = 0
+    const ledger = createLedger({ capacity: 100, hardLimit: 0.3 }, { now: () => now })
+    spend(ledger, 30)
+    expect(ledger.check('bot-a', 'p2p:peer-a').aggregate).toBe('hard')
+    ledger.setUsage({ global: 28, 'bot:bot-a': 28, 'p2p:peer-a': 28 })
+    now = 61_000
+    expect(ledger.check('bot-a', 'p2p:peer-a').aggregate).toBe('normal')
+  })
 })
