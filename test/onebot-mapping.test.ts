@@ -117,12 +117,11 @@ describe('what an onebot event becomes', () => {
       (line) => drops.push(line),
     )!
     expect(good.body.media).toEqual([
-      { type: 'image', url: 'https://example.test/a.png', handle: 'ab12.image' },
-      { type: 'voice', url: null, handle: 'ab12.amr' },
-      { type: 'file', url: 'https://example.test/b.bin', handle: null },
+      { type: 'image', url: 'https://example.test/a.png' },
+      { type: 'file', url: 'https://example.test/b.bin' },
     ])
     expect(drops).toHaveLength(1)
-    expect(drops[0]).toMatch(/dropped 1 onebot media/)
+    expect(drops[0]).toMatch(/dropped 2 onebot media reference\(s\) .* that carried no url/)
   })
 
   test('an event for another account is dropped with a warning', () => {

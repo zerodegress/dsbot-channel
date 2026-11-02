@@ -19,40 +19,24 @@ const base = {
 const media = (one: unknown) => ({ ...base, body: { ...base.body, media: [one] } }) as EventInput
 
 describe('a media reference the core carries', () => {
-  test('a url alone is enough', () => {
-    expect(buildEvent(media({ type: 'image', url: 'https://example.test/a.png', handle: null })).body.media[0]).toEqual({
+  test('a url is what a reference carries', () => {
+    expect(buildEvent(media({ type: 'image', url: 'https://example.test/a.png' })).body.media[0]).toEqual({
       type: 'image',
       url: 'https://example.test/a.png',
-      handle: null,
     })
   })
 
-  test('a platform handle alone is enough and is carried untouched', () => {
-    const handle = 'onebot:image:abc-123'
-    expect(buildEvent(media({ type: 'image', url: null, handle })).body.media[0]).toEqual({
-      type: 'image',
-      url: null,
-      handle,
-    })
-  })
-
-  test('a reference with neither is refused', () => {
-    expect(() => buildEvent(media({ type: 'image', url: null, handle: null }))).toThrow(/needs a url or a handle/)
-    expect(() => buildEvent(media({ type: 'image' }))).toThrow(/needs a url or a handle/)
-  })
-
-  test('a handle must be one bounded line', () => {
-    for (const bad of ['', 'two words', 'a\nb', 'a\tb', 'x'.repeat(257)]) {
-      expect(() => buildEvent(media({ type: 'image', url: null, handle: bad }))).toThrow(/media\[0\]/)
-    }
+  test('a reference without a url is refused', () => {
+    expect(() => buildEvent(media({ type: 'image' }))).toThrow(/media\[0\] needs a non-empty url/)
+    expect(() => buildEvent(media({ type: 'image', url: null }))).toThrow(/needs a non-empty url/)
   })
 
   test('a url that is present but empty is refused', () => {
-    expect(() => buildEvent(media({ type: 'image', url: '', handle: null }))).toThrow(/url must be a non-empty string/)
+    expect(() => buildEvent(media({ type: 'image', url: '' }))).toThrow(/needs a non-empty url/)
   })
 
   test('the media type stays a closed set', () => {
-    expect(() => buildEvent(media({ type: 'video', url: 'u', handle: null }))).toThrow(/type must be one of/)
+    expect(() => buildEvent(media({ type: 'video', url: 'u' }))).toThrow(/type must be one of/)
   })
 })
 

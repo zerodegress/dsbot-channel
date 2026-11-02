@@ -9,7 +9,7 @@ export function eventKey(instance: string, platformMessageId: string): string {
 }
 
 function normalizeMedia(media: readonly MediaRef[]): string {
-  return JSON.stringify(media.map((item) => [item.type, item.url ?? '', item.handle ?? '']))
+  return JSON.stringify(media.map((item) => [item.type, item.url]))
 }
 
 /** Hashes body text and media references, never the platform message id. */

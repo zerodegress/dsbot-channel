@@ -31,16 +31,10 @@ export interface Author {
 export const MEDIA_TYPES = ['image', 'file', 'voice'] as const
 export type MediaType = (typeof MEDIA_TYPES)[number]
 
-/** Longest platform handle a media reference may carry; the adapter interprets it. */
-export const MEDIA_HANDLE_MAX = 256
-
-/** A media reference is either addressable (a url) or named by the transport (a handle), never neither. */
+/** A media reference is what core and a reader can address: a url, never a transport's own token. */
 export interface MediaRef {
   type: MediaType
-  /** A public address, when the transport has one to hand out. */
-  url: string | null
-  /** The adapter's own opaque token; core carries it and never parses it. */
-  handle: string | null
+  url: string
 }
 
 export interface Body {
