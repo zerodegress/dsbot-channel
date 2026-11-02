@@ -75,6 +75,7 @@ describe('the turn block a profile may declare', () => {
     ['a batch of zero', { maxBatch: 0 }, /turn\.maxBatch/],
     ['a batch above the bound', { maxBatch: 51 }, /turn\.maxBatch/],
     ['too few characters', { maxChars: 50 }, /turn\.maxChars/],
+    ['a clock the profile cannot set', { now: 1 }, /unknown config fields: now/],
   ])('refuses %s at mount', async (_label, turn, pattern) => {
     await expect(mount(turn)).rejects.toThrow(pattern)
   })

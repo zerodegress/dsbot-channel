@@ -774,7 +774,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
               throw new Error(`a batch mixes sessions: "${first.sessionKey}" and "${one.sessionKey}"`)
             }
           }
-          setTimeout(() => {
+          setTimer(() => {
             void runTurn(runtime, first, sessionId, batch.slice(1)).catch((error: unknown) => {
               turns.failed()
               turns.close({
@@ -788,10 +788,6 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
               warn(`dsbot-channel: peer turn for ${first.replyTarget} failed: ${String(error)}`)
             })
           }, 0)
-        }
-        if (turn.coalesceMs === 0) {
-          runBatch([message])
-          return { ok: true }
         }
         windows.offer(
           `${adapter.botName}|${message.sessionKey}`,

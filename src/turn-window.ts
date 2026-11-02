@@ -33,10 +33,10 @@ export class TurnWindows<T> {
   }
 
   /** Adds one message; returns the batch to answer now, or undefined while the window stays open. */
-  offer(key: string, item: { eventKey: string; chars: number; value: T }, flush: (batch: readonly T[]) => void): readonly T[] | undefined {
+  offer(key: string, item: { eventKey: string; chars: number; value: T }, flush: (batch: readonly T[]) => void): void {
     if (this.#options.windowMs === 0) {
       flush([item.value])
-      return [item.value]
+      return
     }
     let held = this.#held.get(key)
     if (held === undefined) {
@@ -49,10 +49,9 @@ export class TurnWindows<T> {
       held.timer = undefined
       flush(ready.map((one) => one.value))
       this.#open(key, held, flush)
-      return ready.map((one) => one.value)
+      return
     }
     this.#open(key, held, flush)
-    return undefined
   }
 
   /** Drops every queue and timer, for a channel that is stopping. */

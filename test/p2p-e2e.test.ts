@@ -706,6 +706,7 @@ describe('closing a peer conversation', () => {
     posts: Captured[]
     prompted: string[]
     port: number
+    ctx: Context
     close: () => void
   }
 
@@ -713,7 +714,12 @@ describe('closing a peer conversation', () => {
     first: 'no_reply' | 'decline' | 'none',
     later: 'no_reply' | 'decline' | 'none' = first,
     host?: string,
-    options: { reason?: string; relayLimit?: number; budget?: Record<string, unknown> } = {},
+    options: {
+      reason?: string
+      relayLimit?: number
+      budget?: Record<string, unknown>
+      turn?: { coalesceMs: number; maxBatch?: number; maxChars?: number }
+    } = {},
   ): Promise<Mounted> {
     const posts: Captured[] = []
     const capture = createServer((request, response) => {
@@ -780,6 +786,7 @@ describe('closing a peer conversation', () => {
     })
     await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
+      ...(options.turn === undefined ? {} : { turn: options.turn }),
       adapters: [
         {
 channel: 'p2p:b',
@@ -808,7 +815,7 @@ transport: {
       ],
     })
     forks.push(fork)
-    return { posts, prompted, port, close: () => capture.close() }
+    return { posts, prompted, port, ctx, close: () => capture.close() }
   }
 
   test('no_reply leaves the peer with nothing at all', async () => {
@@ -941,6 +948,27 @@ transport: {
 
       expect(mounted.prompted[0]).toContain('call no_reply')
       expect(mounted.prompted[1]).not.toContain('call no_reply')
+    } finally {
+      mounted.close()
+    }
+  })
+
+  test('a quiet batch still records how many messages it answered', async () => {
+    const mounted = await mount('no_reply', 'no_reply', undefined, { turn: { coalesceMs: 1500 } })
+    try {
+      await send(mounted.port, 'evt-1', 'first')
+      await send(mounted.port, 'evt-2', 'second')
+      const turns = mounted.ctx.get('dsbot-channel.turns') as {
+        snapshot(): { recent: { outcome: string; merged: number; mergedKeys: string[] }[] }
+      }
+      const deadline = Date.now() + 8000
+      while (!turns.snapshot().recent.some((one) => one.outcome === 'ended')) {
+        if (Date.now() > deadline) throw new Error('the quiet batch never closed')
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      }
+      const record = turns.snapshot().recent.find((one) => one.outcome === 'ended')!
+      expect(record.merged).toBe(2)
+      expect(record.mergedKeys).toHaveLength(2)
     } finally {
       mounted.close()
     }
