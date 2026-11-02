@@ -66,6 +66,14 @@ describe('an adapter builds its ledger from configuration', () => {
     expect(ledger.check('bot-a', 'p2p:peer-a').aggregate).toBe('hard')
   })
 
+  test('a limit whose product rounds up still trips on the exact point', () => {
+    const ledger = createLedger({ capacity: 50, hardLimit: 0.28 })
+    spend(ledger, 13)
+    expect(ledger.check('bot-a', 'p2p:peer-a').aggregate).toBe('normal')
+    spend(ledger, 1)
+    expect(ledger.check('bot-a', 'p2p:peer-a').aggregate).toBe('hard')
+  })
+
   test('a released lock comes back at the point the release ratio names', () => {
     let now = 0
     const ledger = createLedger({ capacity: 100, hardLimit: 0.3 }, { now: () => now })
