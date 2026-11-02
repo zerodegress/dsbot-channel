@@ -18,7 +18,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - A p2p message may now carry an empty `body` when it also carries media: a media-only message has no words to send, and the receiver used to refuse it with `400 body must be a non-empty string`. A request with neither text nor media is still refused.
-
 - A context owns its adapter registry: `dsbot-channel/registry` provides it, an adapter plugin injects it, and the gateway reads it, so two copies of the package no longer each keep a module-level map that the other cannot see. The profile mounts `dsbot-channel/registry`, then the adapters, then `dsbot-channel`; a missing registry now fails the mount and names the plugin to add, and an adapter mounted after the gateway fails with the kinds the gateway could see.
 - `CapabilitySet` answers media in four parts — `{ in, out, fromUrl, fromHandle }` for `image`, `file` and `voice` — instead of one boolean, and a media tool asks both whether the transport can send the type and whether it can do so from the source it was given. OneBot declares images and files in every direction and voice inbound only; p2p declares no media. The owner stays out of the content hash, so the same media seen from two instances is still the same content.
 - `LimitState.byScope` is now `byKey`: the field maps ledger keys (`global`, `bot:<id>`, and the adapter's session key) to levels, while `reply.byScope` maps a scope (`c2c`/`group`/`p2p`) to a reply mode. A caller that read the old name no longer compiles.
