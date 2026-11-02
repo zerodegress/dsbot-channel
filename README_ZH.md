@@ -2,7 +2,7 @@
 
 [English](./README.md) | 中文
 
-[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness) [![](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
+[![](https://img.shields.io/npm/v/dsbot-channel)](https://www.npmjs.com/package/dsbot-channel) [![](https://img.shields.io/npm/v/@deepseek-ai/dsh)](https://www.npmjs.com/package/@deepseek-ai/dsh) [![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness) [![](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
 ds-bot 的消息网关：多个外部平台的事件进到同一个 Bot，回答投回它来的那个会话。
 
