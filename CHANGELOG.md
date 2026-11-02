@@ -35,5 +35,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A reply carries its own `reply:<uuid>` id and names the message it answers in `inReplyTo`; the chain root travels as a signed `chainId`, so an event id no longer grows with every hop and a closed chain stays closed.
 - A peer on the previous protocol is refused with `401` and the distinct code `protocol_mismatch`, which the transport also counts with the time it last happened.
 - A profile whose adapters answer for one bot with different pipelines or rules is refused at load time, instead of silently dropping every message on one adapter.
-- Signature verification now covers `eventId`, `sentAt` and `body`, and signatures are base64-encoded as the wire protocol specifies.
+- A signed request covers the whole envelope, not only the body: `eventId`, `chainId`, `to`, `sender`, `instance`, `body` and `sentAt` always, plus `status`, `reason`, `final`, `inReplyTo` and `inReplyToExcerpt` when present. Signatures are base64-encoded as the wire protocol specifies.
 - Stale in-flight reservations are reclaimed after their TTL, so a crashed delivery no longer blocks the same `eventId`.
