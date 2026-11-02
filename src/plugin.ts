@@ -40,7 +40,7 @@ import type { BotScope } from './session-pipeline.js'
 import { SessionPipelines } from './session-pipeline.js'
 import { TurnBilling } from './turn-billing.js'
 import { TurnStats } from './turn-stats.js'
-import { TurnQueue } from './turn-queue.js'
+import { TurnWindows } from './turn-window.js'
 import type { TurnOutcome } from './turn-stats.js'
 import { createWarn } from './warn.js'
 
@@ -529,7 +529,10 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   const chains = new ClosedChains()
   const injected = new InjectionLedger()
   const activeTurns = new Map<string, TurnRef>()
-  const queued = new Map<string, { queue: TurnQueue<InboundMessage>; timer: unknown }>()
+  const windows = new TurnWindows<InboundMessage>(
+    { now: clock, setTimer, clearTimer },
+    { limits: { maxBatch: turn.maxBatch, maxChars: turn.maxChars }, windowMs: turn.coalesceMs },
+  )
   const eventKeys = new KeyGuard()
   const chainKeys = new ChainGuard()
   const turns = new TurnStats()
@@ -674,10 +677,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   const reporting = new Set(channels.map((channel) => channel.adapter))
   const started: AdapterHandle[] = []
   ctx.effect(() => async () => {
-    for (const held of queued.values()) {
-      if (held.timer !== undefined) clearTimer(held.timer)
-    }
-    queued.clear()
+    windows.clear()
     await Promise.allSettled(started.map((handle) => handle.stop()))
     reporting.clear()
     started.length = 0
@@ -793,37 +793,11 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
           runBatch([message])
           return { ok: true }
         }
-        const queueKey = `${adapter.botName}|${message.sessionKey}`
-        let held = queued.get(queueKey)
-        if (held === undefined) {
-          held = {
-            queue: new TurnQueue({ maxBatch: turn.maxBatch, maxChars: turn.maxChars }, turn.coalesceMs),
-            timer: undefined,
-          }
-          queued.set(queueKey, held)
-        }
-        const openWindow = (): void => {
-          if (held!.queue.pending === 0) return
-          if (held!.timer !== undefined) return
-          held!.timer = setTimer(() => {
-            held!.timer = undefined
-            const due = held!.queue.due(clock())
-            if (due !== undefined) runBatch(due.map((one) => one.value))
-            openWindow()
-          }, turn.coalesceMs)
-        }
-        const ready = held.queue.push(
+        windows.offer(
+          `${adapter.botName}|${message.sessionKey}`,
           { eventKey: message.eventKey, chars: message.body.text.length, value: message },
-          clock(),
+          (batch) => runBatch(batch),
         )
-        if (ready !== undefined) {
-          if (held.timer !== undefined) clearTimer(held.timer)
-          held.timer = undefined
-          runBatch(ready.map((one) => one.value))
-          openWindow()
-          return { ok: true }
-        }
-        openWindow()
         return { ok: true }
       }
       started.push(await transport.start({ onMessage, resolveSecret }))
