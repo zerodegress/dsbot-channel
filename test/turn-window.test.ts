@@ -126,7 +126,7 @@ async function harness(turn: { coalesceMs: number; maxBatch?: number; maxChars?:
 
 describe('the window a batch waits in', () => {
   test('stopping clears the window, so nothing fires afterwards', async () => {
-    const { fork, deliver, timers, prompts } = await harness({ coalesceMs: 100 })
+    const { fork, deliver, timers, prompts, warnings } = await harness({ coalesceMs: 100 })
     await deliver('evt-1')
     expect(timers.size).toBe(1)
     await fork.dispose()
@@ -134,6 +134,7 @@ describe('the window a batch waits in', () => {
     await deliver('evt-2').catch(() => undefined)
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(prompts()).toBe(0)
+    expect(warnings.filter((line) => line.includes('failed') || line.includes('inactive context'))).toEqual([])
   })
 })
 
