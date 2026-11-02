@@ -1,7 +1,7 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { CapabilitySet } from './adapter-status.js'
 import type { MediaType } from './event-types.js'
-import type { PushCode, PushRouter } from './push-tool.js'
+import type { PushCode, PushRequest, PushResult, PushRouter } from './push-tool.js'
 
 /** A tool that needs a capability answers this instead of pretending the channel can carry it. */
 export const UNSUPPORTED_CAPABILITY = 'unsupported_capability'
@@ -17,6 +17,8 @@ export interface CapabilityFailure {
 
 export interface CapabilityGateOptions {
   router: PushRouter
+  /** Delivers through the same router a text push uses; absent means no sender is wired. */
+  push?: ((request: PushRequest, sessionId?: string) => Promise<PushResult>) | undefined
   /** The static capability set the adapter declared at mount time, never a sampled status. */
   capabilities: (channel: string) => CapabilitySet | undefined
 }
@@ -29,10 +31,43 @@ function fail(code: CapabilityCode, reason: string): CapabilityFailure {
 export class CapabilityGate {
   readonly #router: PushRouter
   readonly #capabilities: CapabilityGateOptions['capabilities']
+  readonly #push: CapabilityGateOptions['push']
 
   constructor(options: CapabilityGateOptions) {
     this.#router = options.router
     this.#capabilities = options.capabilities
+    this.#push = options.push
+  }
+
+  /** Sends one image from a url through the push router; the caption rides the text field. */
+  async sendImage(
+    request: { url: string; caption?: string | undefined; channel?: string | undefined; target?: string | undefined; idempotencyKey?: string | undefined },
+    sessionId: string | undefined,
+  ): Promise<CapabilityFailure | { ok: true; messageId: string }> {
+    const addressed = this.#router.resolve(request, sessionId)
+    if ('ok' in addressed) return addressed
+    const channel = addressed.channel.channel
+    const capability = this.#capabilities(channel)?.image
+    if (capability?.out !== true) {
+      return fail(UNSUPPORTED_CAPABILITY, `channel "${channel}" cannot send images: capabilities.image.out is false`)
+    }
+    if (capability.fromUrl !== true) {
+      return fail(UNSUPPORTED_CAPABILITY, `channel "${channel}" cannot send images: capabilities.image.fromUrl is false`)
+    }
+    if (this.#push === undefined) {
+      return fail(UNSUPPORTED_CAPABILITY, `channel "${channel}" has no sender wired in this build`)
+    }
+    const sent = await this.#push(
+      {
+        text: request.caption ?? '',
+        channel,
+        target: addressed.target,
+        ...(request.idempotencyKey === undefined ? {} : { idempotencyKey: request.idempotencyKey }),
+        media: [{ type: 'image', url: request.url, handle: null }],
+      },
+      sessionId,
+    )
+    return sent.ok ? { ok: true, messageId: sent.messageId } : sent
   }
 
   refuse(
@@ -110,7 +145,7 @@ export function createSendImage(gate: CapabilityGate) {
   return defineTool({
     name: 'send_image',
     description:
-      'Send an image to an address on one channel. This build declares no image sender, so a call answers why it cannot.',
+      'Send an image from an http(s) url to an address on one channel. A caption rides the same text field a message uses.',
     parameters: {
       url: { type: 'string', required: true, description: 'An http(s) address the channel fetches; a local path is not readable by a transport' },
       caption: { type: 'string', description: 'One optional line to send beside the image' },
@@ -128,9 +163,7 @@ export function createSendImage(gate: CapabilityGate) {
     ): Promise<string> {
       const problem = urlProblem(args.url)
       if (problem !== undefined) return JSON.stringify(fail('unsupported_argument', problem))
-      return JSON.stringify(
-        gate.refuseMedia(args, exec?.agent?.id, 'image', 'url', 'send images', 'put a link in a text message instead'),
-      )
+      return JSON.stringify(await gate.sendImage(args, exec?.agent?.id))
     },
   })
 }
