@@ -448,3 +448,40 @@ describe('sentAt freshness', () => {
     expect((result as { body: { code?: string } }).body.code).toBeUndefined()
   })
 })
+
+describe('a delivery that carries media', () => {
+  const media = [['image', 'https://example.test/a.png'] as const]
+
+  test('is accepted, and a body is allowed to be empty when media rides along', async () => {
+    const payload = { ...request(), body: '', media }
+    const result = await handleMessage({
+      config,
+      table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
+      auth: signedAuth(payload),
+      payload,
+    })
+    expect(result).toMatchObject({ ok: true, status: 200 })
+  })
+
+  test('an empty body without media is still refused', async () => {
+    const payload = { ...request(), body: '' }
+    const result = await handleMessage({
+      config,
+      table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
+      auth: signedAuth(payload),
+      payload,
+    })
+    expect(result).toMatchObject({ ok: false, status: 400 })
+  })
+
+  test('the signature covers the media list', async () => {
+    const payload = { ...request(), media }
+    const result = await handleMessage({
+      config,
+      table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
+      auth: signedAuth({ ...request(), media: [['image', 'https://example.test/b.png']] }),
+      payload,
+    })
+    expect(result).toMatchObject({ ok: false, status: 401 })
+  })
+})
