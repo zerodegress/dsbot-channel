@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
 import { registerAdapter } from '../src/adapter-registry.js'
-import { buildListenerHealth, buildStatus } from '../src/adapter-status.js'
+import { buildListenerHealth, buildStatus, NO_MEDIA } from '../src/adapter-status.js'
 import type {
   AdapterPorts,
   ChannelAdapter,
@@ -42,9 +42,9 @@ class GroupAdapter implements ChannelAdapter {
   readonly guidance = { peer: 'peer guidance', group: 'group guidance' }
   readonly capabilities = {
     text: true,
-    image: false,
-    file: false,
-    voice: false,
+    image: NO_MEDIA,
+    file: NO_MEDIA,
+    voice: NO_MEDIA,
     recall: false,
     history: false,
     mention: true,

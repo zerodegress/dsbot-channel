@@ -19,24 +19,67 @@ const base = {
 const media = (one: unknown) => ({ ...base, body: { ...base.body, media: [one] } }) as EventInput
 
 describe('a media reference the core carries', () => {
-  test('a url is what a reference carries', () => {
-    expect(buildEvent(media({ type: 'image', url: 'https://example.test/a.png' })).body.media[0]).toEqual({
+  const owner = { kind: 'onebot', instance: 'onebot:10001' }
+
+  test('a url is kept with the owner of the event that carried it', () => {
+    expect(buildEvent(media({ type: 'image', url: 'https://example.test/a.png', handle: null })).body.media[0]).toEqual({
       type: 'image',
       url: 'https://example.test/a.png',
+      handle: null,
+      owner,
     })
   })
 
-  test('a reference without a url is refused', () => {
-    expect(() => buildEvent(media({ type: 'image' }))).toThrow(/media\[0\] needs a non-empty url/)
-    expect(() => buildEvent(media({ type: 'image', url: null }))).toThrow(/needs a non-empty url/)
+  test('a handle alone is enough when it is a token', () => {
+    expect(buildEvent(media({ type: 'file', url: null, handle: 'ab12.bin' })).body.media[0]).toEqual({
+      type: 'file',
+      url: null,
+      handle: 'ab12.bin',
+      owner,
+    })
+  })
+
+  test('the owner is stamped by core, whatever the adapter passed', () => {
+    const built = buildEvent(
+      media({ type: 'image', url: 'https://example.test/a.png', handle: null, owner: { kind: 'p2p', instance: 'forged' } }),
+    )
+    expect(built.body.media[0]?.owner).toEqual(owner)
+  })
+
+  test('a reference with neither a url nor a handle is refused', () => {
+    expect(() => buildEvent(media({ type: 'image' }))).toThrow(/media\[0\] needs a url or a handle/)
+    expect(() => buildEvent(media({ type: 'image', url: null, handle: null }))).toThrow(/needs a url or a handle/)
   })
 
   test('a url that is present but empty is refused', () => {
-    expect(() => buildEvent(media({ type: 'image', url: '' }))).toThrow(/needs a non-empty url/)
+    expect(() => buildEvent(media({ type: 'image', url: '', handle: null }))).toThrow(
+      /url must be a non-empty string or null/,
+    )
+  })
+
+  test('a handle core cannot read drops that item, not the message', () => {
+    for (const handle of ['', 'two words', 'x'.repeat(257), 'line\nbreak']) {
+      const built = buildEvent({
+        ...base,
+        body: { ...base.body, media: [{ type: 'image', url: null, handle }] },
+      } as EventInput)
+      expect(built.body.media).toEqual([])
+    }
+  })
+
+  test('the same media from two instances hashes the same, because the owner is not content', () => {
+    const one = buildEvent(media({ type: 'image', url: 'https://example.test/a.png', handle: null }))
+    const other = buildEvent({
+      ...base,
+      source: { ...base.source, instance: 'onebot:20002' },
+      body: { ...base.body, media: [{ type: 'image', url: 'https://example.test/a.png', handle: null }] },
+    } as EventInput)
+    expect(other.body.media[0]?.owner.instance).toBe('onebot:20002')
+    expect(other.meta.derived.contentHash).toBe(one.meta.derived.contentHash)
   })
 
   test('the media type stays a closed set', () => {
-    expect(() => buildEvent(media({ type: 'video', url: 'u' }))).toThrow(/type must be one of/)
+    expect(() => buildEvent(media({ type: 'video', url: 'u', handle: null }))).toThrow(/type must be one of/)
   })
 })
 

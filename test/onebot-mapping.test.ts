@@ -107,9 +107,9 @@ describe('what an onebot event becomes', () => {
       event({
         message: [
           { type: 'image', data: { url: 'https://example.test/a.png', file: 'ab12.image' } },
+          { type: 'image', data: { file: 'ab12.image' } },
           { type: 'record', data: { file: 'ab12.amr' } },
-          { type: 'file', data: { url: 'https://example.test/b.bin', file: 'bad name.bin' } },
-          { type: 'image', data: { file: 'with space.image' } },
+          { type: 'file', data: {} },
         ],
       }),
       config,
@@ -117,11 +117,12 @@ describe('what an onebot event becomes', () => {
       (line) => drops.push(line),
     )!
     expect(good.body.media).toEqual([
-      { type: 'image', url: 'https://example.test/a.png' },
-      { type: 'file', url: 'https://example.test/b.bin' },
+      { type: 'image', url: 'https://example.test/a.png', handle: 'ab12.image', owner: { kind: 'onebot', instance: 'inst-a' } },
+      { type: 'image', url: null, handle: 'ab12.image', owner: { kind: 'onebot', instance: 'inst-a' } },
+      { type: 'voice', url: null, handle: 'ab12.amr', owner: { kind: 'onebot', instance: 'inst-a' } },
     ])
     expect(drops).toHaveLength(1)
-    expect(drops[0]).toMatch(/dropped 2 onebot media reference\(s\) .* that carried no url/)
+    expect(drops[0]).toMatch(/dropped 1 onebot media reference\(s\) .* that carried neither a url nor a file name/)
   })
 
   test('an event for another account is dropped with a warning', () => {
