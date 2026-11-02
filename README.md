@@ -28,7 +28,7 @@ dsh plugin --profile web add dsbot-channel
 
 `web` can be replaced with any profile that has ds-bot installed.
 
-Alternatively, build and install from source:
+Alternatively, build from source:
 
 ```sh
 pnpm install
