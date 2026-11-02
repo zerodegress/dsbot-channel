@@ -23,3 +23,13 @@ export function takeBatch(pending: readonly PendingMessage[], limits: BatchLimit
   }
   return taken
 }
+
+/** Joins one batch into the text a turn reads, keeping each message's own line intact. */
+export function joinBatch(texts: readonly string[]): string {
+  return texts.join('\n')
+}
+
+/** The characters a batch contributes, separator included, so a cap stays a cap. */
+export function batchChars(texts: readonly string[]): number[] {
+  return texts.map((text) => text.length + 1)
+}
