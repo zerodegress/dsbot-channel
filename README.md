@@ -23,10 +23,10 @@ Install it from the dsh UI.
 You can also install it from a terminal:
 
 ```sh
-dsh plugin --profile web add dsbot-channel
+dsh plugin --profile ds-bot add dsbot-channel
 ```
 
-`web` can be replaced with any profile that has ds-bot installed.
+Run this against the profile that runs your bot.
 
 Alternatively, build from source:
 

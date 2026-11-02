@@ -23,10 +23,10 @@ ds-bot 的消息网关：多个外部平台的事件进到同一个 Bot，回答
 也可以在终端里直接装：
 
 ```sh
-dsh plugin --profile web add dsbot-channel
+dsh plugin --profile ds-bot add dsbot-channel
 ```
 
-`web` 可以换成其他安装了 ds-bot 的 profile。
+profile 写运行 Bot 的那个。
 
 亦可从源码构建：
 
