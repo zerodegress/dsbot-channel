@@ -39,7 +39,7 @@ class ObsAdapter implements ChannelAdapter {
     file: NO_MEDIA,
     voice: NO_MEDIA,
     recall: false,
-    history: false,
+    history: { group: false, private: false },
     mention: false,
     reply: true,
     stream: false,

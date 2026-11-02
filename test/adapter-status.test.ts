@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { buildListenerHealth, buildStatus, NO_MEDIA } from '../src/adapter-status.js'
 
-const capabilities = { text: true, image: NO_MEDIA, file: NO_MEDIA, voice: NO_MEDIA, recall: false, history: false, mention: true, reply: true, stream: false, stableMessageId: true }
+const capabilities = { text: true, image: NO_MEDIA, file: NO_MEDIA, voice: NO_MEDIA, recall: false, history: { group: false, private: false }, mention: true, reply: true, stream: false, stableMessageId: true }
 
 const base = {
   channel: 'p2p:self',

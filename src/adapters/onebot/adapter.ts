@@ -3,7 +3,7 @@ import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { AdapterStatus } from '../../adapter-status.js'
-import { buildListenerHealth, buildStatus } from '../../adapter-status.js'
+import { NO_HISTORY, buildListenerHealth, buildStatus } from '../../adapter-status.js'
 import { answerStatus } from '../shared/status-route.js'
 import type { ChannelSnapshot } from '../../channel-stats.js'
 import { ChannelStats, countersOf } from '../../channel-stats.js'
@@ -266,7 +266,7 @@ export class OneBotAdapter implements ChannelAdapter {
     file: { in: true, out: true, fromUrl: true, fromHandle: true },
     voice: { in: true, out: false, fromUrl: false, fromHandle: false },
     recall: false,
-    history: false,
+    history: NO_HISTORY,
     mention: true,
     reply: true,
     stream: false,

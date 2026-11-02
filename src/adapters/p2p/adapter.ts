@@ -1,5 +1,5 @@
 import type { AdapterStatus } from '../../adapter-status.js'
-import { buildListenerHealth, buildStatus } from '../../adapter-status.js'
+import { NO_HISTORY, buildListenerHealth, buildStatus } from '../../adapter-status.js'
 import type { ChannelSnapshot } from '../../channel-stats.js'
 import { countersOf } from '../../channel-stats.js'
 import { ChannelStats } from '../../channel-stats.js'
@@ -79,7 +79,7 @@ export class P2PAdapter implements ChannelAdapter {
     file: { in: true, out: true, fromUrl: true, fromHandle: false },
     voice: { in: true, out: true, fromUrl: true, fromHandle: false },
     recall: false,
-    history: false,
+    history: NO_HISTORY,
     mention: false,
     reply: true,
     stream: false,

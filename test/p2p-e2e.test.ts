@@ -658,7 +658,7 @@ transport: {
     expect(file.reason).toContain('no sender')
     expect(file.reason).toContain('p2p:a')
     expect(history).toMatchObject({ ok: false, code: 'unsupported_capability' })
-    expect(history.reason).toContain('capabilities.history is false')
+    expect(history.reason).toContain('capabilities.history.group and .private are both false')
     expect(history.reason).toContain('p2p:a')
   })
 

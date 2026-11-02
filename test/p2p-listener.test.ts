@@ -88,7 +88,7 @@ const statusFixture = () => ({
     sendFailures: {},
     lastFailure: null,
   },
-  capabilities: { text: true, image: NO_MEDIA, file: NO_MEDIA, voice: NO_MEDIA, recall: false, history: false, mention: false, reply: true, stream: false },
+  capabilities: { text: true, image: NO_MEDIA, file: NO_MEDIA, voice: NO_MEDIA, recall: false, history: { group: false, private: false }, mention: false, reply: true, stream: false },
   attributes: { stableMessageId: true },
   quota: { softLimit: 0, hardLimit: 0 },
   sampledAt: 1,

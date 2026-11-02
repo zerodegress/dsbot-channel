@@ -80,16 +80,26 @@ export class CapabilityGate {
     const addressed = this.#router.resolve(request, sessionId)
     if ('ok' in addressed) return addressed
     const channel = addressed.channel.channel
-    if (this.#capabilities(channel)?.[capability] !== true) {
-      return fail(
-        UNSUPPORTED_CAPABILITY,
-        `channel "${channel}" cannot ${action}: capabilities.${capability} is false; ${hint}`,
-      )
+    const declared = this.#declares(channel, capability)
+    if (!declared) {
+      const named =
+        capability === 'history'
+          ? 'capabilities.history.group and .private are both false'
+          : `capabilities.${capability} is false`
+      return fail(UNSUPPORTED_CAPABILITY, `channel "${channel}" cannot ${action}: ${named}; ${hint}`)
     }
     return fail(
       UNSUPPORTED_CAPABILITY,
       `channel "${channel}" declares capabilities.${capability}, but this build carries no sender for it yet`,
     )
+  }
+
+  /** History is two answers in one field, so it is asked separately. */
+  #declares(channel: string, capability: 'text' | 'mention' | 'reply' | 'recall' | 'history' | 'stream'): boolean {
+    const caps = this.#capabilities(channel)
+    if (caps === undefined) return false
+    if (capability === 'history') return caps.history.group || caps.history.private
+    return caps[capability] === true
   }
 
   /** A media call asks two questions: can this transport send the type, and from the source it was given. */

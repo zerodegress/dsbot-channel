@@ -29,7 +29,7 @@ function caps(over: Partial<CapabilitySet> = {}): CapabilitySet {
     file: NO_MEDIA,
     voice: NO_MEDIA,
     recall: false,
-    history: false,
+    history: { group: false, private: false },
     mention: false,
     reply: true,
     stream: false,
@@ -93,7 +93,7 @@ describe('a tool whose capability the channel never declared', () => {
     const { history } = harness(empty)
     const result = await call(history, { channel: 'onebot:main', target: 'group:1', limit: 20 })
     expect(result).toMatchObject({ ok: false, code: UNSUPPORTED_CAPABILITY })
-    expect(result.reason).toContain('capabilities.history is false')
+    expect(result.reason).toContain('capabilities.history.group and .private are both false')
     expect(result.reason).toContain('onebot:main')
   })
 
