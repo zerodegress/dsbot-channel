@@ -19,8 +19,10 @@ ds-bot 的消息网关：多个外部平台的事件进到同一个 Bot，回答
 ## 安装
 
 ```sh
-npm install dsbot-channel
+dsh plugin --profile <你的 profile> add dsbot-channel
 ```
+
+`<你的 profile>` 是 Bot 运行所用的 profile 名，例如 `web` 或 `tui`。
 
 要改插件本身，改用源码安装：
 
