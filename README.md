@@ -18,7 +18,7 @@ Whether to speak at all is an explicit decision — `no_reply`, `decline`, the r
 
 ## Install
 
-The simplest way is the plugin manager inside dsh: search for `dsbot-channel` there and install it.
+Install it from the dsh UI.
 
 You can also install it from a terminal:
 
