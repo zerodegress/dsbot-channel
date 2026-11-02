@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
-import { adapterFactory, checkAdapterKind } from './adapter-registry.js'
+import { REGISTRY_SERVICE, checkAdapterKind } from './adapter-registry.js'
+import type { AdapterRegistry } from './adapter-registry.js'
 import type { AdapterMount } from './adapter-registry.js'
 import { buildPipeline } from './build-pipeline.js'
 import type { PipelineDeps } from './build-pipeline.js'
@@ -409,6 +410,13 @@ function readConfig(raw: unknown): ChannelConfig {
 
 /** Starts only the adapters the profile declares; an empty list starts nothing. */
 export async function apply(ctx: Context, raw: unknown): Promise<void> {
+  const registry = ctx.get(REGISTRY_SERVICE) as AdapterRegistry | undefined
+  if (registry === undefined) {
+    throw new ConfigError(
+      `dsbot-channel found no adapter registry: mount "dsbot-channel/registry" before "dsbot-channel"`,
+      ['adapters'],
+    )
+  }
   const config = readConfig(raw)
   const warn = createWarn(ctx)
   const settings: PipelineSettings = {
@@ -419,7 +427,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   checkPipelineScopes(config, warn)
   const bots = botScopes(config)
   const pipelines = new SessionPipelines({ bots })
-  const channels = mountAdapters(config, settings, warn)
+  const channels = mountAdapters(config, settings, warn, registry)
   checkGuidance(channels)
   checkPrepareSupport(bots, channels)
   const reply = compileReply(config.reply)
@@ -793,7 +801,12 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
 }
 
 /** Creates every adapter the profile declares, before any of them opens a socket. */
-function mountAdapters(config: ChannelConfig, settings: AdapterCheckSettings, warn: (message: string) => void): MountedChannel[] {
+function mountAdapters(
+  config: ChannelConfig,
+  settings: AdapterCheckSettings,
+  warn: (message: string) => void,
+  registry: AdapterRegistry,
+): MountedChannel[] {
   const seen = new Set<string>()
   return config.adapters.map((adapter, index) => {
     if (!adapter.botName) throw new ConfigError('botName is required for each adapter', ['adapters', String(index)])
@@ -812,7 +825,7 @@ function mountAdapters(config: ChannelConfig, settings: AdapterCheckSettings, wa
       transport: adapter.transport ?? {},
       ...(adapter.status === undefined ? {} : { status: adapter.status }),
     }
-    const transport = adapterFactory(kind)(mount, { warn })
+    const transport = registry.factory(kind)(mount, { warn })
     if (adapter.policy.requireMention === true && transport.capabilities.mention !== true) {
       throw new ConfigError(
         `policy.requireMention needs a transport that can tell mentions apart; "${kind}" cannot`,

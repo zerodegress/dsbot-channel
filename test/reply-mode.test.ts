@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
-import { registerAdapter } from '../src/adapter-registry.js'
+import { defineAdapterPlugin } from '../src/adapter-registry.js'
+import { registryPlugin } from '../src/registry-plugin.js'
 import { buildListenerHealth, buildStatus, NO_MEDIA } from '../src/adapter-status.js'
 import type {
   AdapterPorts,
@@ -96,7 +97,7 @@ class DemoAdapter implements ChannelAdapter {
   }
 }
 
-registerAdapter('x-demo', () => new DemoAdapter())
+const demoAdapter = { kind: 'x-demo', create: () => new DemoAdapter() }
 
 const prompted: string[] = []
 
@@ -128,6 +129,10 @@ async function mount(reply: unknown, options: { withTools?: boolean; answer?: st
       }
     },
   })
+  await ctx.plugin(registryPlugin)
+  await ctx.plugin(defineAdapterPlugin(demoAdapter))
+  await ctx.plugin(registryPlugin)
+  await ctx.plugin(registryPlugin)
   await ctx.plugin(entry, {
     reply,
     adapters: [

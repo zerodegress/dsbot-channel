@@ -4,6 +4,7 @@ import { describe, expect, test } from 'vitest'
 import { Context, type Plugin } from '@deepseek-ai/cordis'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
 import * as entry from '../src/index.js'
+import { registryPlugin } from '../src/registry-plugin.js'
 
 const sessionStub = {
   create: () => Promise.resolve({ sessionId: 'session-1' }),
@@ -27,6 +28,7 @@ describe('scaffold', () => {
         c.set('sessionController', sessionStub)
       },
     })
+    await ctx.plugin(registryPlugin)
     const plugin: Plugin = entry.default
     const fork = ctx.plugin(plugin, {
       adapters: [
