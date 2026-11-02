@@ -1,7 +1,4 @@
 import { apply } from './plugin.js'
-// Composition root: the only place a transport is named, so core never imports one.
-import './adapters/p2p/index.js'
-import './adapters/onebot/index.js'
 
 /** Multi-channel ingress gateway for ds-bot. */
 export const name = 'dsbot-channel'
@@ -25,11 +22,12 @@ export {
   ADAPTER_KIND_MAX,
   BUILTIN_KINDS,
   THIRD_PARTY_KIND,
-  adapterFactory,
+  AdapterRegistry,
+  REGISTRY_SERVICE,
   checkAdapterKind,
-  knownAdapterKinds,
-  registerAdapter,
+  defineAdapterPlugin,
 } from './adapter-registry.js'
+export { registryPlugin } from './registry-plugin.js'
 export type { AdapterFactory, AdapterMount, AdapterOptions } from './adapter-registry.js'
 export { CHAIN_ID_MAX, GUIDANCE_MAX, INBOUND_REJECTIONS, REFUSE_REASONS, REPLY_TARGET_MAX, REQUEST_ID_MAX, SESSION_KEY_MAX, tokenProblem } from './contract.js'
 export type {

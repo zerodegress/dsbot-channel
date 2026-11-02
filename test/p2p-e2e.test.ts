@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
+import { registryPlugin } from '../src/registry-plugin.js'
 import { createServer, request as httpRequest } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
@@ -138,6 +139,7 @@ transport: {
   listen: { host: '127.0.0.1', port }
 }
 })
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
       adapters: [
         adapter('p2p:a', 'inst-a', 'bot-a', 'inst-b', portA, portB),
@@ -198,6 +200,7 @@ transport: {
 },
 policy
 })
+    await ctx.plugin(registryPlugin)
     await expect(
       ctx.plugin(entry, {
         adapters: [
@@ -231,6 +234,7 @@ transport: {
 },
 policy: { deny: { words } }
 })
+    await ctx.plugin(registryPlugin)
     await expect(
       ctx.plugin(entry, {
         adapters: [
@@ -255,6 +259,7 @@ policy: { deny: { words } }
         scope.set('sessionController', sessions)
       },
     })
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
       adapters: [
         {
@@ -328,6 +333,7 @@ transport: {
 },
 policy: { deny: { words: ['spam'] }, allow: { peers: ['inst-a', 'inst-b'] } }
 })
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
       adapters: [
         adapter('p2p:a', 'inst-a', 'inst-b', portA, portB),
@@ -389,6 +395,7 @@ describe('reporting failures', () => {
         scope.set('sessionController', sessions)
       },
     })
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
       adapters: [
         {
@@ -472,6 +479,7 @@ policy: {
       ...(options.unsupported === undefined ? {} : { [options.unsupported]: {} }),
     }
 })
+  await ctx.plugin(registryPlugin)
   const fork = await ctx.plugin(entry, {
     ...(options.global === undefined ? {} : { pipeline: { global: options.global } }),
     adapters: [
@@ -522,6 +530,7 @@ describe('the configured session', () => {
         scope.set('sessionController', sessions)
       },
     })
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
       adapters: [
         {
@@ -605,6 +614,7 @@ transport: {
   listen: { host: '127.0.0.1', port }
 }
 })
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
       adapters: [
         adapter('p2p:a', 'inst-a', 'bot-a', 'inst-b', 'bot-b', portA, portB),
@@ -764,6 +774,7 @@ describe('closing a peer conversation', () => {
         })
       },
     })
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
       adapters: [
         {
@@ -959,6 +970,7 @@ describe('a reply to a peer behind a name router', () => {
         scope.set('sessionController', sessions)
       },
     })
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
       adapters: [
         {
@@ -1018,6 +1030,7 @@ describe('an active push to a peer behind a name router', () => {
         })
       },
     })
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
       adapters: [
         {
@@ -1117,6 +1130,7 @@ describe('a turn that already pushed with send_text', () => {
         })
       },
     })
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
       adapters: [
         {
@@ -1229,6 +1243,7 @@ describe('a turn that answers with nothing', () => {
         scope.set('sessionController', controller)
       },
     })
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
       adapters: [
         {
@@ -1289,6 +1304,7 @@ describe('a reply goes back to the sender of the inbound message', () => {
         scope.set('sessionController', sessions)
       },
     })
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
       adapters: [
         {
@@ -1365,6 +1381,7 @@ describe('one service reports every adapter at once', () => {
         scope.set('sessionController', sessions)
       },
     })
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
       adapters: [
         {
@@ -1433,6 +1450,7 @@ describe('a mounted adapter can report on itself', () => {
         scope.set('sessionController', sessions)
       },
     })
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
       adapters: [
         {
@@ -1480,6 +1498,7 @@ transport: {
         scope.set('sessionController', controller)
       },
     })
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
       adapters: [
         {
@@ -1531,6 +1550,7 @@ transport: {
         })
       },
     })
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
       adapters: [
         {
@@ -1568,6 +1588,7 @@ transport: {
         scope.set('sessionController', sessions)
       },
     })
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
       adapters: [
         {
@@ -1634,6 +1655,7 @@ transport: {
         })
       },
     })
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
       adapters: [
         {
@@ -1678,6 +1700,7 @@ transport: {
         scope.set('sessionController', sessions)
       },
     })
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
       adapters: [
         {
@@ -1719,6 +1742,7 @@ status: true
         scope.set('sessionController', sessions)
       },
     })
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
       adapters: [
         {
@@ -1808,6 +1832,7 @@ transport: {
 },
       ],
     }
+    await ctx.plugin(registryPlugin)
     await expect(ctx.plugin(entry, config)).rejects.toThrow(/relayLimit/)
   })
 })
@@ -1884,6 +1909,7 @@ policy
 },
       ],
     }
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, config)
     forks.push(fork)
     return ctx
@@ -1949,6 +1975,7 @@ policy
         scope.set('sessionController', sessions)
       },
     })
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
       adapters: [
         {
@@ -1989,6 +2016,7 @@ policy: { budget: { capacity: 15 } }
         scope.set('sessionController', sessions)
       },
     })
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
       adapters: [
         {
@@ -2057,6 +2085,7 @@ policy: {
       ...(options.allowPeers === undefined ? {} : { allow: { peers: options.allowPeers } }),
     }
 })
+  await ctx.plugin(registryPlugin)
   const fork = await ctx.plugin(entry, {
     adapters: [
       adapter('p2p:a', 'inst-a', 'bot-a', 'inst-b', portA, portB),
@@ -2166,6 +2195,7 @@ describe('a message that arrives while the session is busy', () => {
         scope.set('sessionController', controller)
       },
     })
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
       adapters: [
         {
@@ -2253,6 +2283,7 @@ describe('an active push to another peer on the same channel', () => {
         })
       },
     })
+    await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry, {
       adapters: [
         {

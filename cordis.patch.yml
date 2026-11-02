@@ -1,5 +1,7 @@
 # Ships enabled with no adapters: the base starts idle until a profile declares its own.
 - insert:
+    - id: dsbot-channel-registry
+      name: dsbot-channel/registry
     - id: dsbot-channel
       name: dsbot-channel
       config:

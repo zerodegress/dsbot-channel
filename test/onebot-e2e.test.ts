@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'vitest'
+import { registryPlugin } from '../src/registry-plugin.js'
 import { createServer, request as httpRequest } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
@@ -103,6 +104,7 @@ async function mount(policy: Record<string, unknown> = {}, bots: string[] = []):
       })
     },
   })
+  await ctx.plugin(registryPlugin)
   const fork = await ctx.plugin(entry, {
     adapters: [
       {

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest'
+import { registryPlugin } from '../src/registry-plugin.js'
 import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
 import { Config, checkPipelineScopes, checkPipelineSettings } from '../src/plugin.js'
@@ -25,6 +26,8 @@ async function mount(config: Record<string, unknown>): Promise<Context> {
 
     },
   })
+  await ctx.plugin(registryPlugin)
+  await ctx.plugin(registryPlugin)
   await ctx.plugin(entry, config)
   return ctx
 }

@@ -1,5 +1,4 @@
 import type { AdapterFactory, AdapterMount } from '../../adapter-registry.js'
-import { registerBuiltinAdapter } from '../../adapter-registry.js'
 import { ConfigError, assertBindHost } from '../../config.js'
 import { OneBotAdapter } from './adapter.js'
 import type { OneBotAdapterConfig } from './adapter.js'
@@ -97,4 +96,3 @@ export function parseOneBotConfig(mount: AdapterMount): OneBotAdapterConfig {
 
 export const createOneBotAdapter: AdapterFactory = (mount, options) => new OneBotAdapter(parseOneBotConfig(mount), options)
 
-registerBuiltinAdapter('onebot', createOneBotAdapter)

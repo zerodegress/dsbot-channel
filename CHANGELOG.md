@@ -15,11 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A context owns its adapter registry: `dsbot-channel/registry` provides it, an adapter plugin injects it, and the gateway reads it, so two copies of the package no longer each keep a module-level map that the other cannot see. The profile mounts `dsbot-channel/registry`, then the adapters, then `dsbot-channel`; a missing registry now fails the mount and names the plugin to add, and an adapter mounted after the gateway fails with the kinds the gateway could see.
 - `LimitState.byScope` is now `byKey`: the field maps ledger keys (`global`, `bot:<id>`, and the adapter's session key) to levels, while `reply.byScope` maps a scope (`c2c`/`group`/`p2p`) to a reply mode. A caller that read the old name no longer compiles.
 - `decline` takes a `reason` from the closed set a channel can tell the sender, plus an optional `note`, counts toward the reply ceiling like a reply does, and is charged at the rejected rate instead of being refunded.
 
 ### Removed
 
+- `registerAdapter` is gone from the entry. A third-party transport ships as a plugin built with `defineAdapterPlugin({ kind, create })`, which registers with the context's registry when it mounts; the old module-level call would register into one copy's map and leave the gateway's copy empty.
 - `judge` and `push` are gone from `CHARGE_KINDS` and from the point table: nothing charged either kind, the `judge` node cannot be bound in this version, and the push tool never touched the ledger. `points` holds `accepted` and `rejected` only, a turn is always charged as a bot call, and `TurnBilling` no longer takes a `chargeKind`.
 
 ### Fixed

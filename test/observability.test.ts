@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
-import { registerAdapter } from '../src/adapter-registry.js'
+import { defineAdapterPlugin } from '../src/adapter-registry.js'
+import { registryPlugin } from '../src/registry-plugin.js'
 import { buildListenerHealth, buildStatus } from '../src/adapter-status.js'
 import type { AdapterPorts, ChannelAdapter, InboundMessage, InboundVerdict, SendInput } from '../src/contract.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
@@ -88,7 +89,7 @@ class ObsAdapter implements ChannelAdapter {
   }
 }
 
-registerAdapter('x-obs', () => new ObsAdapter())
+const obsAdapter = { kind: 'x-obs', create: () => new ObsAdapter() }
 
 async function mount(options: { budget?: Record<string, unknown> } = {}): Promise<Context> {
   const ctx = new Context()
@@ -113,6 +114,10 @@ async function mount(options: { budget?: Record<string, unknown> } = {}): Promis
       })
     },
   })
+  await ctx.plugin(registryPlugin)
+  await ctx.plugin(defineAdapterPlugin(obsAdapter))
+  await ctx.plugin(registryPlugin)
+  await ctx.plugin(registryPlugin)
   await ctx.plugin(entry, {
     adapters: [
       {
