@@ -32,6 +32,7 @@ import { compileReply } from './reply-config.js'
 import type { ReplyFacts } from './reply-config.js'
 import type { PolicyConfig } from './policy-config.js'
 import { PushRouter, createSendText } from './push-tool.js'
+import { CapabilityGate, createReadHistory, createSendFile, createSendImage } from './capability-tools.js'
 import type { PushSource, SendTextTool } from './push-tool.js'
 import type { BotScope } from './session-pipeline.js'
 import { SessionPipelines } from './session-pipeline.js'
@@ -703,6 +704,13 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
       },
     })
     ctx.effect(() => tools.register(createSendText(router)), 'dsbot-channel: send_text tool')
+    const gate = new CapabilityGate({
+      router,
+      capabilities: (channel) => byChannel.get(channel)?.adapter.capabilities,
+    })
+    ctx.effect(() => tools.register(createSendImage(gate)), 'dsbot-channel: send_image tool')
+    ctx.effect(() => tools.register(createSendFile(gate)), 'dsbot-channel: send_file tool')
+    ctx.effect(() => tools.register(createReadHistory(gate)), 'dsbot-channel: read_history tool')
     const ports: ControlPorts = {
       turnOf: (sessionId) => (sessionId === undefined ? undefined : activeTurns.get(sessionId)),
       isClosed: (eventId) => chains.isClosed(eventId),

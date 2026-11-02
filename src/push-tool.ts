@@ -123,8 +123,9 @@ export class PushRouter {
     return entry.result
   }
 
-  #address(
-    request: PushRequest,
+  /** Resolves an address on one channel; a tool that only answers why it cannot send still needs it. */
+  resolve(
+    request: { channel?: string | undefined; target?: string | undefined },
     sessionId: string | undefined,
   ): { channel: PushChannel; target: string; to?: string } | PushFailed {
     const source = this.#source(sessionId)
@@ -174,7 +175,7 @@ export class PushRouter {
       const replay = this.#live(key)
       if (replay !== undefined) return replay
     }
-    const addressed = this.#address(request, sessionId)
+    const addressed = this.resolve(request, sessionId)
     if ('ok' in addressed) return addressed
     const { channel, target, to } = addressed
     const eventId = `push:${this.#newId()}`

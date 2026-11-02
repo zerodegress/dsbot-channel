@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `send_image`, `send_file` and `read_history` sit beside `send_text`: each names a channel and an address, checks that transport's static capability set when it is called, and answers `unsupported_capability` naming the bit and the channel when the transport cannot carry it. No transport carries media or history in this version, so every call answers that way; a local path is refused as an argument rather than sent.
 - A limit state names each level by the dimension it belongs to: `byDimension` reports `global`, `bot` and `conversation` beside the key map, so a reader no longer parses a session key to learn which dimension tripped.
 - `turn-stats` separates a quiet end from a refusal: `suppressed` stays the sum, with `ended` and `refused` beside it, and the tools report which one they took.
 
