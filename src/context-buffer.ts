@@ -15,9 +15,7 @@ export interface BufferedMessage {
   senderId: string
   /** Shown beside the id when the transport declared one; never used as identity. */
   nickname: string
-  /** Milliseconds since the epoch, as the transport stamped it. */
-  at: number
-  /** One line, already truncated to `CONTEXT_LINE_MAX`. */
+  /** What the sender said — no adapter header — cut to `CONTEXT_LINE_MAX` on one line. */
   text: string
   media: readonly MediaType[]
 }

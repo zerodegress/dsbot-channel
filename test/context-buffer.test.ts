@@ -2,8 +2,8 @@ import { describe, expect, test } from 'vitest'
 import { ContextBuffer, contextLine, oneLine, renderContext } from '../src/context-buffer.js'
 import type { BufferedMessage } from '../src/context-buffer.js'
 
-function note(eventKey: string, text: string, at = 1): BufferedMessage {
-  return { eventKey, senderId: 'u1', nickname: '', at, text, media: [] }
+function note(eventKey: string, text: string): BufferedMessage {
+  return { eventKey, senderId: 'u1', nickname: '', text, media: [] }
 }
 
 describe('a conversation buffer', () => {
@@ -62,9 +62,9 @@ describe('a conversation buffer', () => {
 
   test('leaves out every key this turn already carries', () => {
     const buffer = new ContextBuffer({ messages: 10 })
-    buffer.record('g', note('a', 'one', 10))
-    buffer.record('g', note('b', 'two', 20))
-    buffer.record('g', note('c', 'three', 30))
+    buffer.record('g', note('a', 'one'))
+    buffer.record('g', note('b', 'two'))
+    buffer.record('g', note('c', 'three'))
 
     expect(buffer.entries('g', ['a', 'c']).map((one) => one.eventKey)).toEqual(['b'])
     expect(buffer.entries('g', ['a', 'b', 'c'])).toEqual([])
@@ -92,8 +92,8 @@ describe('a conversation buffer', () => {
 describe('the block a turn reads', () => {
   test('starts with a line that says what it is, one message per line', () => {
     const block = renderContext([
-      { eventKey: 'a', senderId: '10001', nickname: '阿明', at: 1, text: '你好', media: [] },
-      { eventKey: 'b', senderId: '20002', nickname: '', at: 2, text: '看图', media: ['image'] },
+      { eventKey: 'a', senderId: '10001', nickname: '阿明', text: '你好', media: [] },
+      { eventKey: 'b', senderId: '20002', nickname: '', text: '看图', media: ['image'] },
     ])
 
     expect(block.split('\n')).toEqual([
@@ -108,10 +108,10 @@ describe('the block a turn reads', () => {
   })
 
   test('a message with only media carries only its placeholder', () => {
-    expect(contextLine({ eventKey: 'a', senderId: 'u1', nickname: '', at: 1, text: '', media: ['file'] })).toBe(
+    expect(contextLine({ eventKey: 'a', senderId: 'u1', nickname: '', text: '', media: ['file'] })).toBe(
       'u1: [file]',
     )
-    expect(contextLine({ eventKey: 'a', senderId: 'u1', nickname: '', at: 1, text: '', media: ['voice', 'image'] })).toBe(
+    expect(contextLine({ eventKey: 'a', senderId: 'u1', nickname: '', text: '', media: ['voice', 'image'] })).toBe(
       'u1: [voice] [image]',
     )
   })

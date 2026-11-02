@@ -796,8 +796,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
             eventKey: message.eventKey,
             senderId: message.author.senderId,
             nickname: message.declared.nickname,
-            at: message.transport.timestamp,
-            text: message.body.text,
+            text: message.rawText,
             media: message.body.media.map((one) => one.type),
           })
         }
