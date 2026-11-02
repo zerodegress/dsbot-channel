@@ -5,7 +5,7 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.0] - 2026-11-02
 
 ### Added
 
@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The p2p transport: wire protocol v1 at `POST /p2p/v1/message` with signed requests, per-peer secrets bound to an instance, `(instance, to, eventId)` deduplication with in-flight recovery, `413` for oversized bodies and `403` for misaddressed messages, on a listener that binds `127.0.0.1` by default and is checked before any socket opens.
 - Adapters listed in the profile, each with its own peers and listener settings. Peer secrets are credential references, not inline values, and an empty list mounts the plugin without opening a listener.
 - Per-adapter `policy`: deny by word or regular expression, allow named peers, cap the rounds one peer holds with `relayLimit` and `relayResetMs`, and `policy.budget` with a required `capacity` and an optional `hardLimit`.
-- A session layer declared in the profile chooses the pipeline that session's next turn runs: `pipeline` nodes that deny, allow, restrict scoring and judging, score or pass an event, with `maxTurnMs` and `judgeTimeoutMs` setting the ceiling one turn may occupy and the judging deadline inside it.
+- A `pipeline` in the profile, global and per bot, sets the nodes a turn runs — deny, allow, restrict scoring and judging, score, or pass — with `maxTurnMs` and `judgeTimeoutMs` bounding how long a turn may take and how long a judge may take inside it. A host may add one more layer for a session at run time.
 - A p2p channel that runs end to end: an accepted message starts a turn with the host session controller, and the reply is sent back to the peer that sent it.
 
 ### Changed

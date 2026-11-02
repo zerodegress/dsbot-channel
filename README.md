@@ -18,7 +18,11 @@ Whether to speak at all is an explicit decision — `no_reply`, `decline`, the r
 
 ## Install
 
-Not published yet. Install from a checkout:
+```sh
+npm install dsbot-channel
+```
+
+To work on the plugin itself, install from a checkout instead:
 
 ```sh
 pnpm install

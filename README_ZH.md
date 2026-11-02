@@ -18,7 +18,11 @@ ds-bot 的消息网关：多个外部平台的事件进到同一个 Bot，回答
 
 ## 安装
 
-尚未发布。从源码安装：
+```sh
+npm install dsbot-channel
+```
+
+要改插件本身，改用源码安装：
 
 ```sh
 pnpm install
