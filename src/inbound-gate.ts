@@ -34,7 +34,7 @@ export interface AdmitInput {
   peer: string
   botId: string
   /** Who sent it: the adapter reports this and core never derives it from the peer. */
-  author?: AuthorKind | undefined
+  author: AuthorKind
   /** The key the adapter supplied; core never derives one from the peer. */
   session: string
   /** The pipeline this turn runs, when the caller resolves one per session. */

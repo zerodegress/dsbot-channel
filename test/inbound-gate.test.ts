@@ -15,10 +15,10 @@ describe('loop guard', () => {
   test('the first rounds are allowed and the ceiling stops the next one', async () => {
     const gate = new InboundGate({})
     for (let round = 1; round <= 3; round += 1) {
-      expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot' , session: 'p2p:peer-a' })).allow).toBe(true)
+      expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot', author: 'person' , session: 'p2p:peer-a' })).allow).toBe(true)
       gate.recordReply('bot', 'p2p:peer-a')
     }
-    const stopped = await gate.admit({ event, peer: 'peer-a', botId: 'bot' , session: 'p2p:peer-a' })
+    const stopped = await gate.admit({ event, peer: 'peer-a', botId: 'bot', author: 'person' , session: 'p2p:peer-a' })
     expect(stopped.allow).toBe(false)
     expect(stopped.reason).toBe('loop-limit')
   })
@@ -26,30 +26,30 @@ describe('loop guard', () => {
   test('counters are per peer, so one runaway peer does not silence another', async () => {
     const gate = new InboundGate({})
     for (let round = 0; round < 3; round += 1) gate.recordReply('bot', 'p2p:peer-a')
-    expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot' , session: 'p2p:peer-a' })).reason).toBe('loop-limit')
-    expect((await gate.admit({ event: { ...event, eventKey: 'peer-b:m9' }, peer: 'peer-b', botId: 'bot', session: 'p2p:peer-b' })).allow).toBe(true)
+    expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot', author: 'person' , session: 'p2p:peer-a' })).reason).toBe('loop-limit')
+    expect((await gate.admit({ event: { ...event, eventKey: 'peer-b:m9' }, peer: 'peer-b', botId: 'bot', author: 'person', session: 'p2p:peer-b' })).allow).toBe(true)
   })
 
   test('a person speaking resets the peer counter', async () => {
     const gate = new InboundGate({})
     for (let round = 0; round < 3; round += 1) gate.recordReply('bot', 'p2p:peer-a')
     gate.resetPeer('p2p:peer-a')
-    expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot' , session: 'p2p:peer-a' })).allow).toBe(true)
+    expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot', author: 'person' , session: 'p2p:peer-a' })).allow).toBe(true)
   })
 
   test('the ceiling is configurable', async () => {
     const gate = new InboundGate({ loop: { relayLimit: 1 } })
     gate.recordReply('bot', 'p2p:peer-a')
-    expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot' , session: 'p2p:peer-a' })).reason).toBe('loop-limit')
+    expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot', author: 'person' , session: 'p2p:peer-a' })).reason).toBe('loop-limit')
   })
 
   test('silence for the idle window clears the counter', async () => {
     let now = 0
     const gate = new InboundGate({ now: () => now })
     for (let round = 0; round < 3; round += 1) gate.recordReply('bot', 'p2p:peer-a')
-    expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot' , session: 'p2p:peer-a' })).reason).toBe('loop-limit')
+    expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot', author: 'person' , session: 'p2p:peer-a' })).reason).toBe('loop-limit')
     now += DEFAULT_LOOP_IDLE_RESET_MS + 1
-    expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot' , session: 'p2p:peer-a' })).allow).toBe(true)
+    expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot', author: 'person' , session: 'p2p:peer-a' })).allow).toBe(true)
   })
 
   test('a short pause does not clear the counter', async () => {
@@ -57,13 +57,13 @@ describe('loop guard', () => {
     const gate = new InboundGate({ now: () => now })
     for (let round = 0; round < 3; round += 1) gate.recordReply('bot', 'p2p:peer-a')
     now += DEFAULT_LOOP_IDLE_RESET_MS - 1
-    expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot' , session: 'p2p:peer-a' })).reason).toBe('loop-limit')
+    expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot', author: 'person' , session: 'p2p:peer-a' })).reason).toBe('loop-limit')
   })
 
   test('the scope that tripped the budget is reported on every refusal', async () => {
     const gate = new InboundGate({})
     for (let round = 0; round < 3; round += 1) gate.recordReply('bot', 'p2p:peer-a')
-    const decision = await gate.admit({ event, peer: 'peer-a', botId: 'bot' , session: 'p2p:peer-a' })
+    const decision = await gate.admit({ event, peer: 'peer-a', botId: 'bot', author: 'person' , session: 'p2p:peer-a' })
     expect(decision.reason).toBe('loop-limit')
     expect(decision.triggeredBy).toBeDefined()
   })
@@ -73,7 +73,7 @@ describe('loop guard', () => {
     const gate = new InboundGate({ loop: { relayResetMs: 60_000 }, now: () => now })
     for (let round = 0; round < 3; round += 1) gate.recordReply('bot', 'p2p:peer-a')
     now += 10 * 60_000
-    expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot' , session: 'p2p:peer-a' })).allow).toBe(true)
+    expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot', author: 'person' , session: 'p2p:peer-a' })).allow).toBe(true)
   })
 
   test.each([0, -1, 2.5, Number.NaN, Number.POSITIVE_INFINITY])(
@@ -104,20 +104,20 @@ describe('the pipeline decides first when one is configured', () => {
   test('a deny node stops the turn and says why', async () => {
     const pipeline = new Pipeline([node('deny', { kind: 'deny', reason: 'noise' })])
     const gate = new InboundGate({ pipeline })
-    const decision = await gate.admit({ event, peer: 'peer-a', botId: 'bot' , session: 'p2p:peer-a' })
+    const decision = await gate.admit({ event, peer: 'peer-a', botId: 'bot', author: 'person' , session: 'p2p:peer-a' })
     expect(decision).toMatchObject({ allow: false, reason: 'pipeline-deny', detail: 'noise' })
   })
 
   test('an allow node lets it through', async () => {
     const pipeline = new Pipeline([node('allow', { kind: 'allow', reason: 'addressed' })])
     const gate = new InboundGate({ pipeline })
-    expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot' , session: 'p2p:peer-a' })).allow).toBe(true)
+    expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot', author: 'person' , session: 'p2p:peer-a' })).allow).toBe(true)
   })
 
   test('a restrict without an allow counts as do-not-reply', async () => {
     const pipeline = new Pipeline([node('budget', { kind: 'restrict', skip: ['scoring', 'judge'], reason: 'soft' })])
     const gate = new InboundGate({ pipeline })
-    const decision = await gate.admit({ event, peer: 'peer-a', botId: 'bot' , session: 'p2p:peer-a' })
+    const decision = await gate.admit({ event, peer: 'peer-a', botId: 'bot', author: 'person' , session: 'p2p:peer-a' })
     expect(decision).toMatchObject({ allow: false, reason: 'pipeline-restrict' })
   })
 
@@ -125,12 +125,12 @@ describe('the pipeline decides first when one is configured', () => {
     const configured = new Pipeline([node('allow', { kind: 'allow', reason: 'configured' })])
     const session = new Pipeline([node('deny', { kind: 'deny', reason: 'this session refuses' })])
     const gate = new InboundGate({ pipeline: configured })
-    const decision = await gate.admit({ event, peer: 'peer-a', botId: 'bot', pipeline: session , session: 'p2p:peer-a' })
+    const decision = await gate.admit({ event, peer: 'peer-a', botId: 'bot', author: 'person', pipeline: session , session: 'p2p:peer-a' })
     expect(decision).toMatchObject({ allow: false, reason: 'pipeline-deny', detail: 'this session refuses' })
   })
 
   test('without a pipeline the event is allowed on its own', async () => {
-    expect((await new InboundGate({}).admit({ event, peer: 'peer-a', botId: 'bot', session: 'p2p:peer-a' })).reason).toBe('allowed')
+    expect((await new InboundGate({}).admit({ event, peer: 'peer-a', botId: 'bot', author: 'person', session: 'p2p:peer-a' })).reason).toBe('allowed')
   })
 })
 
@@ -141,7 +141,7 @@ describe('the budget is consulted before a turn starts', () => {
     const ledger = new BudgetLedger(limits, DEFAULT_BUDGET)
     for (let i = 0; i < 5; i += 1) ledger.settle(ledger.reserve('bot', 'p2p:peer-a', 'bot', 20), 'accepted')
     const gate = new InboundGate({ ledger })
-    const decision = await gate.admit({ event, peer: 'peer-a', botId: 'bot', session: 'p2p:peer-a' })
+    const decision = await gate.admit({ event, peer: 'peer-a', botId: 'bot', author: 'person', session: 'p2p:peer-a' })
     expect(decision.allow).toBe(false)
     expect(decision.reason).toBe('budget-hard')
     expect(decision.triggeredBy?.length).toBeGreaterThan(0)
@@ -151,14 +151,14 @@ describe('the budget is consulted before a turn starts', () => {
     const ledger = new BudgetLedger(limits, DEFAULT_BUDGET)
     for (let i = 0; i < 5; i += 1) ledger.settle(ledger.reserve('bot', 'p2p:peer-a', 'bot', 20), 'accepted')
     const gate = new InboundGate({ ledger })
-    expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot', session: 'p2p:peer-a' })).reason).toBe('budget-hard')
+    expect((await gate.admit({ event, peer: 'peer-a', botId: 'bot', author: 'person', session: 'p2p:peer-a' })).reason).toBe('budget-hard')
   })
 
   test('a refused turn is not charged', async () => {
     const ledger = new BudgetLedger(limits, DEFAULT_BUDGET)
     for (let i = 0; i < 5; i += 1) ledger.settle(ledger.reserve('bot', 'p2p:peer-a', 'bot', 20), 'accepted')
     const before = ledger.usage('bot', 'p2p:peer-a').global
-    await new InboundGate({ ledger }).admit({ event, peer: 'peer-a', botId: 'bot', session: 'p2p:peer-a' })
+    await new InboundGate({ ledger }).admit({ event, peer: 'peer-a', botId: 'bot', author: 'person', session: 'p2p:peer-a' })
     expect(ledger.usage('bot', 'p2p:peer-a').global).toBe(before)
   })
 })
@@ -176,26 +176,26 @@ describe('the round key is the conversation', () => {
   test('a group counts rounds per conversation, not per spelling of the peer', async () => {
     const gate = new InboundGate({ loop: { relayLimit: 2 } })
     const session = 'group:12345'
-    expect((await gate.admit({ event: event as never, peer: '12345', botId: 'bot', session })).allow).toBe(true)
+    expect((await gate.admit({ event: event as never, peer: '12345', botId: 'bot', author: 'person', session })).allow).toBe(true)
     gate.recordReply('bot', session)
     gate.recordReply('bot', session)
-    expect((await gate.admit({ event: event as never, peer: '12345', botId: 'bot', session })).reason).toBe('loop-limit')
+    expect((await gate.admit({ event: event as never, peer: '12345', botId: 'bot', author: 'person', session })).reason).toBe('loop-limit')
   })
 
   test('a person speaking clears the conversation, so the bot may answer again', async () => {
     const gate = new InboundGate({ loop: { relayLimit: 1 } })
     const session = 'group:12345'
     gate.recordReply('bot', session)
-    expect((await gate.admit({ event: event as never, peer: '12345', botId: 'bot', session })).reason).toBe('loop-limit')
+    expect((await gate.admit({ event: event as never, peer: '12345', botId: 'bot', author: 'person', session })).reason).toBe('loop-limit')
 
     gate.resetPeer(session, 'bot')
-    expect((await gate.admit({ event: groupEvent('group:12345:m2', 'person'), peer: '12345', botId: 'bot', session })).allow).toBe(true)
+    expect((await gate.admit({ event: groupEvent('group:12345:m2', 'person'), peer: '12345', botId: 'bot', author: 'person', session })).allow).toBe(true)
   })
 
   test('one conversation never silences another', async () => {
     const gate = new InboundGate({ loop: { relayLimit: 1 } })
     gate.recordReply('bot', 'group:12345')
-    expect((await gate.admit({ event: event as never, peer: '12345', botId: 'bot', session: 'group:12345' })).reason).toBe('loop-limit')
-    expect((await gate.admit({ event: event as never, peer: '99999', botId: 'bot', session: 'group:99999' })).allow).toBe(true)
+    expect((await gate.admit({ event: event as never, peer: '12345', botId: 'bot', author: 'person', session: 'group:12345' })).reason).toBe('loop-limit')
+    expect((await gate.admit({ event: event as never, peer: '99999', botId: 'bot', author: 'person', session: 'group:99999' })).allow).toBe(true)
   })
 })
