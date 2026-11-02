@@ -18,6 +18,8 @@ import { createDeclineTool, createNoReplyTool } from './control-tools.js'
 import type { ControlPorts, TurnRef } from './control-tools.js'
 import { ChainGuard, KeyGuard } from './event-keys.js'
 import { InboundGate } from './inbound-gate.js'
+import type { GroupBotPolicy } from './inbound-gate.js'
+import { GROUP_BOT_POLICIES } from './inbound-gate.js'
 import { InjectionLedger, TOOL_MODE_NOTICE, TOOL_MODE_NOTICE_MAX } from './inbound-guidance.js'
 import { usageSnapshot } from './usage-view.js'
 import type { BotLedger } from './usage-view.js'
@@ -49,6 +51,8 @@ export interface PolicySettings extends PolicyConfig {
   relayResetMs: number
   /** A group message must name this bot or everyone before it may start a turn. */
   requireMention: boolean
+  /** How a bot's group message is treated; absent means `whenMentioned`. */
+  groupBots?: GroupBotPolicy | undefined
   budget?: BudgetConfig | undefined
 }
 
@@ -130,6 +134,7 @@ export const Config: any = Schema.object({
         policy: Schema.object({
           relayLimit: Schema.number().default(3),
           requireMention: Schema.boolean().default(false),
+          groupBots: Schema.string(),
           relayResetMs: Schema.number().default(300_000),
           deny: Schema.object({
             words: Schema.array(Schema.string()).default([]),
@@ -323,6 +328,12 @@ function checkPolicy(adapter: AdapterConfig, index: number): void {
       path('relayResetMs'),
     )
   }
+  if (adapter.policy.groupBots !== undefined && !GROUP_BOT_POLICIES.includes(adapter.policy.groupBots)) {
+    throw new ConfigError(
+      `policy.groupBots must be one of ${GROUP_BOT_POLICIES.join(', ')}: ${String(adapter.policy.groupBots)}`,
+      path('groupBots'),
+    )
+  }
   const budget = adapter.policy.budget
   if (budget !== undefined && budget.capacity === undefined) {
     throw new ConfigError('policy.budget.capacity is required', path('budget.capacity'))
@@ -432,6 +443,8 @@ interface ChannelRuntime {
   billing: TurnBilling
   deps: PipelineDeps
   turn: TurnSettings
+  /** Set when the default bot rule had to fall back: warn once, then stay quiet. */
+  mentionFallback: { pending: boolean; warned: boolean }
 }
 
 /** Reads the profile, pointing an old `p2p` key at the block that replaced it. */
@@ -694,17 +707,24 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
       const budget = adapter.policy.budget
       const ledger = budget === undefined ? undefined : createLedger(budget)
       if (!ledgers.some((one) => one.bot === adapter.botName)) ledgers.push({ bot: adapter.botName, ledger })
+      const mentionCapable = transport.capabilities.mention === true
+      const declaredGroupBots = adapter.policy.groupBots
+      const wantedGroupBots: GroupBotPolicy = declaredGroupBots ?? 'whenMentioned'
+      const groupBots: GroupBotPolicy =
+        wantedGroupBots === 'whenMentioned' && !mentionCapable ? 'silent' : wantedGroupBots
       const runtime: ChannelRuntime = {
         channel,
         sessions,
         gate: new InboundGate({
           loop: { relayLimit: adapter.policy.relayLimit, relayResetMs: adapter.policy.relayResetMs },
           requireMention: adapter.policy.requireMention === true,
+          groupBots,
           ledger,
         }),
         billing: new TurnBilling({ ledger }),
         deps: bots.get(adapter.botName)?.deps ?? compiled.deps,
         turn,
+        mentionFallback: { pending: declaredGroupBots === undefined && !mentionCapable, warned: false },
       }
       const onMessage = async (message: InboundMessage): Promise<InboundVerdict> => {
         const kindProblem = tokenProblem('source.kind', message.source.kind, SOURCE_KIND_MAX)
@@ -741,11 +761,24 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
           specs.length > 0
             ? buildPipeline(specs, bindPrepare(runtime.deps, transport, event, message.sessionKey, warn), settings)
             : undefined
+        if (
+          runtime.mentionFallback.pending &&
+          !runtime.mentionFallback.warned &&
+          message.author.kind === 'bot' &&
+          message.source.scope === 'group'
+        ) {
+          runtime.mentionFallback.warned = true
+          warn(
+            `policy.groupBots defaults to "whenMentioned", but adapter "${adapter.channel}" (${transport.kind}) ` +
+              `cannot tell mentions apart; a bot's group message is refused as bot-speaker`,
+          )
+        }
         if (message.author.kind === 'person') runtime.gate.resetPeer(message.sessionKey, adapter.botName)
         const decision = await runtime.gate.admit({
           event,
           peer: message.source.peer ?? message.replyTarget,
           botId: adapter.botName,
+          author: message.author.kind,
           session: message.sessionKey,
           ...(pipeline === undefined ? {} : { pipeline }),
         })
@@ -920,6 +953,12 @@ function mountAdapters(
       throw new ConfigError(
         `policy.requireMention needs a transport that can tell mentions apart; "${kind}" cannot`,
         ['adapters', String(index), 'policy', 'requireMention'],
+      )
+    }
+    if (adapter.policy.groupBots === 'whenMentioned' && transport.capabilities.mention !== true) {
+      warn(
+        `policy.groupBots "whenMentioned" cannot be honoured by adapter "${adapter.channel}" (${kind}), ` +
+          `which cannot tell mentions apart; a bot's group message is refused as bot-speaker`,
       )
     }
     if (transport.kind !== kind) {

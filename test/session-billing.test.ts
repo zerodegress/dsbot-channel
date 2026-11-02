@@ -61,7 +61,7 @@ describe('the pool one peer owns', () => {
       billing.accept(billing.begin('bot-a', key, `e${round}`))
     }
 
-    const first = await gate.admit({ event, peer: 'inst-b', botId: 'bot-a', session: key })
+    const first = await gate.admit({ event, peer: 'inst-b', botId: 'bot-a', author: 'person', session: key })
     expect(first).toMatchObject({ allow: false, reason: 'budget-hard' })
   })
 })
