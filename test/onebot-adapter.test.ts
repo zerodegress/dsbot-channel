@@ -217,6 +217,90 @@ describe('the onebot sender', () => {
     expect(calls[1]).toMatchObject({ path: '/send_private_msg', body: { user_id: '20002', message: 'hi' } })
   })
 
+  test('a send with media carries the segments one call at a time', async () => {
+    const calls: { path: string; body: Record<string, unknown> }[] = []
+    const api = createServer((request, response) => {
+      let raw = ''
+      request.on('data', (chunk: string) => {
+        raw += chunk
+      })
+      request.on('end', () => {
+        calls.push({ path: (request.url ?? '').replace(/^\//, ''), body: JSON.parse(raw) as Record<string, unknown> })
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({ status: 'ok', retcode: 0, data: { message_id: 88 } }))
+      })
+    })
+    await new Promise<void>((resolve) => api.listen(0, '127.0.0.1', resolve))
+    stops.push(async () => {
+      api.close()
+    })
+    const apiPort = (api.address() as AddressInfo).port
+    const { adapter, warns } = await startAdapter({
+      accessToken: REF,
+      api: { url: `http://127.0.0.1:${apiPort}`, timeoutMs: 1000 },
+    })
+
+    const sent = await adapter.send({
+      target: 'group:12345',
+      eventId: 'evt-1',
+      body: 'look',
+      media: [{ type: 'image', url: 'https://example.test/a.png', handle: null }],
+      sender: 'bot-a',
+      instance: 'inst-a',
+    })
+    expect(sent.ok).toBe(true)
+    expect(calls[0]?.body.message).toEqual([
+      { type: 'text', data: { text: 'look' } },
+      { type: 'image', data: { file: 'https://example.test/a.png' } },
+    ])
+
+    await adapter.send({
+      target: 'group:12345',
+      eventId: 'evt-2',
+      body: '',
+      media: [{ type: 'image', url: null, handle: 'ab12.image', owner: { kind: 'onebot', instance: 'inst-a' } }],
+      sender: 'bot-a',
+      instance: 'inst-a',
+    })
+    expect(calls[1]?.body.message).toEqual([{ type: 'image', data: { file: 'ab12.image' } }])
+
+    await adapter.send({
+      target: 'group:12345',
+      eventId: 'evt-3',
+      body: 'text',
+      media: [{ type: 'image', url: null, handle: 'x.image', owner: { kind: 'onebot', instance: 'other' } }],
+      sender: 'bot-a',
+      instance: 'inst-a',
+    })
+    expect(calls[2]?.body.message).toBe('text')
+    expect(warns.some((line) => line.includes('another instance'))).toBe(true)
+
+    await adapter.send({
+      target: 'group:12345',
+      eventId: 'evt-5',
+      body: 'still here',
+      media: [
+        { type: 'image', url: null, handle: null },
+        { type: 'image', url: null, handle: 'two words' },
+      ],
+      sender: 'bot-a',
+      instance: 'inst-a',
+    })
+    expect(calls[3]?.body.message).toBe('still here')
+    expect(warns.some((line) => line.includes('neither a url nor a handle'))).toBe(true)
+    expect(warns.some((line) => line.includes('not one printable token'))).toBe(true)
+
+    const nothing = await adapter.send({
+      target: 'group:12345',
+      eventId: 'evt-4',
+      body: '',
+      media: [],
+      sender: 'bot-a',
+      instance: 'inst-a',
+    })
+    expect(nothing).toMatchObject({ ok: false, code: 'rejected' })
+  })
+
   test('a refused credential and a server error map to distinct codes', async () => {
     const api = createServer((request, response) => {
       request.resume()

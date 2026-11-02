@@ -754,6 +754,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
           target: delivery.target,
           to: delivery.to,
           body: delivery.text,
+          ...(delivery.media === undefined ? {} : { media: delivery.media }),
           eventId: delivery.eventId,
           chainId: delivery.eventId,
           sender: channel.config.botName,
@@ -765,6 +766,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
     const gate = new CapabilityGate({
       router,
       capabilities: (channel) => byChannel.get(channel)?.adapter.capabilities,
+      push: (request, sessionId) => router.push(request, sessionId),
     })
     ctx.effect(() => tools.register(createSendImage(gate)), 'dsbot-channel: send_image tool')
     ctx.effect(() => tools.register(createSendFile(gate)), 'dsbot-channel: send_file tool')

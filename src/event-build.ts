@@ -27,7 +27,7 @@ function assertKind(value: unknown): string {
 }
 
 /** A handle is a token the owning transport can resolve: printable, one line, bounded. */
-function handleProblem(value: string): string | undefined {
+export function handleProblem(value: string): string | undefined {
   if (value.length === 0) return 'empty'
   if (value.length > HANDLE_MAX) return `longer than ${HANDLE_MAX} characters`
   for (const char of value) {
