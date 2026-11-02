@@ -16,6 +16,8 @@ Whether to speak at all is an explicit decision — `no_reply`, `decline`, the r
 - The host session controller service, for running turns
 - The host tools service, when a profile can choose tool mode
 
+Tested against DS-Bot 0.2.x, 0.2.5 at the time of this release. Compatibility with later DS-Bot releases is not guaranteed.
+
 ## Install
 
 Install it from the dsh UI.
