@@ -10,6 +10,8 @@ import { createLedger } from './budget-config.js'
 import type { BudgetConfig } from './budget-config.js'
 import type { Hold } from './budget-ledger.js'
 import { ClosedChains } from './chain-closer.js'
+import { ContextBuffer, DEFAULT_CONTEXT_CHARS, DEFAULT_CONTEXT_MESSAGES, renderContext } from './context-buffer.js'
+import type { ContextLimits } from './context-buffer.js'
 import { ConfigError, validateConfig } from './config.js'
 import type { AdapterCheckSettings, AdapterHandle, ChannelAdapter, InboundMessage, InboundVerdict } from './contract.js'
 import { CHAIN_ID_MAX, GUIDANCE_MAX, REPLY_TARGET_MAX, REQUEST_ID_MAX, SESSION_KEY_MAX, tokenProblem } from './contract.js'
@@ -84,9 +86,16 @@ export interface TurnSettings {
   coalesceMs: number
   maxBatch: number
   maxChars: number
+  /** What a turn may read of the messages it did not answer. */
+  context: ContextLimits
 }
 
-export const DEFAULT_TURN: TurnSettings = { coalesceMs: 0, maxBatch: 10, maxChars: 8000 }
+export const DEFAULT_TURN: TurnSettings = {
+  coalesceMs: 0,
+  maxBatch: 10,
+  maxChars: 8000,
+  context: { messages: DEFAULT_CONTEXT_MESSAGES, chars: DEFAULT_CONTEXT_CHARS },
+}
 
 const nodeSpecSchema = Schema.object({
   id: Schema.string().required(),
@@ -122,6 +131,10 @@ export const Config: any = Schema.object({
     coalesceMs: Schema.number(),
     maxBatch: Schema.number(),
     maxChars: Schema.number(),
+    context: Schema.object({
+      messages: Schema.number(),
+      chars: Schema.number(),
+    }),
   }),
   adapters: Schema
     .array(
@@ -178,12 +191,23 @@ function declaredNodes(config: ChannelConfig, adapter: AdapterConfig): PipelineN
 
 /** Fills the turn block from its defaults and refuses a window nothing can honour. */
 export function checkTurnSettings(
-  raw: { coalesceMs?: number | undefined; maxBatch?: number | undefined; maxChars?: number | undefined } | undefined,
+  raw:
+    | {
+        coalesceMs?: number | undefined
+        maxBatch?: number | undefined
+        maxChars?: number | undefined
+        context?: { messages?: number | undefined; chars?: number | undefined } | undefined
+      }
+    | undefined,
 ): TurnSettings {
   const turn: TurnSettings = {
     coalesceMs: raw?.coalesceMs ?? DEFAULT_TURN.coalesceMs,
     maxBatch: raw?.maxBatch ?? DEFAULT_TURN.maxBatch,
     maxChars: raw?.maxChars ?? DEFAULT_TURN.maxChars,
+    context: {
+      messages: raw?.context?.messages ?? DEFAULT_TURN.context.messages,
+      chars: raw?.context?.chars ?? DEFAULT_TURN.context.chars,
+    },
   }
   if (!Number.isInteger(turn.coalesceMs) || turn.coalesceMs < 0) {
     throw new ConfigError(`turn.coalesceMs must be a whole number of milliseconds, at least 0: ${turn.coalesceMs}`, [
@@ -196,6 +220,20 @@ export function checkTurnSettings(
   }
   if (!Number.isInteger(turn.maxChars) || turn.maxChars < 100) {
     throw new ConfigError(`turn.maxChars must be a whole number of at least 100: ${turn.maxChars}`, ['turn', 'maxChars'])
+  }
+  if (!Number.isInteger(turn.context.messages) || turn.context.messages < 0 || turn.context.messages > 50) {
+    throw new ConfigError(`turn.context.messages must be a whole number between 0 and 50: ${turn.context.messages}`, [
+      'turn',
+      'context',
+      'messages',
+    ])
+  }
+  if (!Number.isInteger(turn.context.chars) || turn.context.chars < 100 || turn.context.chars > 20_000) {
+    throw new ConfigError(`turn.context.chars must be a whole number between 100 and 20000: ${turn.context.chars}`, [
+      'turn',
+      'context',
+      'chars',
+    ])
   }
   return turn
 }
@@ -494,6 +532,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   }
   checkPipelineSettings(settings)
   const turn = checkTurnSettings(config.turn)
+  const context = new ContextBuffer(turn.context)
   checkPipelineScopes(config, warn)
   const bots = botScopes(config)
   const pipelines = new SessionPipelines({ bots })
@@ -596,6 +635,9 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         blocks.push(`[${transport.kind}] ${guidance}`)
       }
       if (injected.claimMode(message.sessionKey, mode)) blocks.push(TOOL_MODE_NOTICE)
+      const mergedKeys = [message.eventKey, ...rest.map((one) => one.eventKey)]
+      const seen = context.entries(`${adapter.botName}|${message.sessionKey}`, mergedKeys)
+      if (seen.length > 0) blocks.push(renderContext(seen))
       const turn = await runtime.sessions.runTurn({
         peer: message.sessionKey,
         requestId: message.requestId,
@@ -782,6 +824,15 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
           session: message.sessionKey,
           ...(pipeline === undefined ? {} : { pipeline }),
         })
+        if (message.source.scope === 'group') {
+          context.record(`${adapter.botName}|${message.sessionKey}`, {
+            eventKey: message.eventKey,
+            senderId: message.author.senderId,
+            nickname: message.declared.nickname,
+            text: message.rawText,
+            media: message.body.media.map((one) => one.type),
+          })
+        }
         if (!decision.allow) {
           const detail = decision.detail === undefined ? '' : ` (${decision.detail})`
           turns.close({

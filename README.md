@@ -103,7 +103,12 @@ config:
     coalesceMs: 1200
     maxBatch: 10
     maxChars: 8000
+    context:
+      messages: 30
+      chars: 2000
 ```
+
+`turn.context.messages` keeps that many earlier messages of a conversation and puts them in front of the turn as a `[context]` block, so an answer knows what came before it; `chars` caps the block by dropping the oldest whole message once the text no longer fits. It defaults to off (`0`) with a `2000` character budget.
 
 Set `status: false` on an adapter to leave its status route unregistered.
 
