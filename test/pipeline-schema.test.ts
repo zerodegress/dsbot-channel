@@ -58,8 +58,8 @@ const parsed = (config: unknown): ChannelConfig => (Config as (value: unknown) =
 describe('the pipeline a profile declares', () => {
   test('refuses a global pipeline that cannot load, and names the layer', async () => {
     await expect(
-      mount({ adapters: [], pipeline: { global: [{ id: 'prepare', type: 'prepare' }] } }),
-    ).rejects.toThrow(/the pipeline cannot load: node "prepare"/)
+      mount({ adapters: [], pipeline: { global: [{ id: 'score', type: 'score' }] } }),
+    ).rejects.toThrow(/the pipeline cannot load: node "score"/)
   })
 
   test('a soft limit on a node is an unknown field', async () => {

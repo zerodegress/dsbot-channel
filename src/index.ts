@@ -38,6 +38,7 @@ export type {
   InboundMessage,
   InboundRejection,
   InboundVerdict,
+  PrepareInput,
   RefuseInput,
   RefuseReason,
   RefuseResult,

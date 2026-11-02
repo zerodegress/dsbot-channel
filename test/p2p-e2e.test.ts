@@ -1368,7 +1368,6 @@ transport: {
 
 describe('one service reports every adapter at once', () => {
   test('two adapters appear in one snapshot, and it empties when they stop', async () => {
-    const [portA, portB] = [await freePort(), await freePort()]
     const ctx = new Context()
     captureWarnings(ctx)
     const sessions = new StubSessions(ctx, 1)
@@ -1390,7 +1389,7 @@ instance: 'inst-a',
 botName: 'bot-a',
 transport: {
   peers: [{ instance: 'inst-b', secret: REF }],
-  listen: { host: '127.0.0.1', port: portA }
+  listen: { host: '127.0.0.1', port: 0 }
 }
 },
         {
@@ -1399,7 +1398,7 @@ instance: 'inst-b',
 botName: 'bot-b',
 transport: {
   peers: [{ instance: 'inst-a', secret: REF }],
-  listen: { host: '127.0.0.1', port: portB }
+  listen: { host: '127.0.0.1', port: 0 }
 }
 },
       ],
