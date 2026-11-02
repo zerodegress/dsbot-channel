@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-03
+
 ### Added
 
 - `send_file` sends on OneBot now: `upload_group_file` or `upload_private_file` with the receiver's `name`, a url only when `transport.fileFromUrl: true` says the implementation takes one (most accept a path on their own host), and no download on our side. The receipt is `file_id`, then `message_id`, then a `local:` id when the platform gives neither. The built-in p2p link carries a url only, so `send_file` answers `unsupported_capability` there; a link travels in the text instead.
