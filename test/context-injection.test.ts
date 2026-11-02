@@ -18,6 +18,8 @@ let prompted: string[] = []
 function message(options: {
   eventKey: string
   text?: string
+  /** The transport's own rendering, with its header; defaults to the text alone. */
+  bodyText?: string
   kind?: AuthorKind
   senderId?: string
   nickname?: string
@@ -26,6 +28,7 @@ function message(options: {
 }): InboundMessage {
   const mentioned = options.mentioned ?? { self: false, others: false, all: false }
   const text = options.text ?? ''
+  const bodyText = options.bodyText ?? text
   return {
     eventKey: options.eventKey,
     chainId: options.eventKey,
@@ -36,7 +39,7 @@ function message(options: {
     author: { senderId: options.senderId ?? 'u1', kind: options.kind ?? 'person', personId: null },
     rawText: text,
     body: {
-      text,
+      text: bodyText,
       media: (options.media ?? []).map((type) => ({
         type,
         url: 'https://example.test/a.png',
@@ -226,5 +229,37 @@ describe('the messages a turn did not answer', () => {
     await waitFor(() => prompted[0]!.includes('second'))
 
     expect(prompted[0]).not.toContain('[context]')
+  })
+
+  test('reads what the sender said, not the header the adapter put on it', async () => {
+    await mount({ turn: { context: { messages: 10 } } })
+    await deliver(
+      message({
+        eventKey: 'm-1',
+        text: 'first',
+        bodyText: '[onebot from 阿明 · 10001 · 7] first',
+        senderId: '10001',
+        nickname: '阿明',
+      }),
+    )
+    await waitFor(() => prompted.length === 1)
+    await deliver(message({ eventKey: 'm-2', text: 'second' }))
+    await waitFor(() => prompted.length === 2)
+
+    const blocks = blocksOf(prompted[1]!)
+    expect(blocks).toContain('10001 (阿明): first')
+    expect(blocks).not.toContain('[onebot from')
+  })
+
+  test('a bot refused by the group rule still shows up on the next turn', async () => {
+    await mount({ turn: { context: { messages: 10 } } })
+    await deliver(message({ eventKey: 'b-1', text: 'bot a says hi', kind: 'bot', senderId: 'bot-a' }))
+    expect(verdicts[0]).toMatchObject({ ok: false, code: 'rejected' })
+    if (!verdicts[0]!.ok) expect(verdicts[0]!.reason).toContain('bot-speaker')
+
+    await deliver(message({ eventKey: 'm-1', text: 'hello' }))
+    await waitFor(() => prompted.length === 1)
+
+    expect(blocksOf(prompted[0]!)).toContain('bot-a: bot a says hi')
   })
 })
