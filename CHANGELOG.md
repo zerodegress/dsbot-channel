@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A `pipeline` in the profile, global and per bot, sets the nodes a turn runs — deny, allow, restrict scoring and judging, score, or pass — with `maxTurnMs` and `judgeTimeoutMs` bounding how long a turn may take and how long a judge may take inside it. A host may add one more layer for a session at run time.
 - A p2p channel that runs end to end: an accepted message starts a turn with the host session controller, and the reply is sent back to the peer that sent it.
 - `mentioned` on an event reports `self`, `others` and `all` separately, so an adapter says whether a message names the bot, someone else, or everyone; `policy.requireMention: true` refuses group messages that name neither the bot nor everyone, and is off by default.
-- A media reference is `{ type, url, handle }`, at least one of `url` and `handle` present; `handle` is the adapter's opaque token, carried untouched, and both take part in the content hash.
+- A media reference is `{ type, url }` with a non-empty `url`, and both fields take part in the content hash. An adapter that can only name a media item by a token of its own drops it and warns: core never sees a platform token.
 - `decline` closes the conversation with a refusal the adapter sends (`RefuseInput`), and reports `declined: false` when a transport cannot send one.
 - `send_text` addresses a message by `target` alone; a caller that still passes `scope` gets `unsupported_argument` rather than silence.
 - Guidance and the tool-mode notice ride as bracketed blocks on their own lines: `[<kind>]` for the adapter's guidance, `[tool-mode]` for the mode notice. Guidance rides a conversation once; the mode block repeats only on a switch into tool mode.
