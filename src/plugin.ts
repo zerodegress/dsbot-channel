@@ -451,7 +451,21 @@ function readConfig(raw: unknown): ChannelConfig {
 }
 
 /** Starts only the adapters the profile declares; an empty list starts nothing. */
+/** How the window reads time and schedules itself; only tests hand in their own clock. */
+export interface ChannelDeps {
+  now?: (() => number) | undefined
+  setTimer?: ((callback: () => void, ms: number) => unknown) | undefined
+  clearTimer?: ((handle: unknown) => void) | undefined
+}
+
 export async function apply(ctx: Context, raw: unknown): Promise<void> {
+  return applyWith(ctx, raw, {})
+}
+
+export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps = {}): Promise<void> {
+  const clock = options.now ?? (() => Date.now())
+  const setTimer = options.setTimer ?? ((callback: () => void, ms: number) => setTimeout(callback, ms))
+  const clearTimer = options.clearTimer ?? ((handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>))
   const registry = ctx.get(REGISTRY_SERVICE) as AdapterRegistry | undefined
   if (registry === undefined) {
     throw new ConfigError(
@@ -515,7 +529,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const chains = new ClosedChains()
   const injected = new InjectionLedger()
   const activeTurns = new Map<string, TurnRef>()
-  const queued = new Map<string, { queue: TurnQueue<InboundMessage>; timer: ReturnType<typeof setTimeout> | undefined }>()
+  const queued = new Map<string, { queue: TurnQueue<InboundMessage>; timer: unknown }>()
   const eventKeys = new KeyGuard()
   const chainKeys = new ChainGuard()
   const turns = new TurnStats()
@@ -661,7 +675,7 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
   const started: AdapterHandle[] = []
   ctx.effect(() => async () => {
     for (const held of queued.values()) {
-      if (held.timer !== undefined) clearTimeout(held.timer)
+      if (held.timer !== undefined) clearTimer(held.timer)
     }
     queued.clear()
     await Promise.allSettled(started.map((handle) => handle.stop()))
@@ -791,19 +805,19 @@ export async function apply(ctx: Context, raw: unknown): Promise<void> {
         const openWindow = (): void => {
           if (held!.queue.pending === 0) return
           if (held!.timer !== undefined) return
-          held!.timer = setTimeout(() => {
+          held!.timer = setTimer(() => {
             held!.timer = undefined
-            const due = held!.queue.due(Date.now())
+            const due = held!.queue.due(clock())
             if (due !== undefined) runBatch(due.map((one) => one.value))
             openWindow()
           }, turn.coalesceMs)
         }
         const ready = held.queue.push(
           { eventKey: message.eventKey, chars: message.body.text.length, value: message },
-          Date.now(),
+          clock(),
         )
         if (ready !== undefined) {
-          if (held.timer !== undefined) clearTimeout(held.timer)
+          if (held.timer !== undefined) clearTimer(held.timer)
           held.timer = undefined
           runBatch(ready.map((one) => one.value))
           openWindow()
