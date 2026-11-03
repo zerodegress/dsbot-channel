@@ -1,16 +1,31 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { REFUSE_REASONS } from './contract.js'
 import type { RefuseReason } from './contract.js'
+import type { Scope } from './event-types.js'
 
 /** What core knows about the turn a tool is running inside; nothing here is peer specific. */
 export interface TurnRef {
   eventId: string
+  /** The triggering message, which also names the batch's author. */
+  eventKey: string
+  /** Every event key the turn read, so evidence covers a merged batch. */
+  eventKeys: string[]
   /** The chain root this turn belongs to. */
   chainId: string
   channel: string
   /** The address this turn answers on, as the adapter named it. */
   target: string
   sender: string
+  /** The bot answering; one bot's notes never sit in another's directory. */
+  bot: string
+  sessionKey: string
+  /** The adapter kind; a peer-to-peer turn has no impression partition. */
+  kind: string
+  scope: Scope
+  /** The stamped identity of the triggering author, or null when the account is unbound. */
+  personId: string | null
+  /** Set when a side-effect tool wrote something, so the empty-turn warn tells the truth. */
+  sideEffect: boolean
   /** Set by end or decline so the turn that just ran sends nothing back. */
   suppressed: boolean
   /** Set by decline, so a reader can tell a refusal from a quiet end. */

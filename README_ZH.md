@@ -49,7 +49,9 @@ config:
         accessToken: ONEBOT_TOKEN
 ```
 
-`channel`、`instance`、`botName`、`transport` 必填，`channel` 不能重复。`kind` 默认 `p2p`；另一个内置是 `onebot`，第三方传输用 `x-[a-z0-9-]+` 的名字，最长 32 字符。`secret` 与 `accessToken` 填的是宿主任凭服务里的引用名，不是密钥本身。
+`channel`、`instance`、`botName`、`transport` 必填，`channel` 不能重复。`kind` 默认 `p2p`；另一个内置是 `onebot`，第三方传输用 `x-[a-z0-9-]+` 的名字，最长 32 字符。`secret` 与 `accessToken` 填的是宿主任凭服务里的引用名，不是密钥本身。配置里的路径按 POSIX 解释，暂不支持 Windows。
+
+印象库默认关闭，配置顶层的 `impressions` 块给出绝对路径的 `dir` 才启用。它存放关于本回合对端或本群的短笔记，用 `impression_put`、`impression_get`、`impression_forget` 读写。
 
 | 字段 | 默认值 | 作用 |
 | --- | --- | --- |
@@ -65,6 +67,7 @@ config:
 | `turn.maxChars` | `8000` | 批次预算 |
 | `turn.context.messages` | `0` | 历史条数 |
 | `turn.context.chars` | `2000` | 上下文预算 |
+| `impressions.dir` | 关闭 | 笔记根目录 |
 | `transport.history.group` | `false` | OneBot：读群历史 |
 | `transport.history.private` | `false` | OneBot：读私聊历史 |
 | `transport.fileFromUrl` | `false` | OneBot：用 url 发文件 |

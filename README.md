@@ -49,7 +49,9 @@ config:
         accessToken: ONEBOT_TOKEN
 ```
 
-`channel`, `instance`, `botName` and `transport` are required, and `channel` must be unique. `kind` defaults to `p2p`; `onebot` is the other built-in, and a third-party transport registers as `x-[a-z0-9-]+`, at most 32 characters. `secret` and `accessToken` are reference names in the host credentials service, not the secrets themselves.
+`channel`, `instance`, `botName` and `transport` are required, and `channel` must be unique. `kind` defaults to `p2p`; `onebot` is the other built-in, and a third-party transport registers as `x-[a-z0-9-]+`, at most 32 characters. `secret` and `accessToken` are reference names in the host credentials service, not the secrets themselves. Paths in a profile are read as POSIX paths; Windows is not supported.
+
+The impression library is off until a top-level `impressions` block names an absolute `dir`. It keeps short notes about the person a turn answers or about its group; `impression_put`, `impression_get` and `impression_forget` read and write them.
 
 | Field | Default | Meaning |
 | --- | --- | --- |
@@ -65,6 +67,7 @@ config:
 | `turn.maxChars` | `8000` | batch budget |
 | `turn.context.messages` | `0` | earlier messages |
 | `turn.context.chars` | `2000` | context budget |
+| `impressions.dir` | off | notes root |
 | `transport.history.group` | `false` | OneBot: group history |
 | `transport.history.private` | `false` | OneBot: private history |
 | `transport.fileFromUrl` | `false` | OneBot: file from a url |
