@@ -11,6 +11,7 @@ const config: OneBotAdapterConfig = {
   instance: 'inst-a',
   botName: 'bot-a',
   selfId: '10001',
+  protocol: 'http',
   listen: { host: '127.0.0.1', port: 0, path: '/onebot/event' },
   api: { url: 'http://127.0.0.1:1', timeoutMs: 1000 },
   sendTimeoutMs: 1000,

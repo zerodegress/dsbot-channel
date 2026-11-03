@@ -183,6 +183,7 @@ describe('what a 2xx from an onebot listener means', () => {
         instance: 'inst-a',
         botName: 'bot-a',
         selfId: '10001',
+        protocol: 'http',
         listen: { host: '127.0.0.1', port, path: '/onebot/event' },
         api: { url: 'http://127.0.0.1:1', timeoutMs: 100 },
         sendTimeoutMs: 100,

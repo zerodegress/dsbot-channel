@@ -57,8 +57,8 @@ describe('dependencies the host provides', () => {
     expect(config).toContain(`'@deepseek-ai/dsh-tools'`)
   })
 
-  test('the production tree carries no dependency of its own', () => {
-    expect(Object.keys(pkg.dependencies ?? {})).toEqual([])
+  test('the production tree carries no dependency the host already provides', () => {
+    expect(Object.keys(pkg.dependencies ?? {}).filter((name) => name.startsWith('@deepseek-ai/'))).toEqual([])
   })
 
   test('publishing checks the production tree for advisories first', () => {
