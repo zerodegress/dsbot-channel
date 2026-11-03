@@ -270,7 +270,6 @@ describe('the store on disk', () => {
     const reader = new ImpressionStore({ dir, bot: BOT })
     await reader.load()
     expect(await reader.read('person', 'alice')).toEqual({ ok: true, records: [record] })
-    expect(reader.stats()).toEqual({ subjects: 1, records: 1 })
   })
 
   test('refuses a corrupt file, naming it, instead of rebuilding it', async () => {
@@ -318,7 +317,7 @@ describe('the store on disk', () => {
     await writeFile(path, 'not a subject file', { mode: 0o600 })
     const store = new ImpressionStore({ dir, bot: BOT })
     await store.load()
-    expect(store.stats()).toEqual({ subjects: 0, records: 0 })
+    expect(await store.read('person', 'alice')).toEqual({ ok: true, records: [] })
   })
 
   test('reports a wide file on read instead of fixing it at mount', async () => {
@@ -477,7 +476,6 @@ describe('the store transaction', () => {
     await store.transact('person', 'alice', () => [note()])
     const forgotten = await store.transact('person', 'alice', () => [])
     expect(forgotten).toEqual({ ok: true, records: [] })
-    expect(store.stats()).toEqual({ subjects: 0, records: 0 })
     await expect(stat(pathOf(dir, 'person', 'alice'))).rejects.toThrow()
   })
 
@@ -492,11 +490,12 @@ describe('the store transaction', () => {
     }
     const warnings: string[] = []
     const store = new ImpressionStore({ dir, bot: BOT, warn: (message) => warnings.push(message) })
+    const files = async () => (await readdir(personDir)).filter((name) => name.endsWith('.json'))
     await store.load()
-    expect(store.stats().subjects).toBe(IMPRESSION_SUBJECTS_MAX)
+    expect((await files()).length).toBe(IMPRESSION_SUBJECTS_MAX)
     const written = await store.transact('person', 'newcomer', () => [note({ subject: 'newcomer' })])
     expect(written.ok).toBe(true)
-    expect(store.stats().subjects).toBe(IMPRESSION_SUBJECTS_MAX)
+    expect((await files()).length).toBe(IMPRESSION_SUBJECTS_MAX)
     await expect(stat(pathOf(dir, 'person', 'user-0'))).rejects.toThrow()
     expect(warnings.some((message) => message.includes('dropped 1 oldest impression file'))).toBe(true)
   })

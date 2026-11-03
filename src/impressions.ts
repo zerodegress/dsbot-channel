@@ -90,12 +90,6 @@ export interface ImpressionsConfig {
   dir: string
 }
 
-/** What one bot's store holds, for a status reader that never sees note text. */
-export interface ImpressionStoreStats {
-  subjects: number
-  records: number
-}
-
 export interface ImpressionStoreOptions {
   dir: string
   bot: string
@@ -443,12 +437,6 @@ export class ImpressionStore {
     } catch (error) {
       return { ok: false, code: 'storage_error', reason: describe(error) }
     }
-  }
-
-  stats(): ImpressionStoreStats {
-    let records = 0
-    for (const entry of this.#index.values()) records += entry.records
-    return { subjects: this.#index.size, records }
   }
 
   /** Applies one change under the file's queue, so a read and the write after it cannot interleave. */
