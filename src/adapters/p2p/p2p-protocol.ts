@@ -181,7 +181,10 @@ function parseMedia(raw: unknown): { ok: true; value: readonly P2PMediaItem[] } 
       typeof name !== 'string' ||
       name.length === 0 ||
       name.length > MEDIA_NAME_MAX ||
-      /[\u0000-\u001f\u007f]/.test(name)
+      [...name].some((character) => {
+        const code = character.codePointAt(0) ?? 0
+        return code <= 0x1f || code === 0x7f
+      })
     ) {
       return { ok: false, reason: `a media name must be 1 to ${MEDIA_NAME_MAX} printable characters` }
     }
