@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-03
+
 ### Added
 
 - A bot can keep short notes about the person a turn answers, or about its group, through `impression_put`, `impression_get` and `impression_forget`; the tools act only on that counterpart. A note carries the messages that support it (one to sixteen), and writing the same note again adds evidence.
