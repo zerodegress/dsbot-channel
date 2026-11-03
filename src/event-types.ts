@@ -34,6 +34,20 @@ export type MediaType = (typeof MEDIA_TYPES)[number]
 /** Longest handle a transport may name a media item by; a handle is a token, not free text. */
 export const HANDLE_MAX = 256
 
+/** Longest file name a media item may carry; it is a label, not a path. */
+export const MEDIA_NAME_MAX = 128
+
+/** True when a name is a short printable label, the only thing core accepts as one. */
+export function mediaNameProblem(name: unknown): string | undefined {
+  if (typeof name !== 'string' || name.length === 0) return 'a media name must be a non-empty string'
+  if (name.length > MEDIA_NAME_MAX) return `a media name must be at most ${MEDIA_NAME_MAX} characters`
+  for (const character of name) {
+    const code = character.codePointAt(0) ?? 0
+    if (code <= 0x1f || code === 0x7f) return 'a media name must be printable characters only'
+  }
+  return undefined
+}
+
 /** The transport instance that can resolve a handle; core stamps it, an adapter cannot claim it. */
 export interface MediaOwner {
   kind: string

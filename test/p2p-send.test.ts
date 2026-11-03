@@ -279,4 +279,16 @@ describe('failures are told apart', () => {
     const sent = JSON.parse(target.seen().body) as Envelope
     expect(sent.media).toEqual([['image', 'https://example.test/a.png']])
   })
+
+  test('a name on an image is dropped at the wire, so an older peer still reads two elements', async () => {
+    const target = await capture()
+    await sendToPeer({
+      ...base(target.url),
+      media: [['image', 'https://example.test/a.png', 'a.png'] as const],
+    })
+    const seen = target.seen()
+    const sent = JSON.parse(seen.body) as Envelope
+    expect(sent.media).toEqual([['image', 'https://example.test/a.png']])
+    expect(signEnvelope(SECRET, sent)).toBe(seen.headers['x-p2p-signature'])
+  })
 })

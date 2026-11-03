@@ -219,9 +219,9 @@ export class P2PAdapter implements ChannelAdapter {
       }
     }
     const media = usable.map((item) =>
-      item.type === 'file' && item.name !== undefined
-        ? ([item.type, item.url as string, item.name] as const)
-        : ([item.type, item.url as string] as const),
+      item.name === undefined
+        ? ([item.type, item.url as string] as const)
+        : ([item.type, item.url as string, item.name] as const),
     )
     const result = await sendToPeer({
       peer: target,

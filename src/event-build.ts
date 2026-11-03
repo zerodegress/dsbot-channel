@@ -1,7 +1,7 @@
 import { adapterMetaOf } from './adapter-meta.js'
 import { contentHash, eventKey } from './event-key.js'
 import type { ChargeKind, Event, EventInput, MediaInput, MediaOwner, MediaRef, Mentioned, Source } from './event-types.js'
-import { HANDLE_MAX, MEDIA_TYPES } from './event-types.js'
+import { HANDLE_MAX, MEDIA_TYPES, mediaNameProblem } from './event-types.js'
 import { AUTHOR_KINDS, CHARGE_KINDS, SCOPES, SOURCE_KIND_MAX } from './event-types.js'
 
 function assertEnum<T extends string>(name: string, allowed: readonly T[], value: string): T {
@@ -55,7 +55,7 @@ function assertMedia(media: readonly MediaInput[], owner: MediaOwner): MediaRef[
     const handle =
       rawHandle !== null && typeof rawHandle === 'string' && handleProblem(rawHandle) === undefined ? rawHandle : null
     if (url === null && handle === null) return
-    const name = typeof item.name === 'string' && item.name.length > 0 ? item.name : undefined
+    const name = mediaNameProblem(item.name) === undefined ? (item.name as string) : undefined
     kept.push({ type: item.type, url, handle, owner, ...(name === undefined ? {} : { name }) })
   })
   return kept

@@ -120,6 +120,11 @@ export async function sendToPeer(input: P2PSendInput): Promise<SendResult> {
   }
 
   const sentAt = input.sentAt ?? Date.now()
+  // A name is a file's label: any other type loses it here, so one peer that never read a
+  // three-element item keeps seeing the two elements it always did.
+  const media = (input.media ?? []).map(([type, url, name]) =>
+    type === 'file' && name !== undefined ? ([type, url, name] as const) : ([type, url] as const),
+  )
   const envelope = {
     eventId: input.eventId,
     chainId: input.chainId ?? input.eventId,
@@ -133,7 +138,7 @@ export async function sendToPeer(input: P2PSendInput): Promise<SendResult> {
     ...(input.final === undefined ? {} : { final: input.final }),
     ...(input.inReplyTo === undefined ? {} : { inReplyTo: input.inReplyTo }),
     ...(input.inReplyToExcerpt === undefined ? {} : { inReplyToExcerpt: input.inReplyToExcerpt }),
-    ...(input.media === undefined || input.media.length === 0 ? {} : { media: input.media }),
+    ...(media.length === 0 ? {} : { media }),
   }
   const signature = signEnvelope(secret, envelope)
   const payload = canonicalEnvelope(envelope)

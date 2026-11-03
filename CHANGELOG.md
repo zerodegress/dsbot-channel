@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- A p2p media item may carry a file's name as a third element: `['file', url, name]`. An item without one signs and travels exactly as before, so an older peer sees the bytes it always saw; a peer that understands names stamps the file it receives. `capabilities.file.out` is on again for p2p, so `send_file` sends there as well.
+- A p2p media item may carry a file's name as a third element: `['file', url, name]`. An item without one signs and travels exactly as before, so an older peer sees the bytes it always saw; an item with one is refused whole by a peer from 0.2.0, so sending a named file needs both ends upgraded. A receiver that knows the shape stamps the name on the event, and only a file carries one. `capabilities.file.out` is on again for p2p, so `send_file` sends there as well.
 - The package declares `@deepseek-ai/dsh-tools` and `@deepseek-ai/schemastery` as optional peers instead of dependencies: the bundle leaves both external, so a dependency entry only made every install fetch a second copy of the harness tree. The production tree now declares nothing, publishing runs `pnpm audit --prod` before it packs, and `packageManager` pins the pnpm that wrote the lockfile.
 
 ## [0.2.0] - 2026-11-03

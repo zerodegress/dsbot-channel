@@ -4,7 +4,7 @@ import { SecretRefError, resolvePeers } from './p2p-secrets.js'
 import type { DedupeTable } from './p2p-dedupe.js'
 import type { ChannelStats } from '../../channel-stats.js'
 import { EXCERPT_CHARS } from './p2p-mapping.js'
-import { MEDIA_TYPES } from '../../event-types.js'
+import { MEDIA_TYPES, mediaNameProblem } from '../../event-types.js'
 import type { P2PMediaItem } from './p2p-wire.js'
 
 export const P2P_ROUTE = '/p2p/v1/message'
@@ -25,8 +25,6 @@ export const CHAIN_ID_MAX = 256
 export const MEDIA_MAX_ITEMS = 16
 export const MEDIA_URL_MAX = 2048
 export const MEDIA_TOTAL_MAX = 8 * 1024
-/** Longest file name a media item may carry; it is a label, not a path. */
-export const MEDIA_NAME_MAX = 128
 
 function isToken(text: string): boolean {
   for (const char of text) {
@@ -177,18 +175,9 @@ function parseMedia(raw: unknown): { ok: true; value: readonly P2PMediaItem[] } 
       value.push([type, url])
       continue
     }
-    if (
-      typeof name !== 'string' ||
-      name.length === 0 ||
-      name.length > MEDIA_NAME_MAX ||
-      [...name].some((character) => {
-        const code = character.codePointAt(0) ?? 0
-        return code <= 0x1f || code === 0x7f
-      })
-    ) {
-      return { ok: false, reason: `a media name must be 1 to ${MEDIA_NAME_MAX} printable characters` }
-    }
-    value.push([type, url, name])
+    const nameProblem = mediaNameProblem(name)
+    if (nameProblem !== undefined) return { ok: false, reason: nameProblem }
+    value.push([type, url, name as string])
   }
   if (JSON.stringify(value).length > MEDIA_TOTAL_MAX) return { ok: false, reason: `media must fit in ${MEDIA_TOTAL_MAX} bytes` }
   return { ok: true, value }
