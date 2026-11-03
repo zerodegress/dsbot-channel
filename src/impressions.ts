@@ -148,6 +148,12 @@ export function mergeEvidence(record: Impression, evidence: readonly ImpressionE
   return { ...record, evidence: normalizeEvidence([...record.evidence, ...evidence]), updatedAt: Math.max(record.updatedAt, at) }
 }
 
+/** What a record is worth today: halves every 90 days, never below the floor. */
+export function effectiveConfidence(confidence: number, updatedAt: number, now: number): number {
+  const days = Math.max(0, now - updatedAt) / 86_400_000
+  return Math.max(IMPRESSION_CONFIDENCE_FLOOR, confidence * 0.5 ** (days / IMPRESSION_HALF_LIFE_DAYS))
+}
+
 /** Dedupes ids and evidence and drops the oldest records, so what is written is what the reader accepts. */
 export function normalizeRecords(records: readonly Impression[]): Impression[] {
   const byId = new Map<string, Impression>()

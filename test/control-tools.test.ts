@@ -6,7 +6,23 @@ function harness(options: { declined?: { ok: boolean; code?: string; reason?: st
   const closed: string[] = []
   const declined: { turn: TurnRef; reason: string; note: string | undefined }[] = []
   const concluded: number[] = []
-  const turn: TurnRef = { eventId: 'probe-1', chainId: 'chain-1', channel: 'p2p:orca', target: 'seal', sender: 'seal', suppressed: false, pushed: false }
+  const turn: TurnRef = {
+    eventId: 'probe-1',
+    eventKey: 'p2p:orca:1',
+    eventKeys: ['p2p:orca:1'],
+    chainId: 'chain-1',
+    channel: 'p2p:orca',
+    target: 'seal',
+    sender: 'seal',
+    bot: 'bot-a',
+    sessionKey: 'p2p:orca',
+    kind: 'p2p',
+    scope: 'p2p',
+    personId: null,
+    sideEffect: false,
+    suppressed: false,
+    pushed: false,
+  }
   const closedNow = new Set<string>()
   const ports: ControlPorts = {
     turnOf: (sessionId) => (sessionId === 'session-1' ? turn : undefined),

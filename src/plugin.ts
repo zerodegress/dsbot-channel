@@ -20,6 +20,9 @@ import { CHAIN_ID_MAX, GUIDANCE_MAX, REPLY_TARGET_MAX, REQUEST_ID_MAX, SESSION_K
 import { SOURCE_KIND_MAX } from './event-types.js'
 import { createDeclineTool, createNoReplyTool } from './control-tools.js'
 import type { ControlPorts, TurnRef } from './control-tools.js'
+import { createImpressionForget, createImpressionGet, createImpressionPut } from './impression-tools.js'
+import type { ImpressionPorts } from './impression-tools.js'
+import { ImpressionStore, readImpressionsConfig } from './impressions.js'
 import { ChainGuard, KeyGuard } from './event-keys.js'
 import { InboundGate } from './inbound-gate.js'
 import type { GroupBotPolicy } from './inbound-gate.js'
@@ -83,6 +86,8 @@ export interface ChannelConfig {
   turn?: TurnSettings | undefined
   /** Who an account belongs to: declared bindings, validated at mount. */
   identity?: unknown
+  /** Where this bot's notes live; absent means the feature is off. */
+  impressions?: unknown
 }
 
 export interface TurnSettings {
@@ -132,6 +137,7 @@ export const Config: any = Schema.object({
   /** Nested shape, enum and regex checks live in reply-config; this schema only claims the key. */
   reply: Schema.any(),
   identity: Schema.any(),
+  impressions: Schema.any(),
   turn: Schema.object({
     coalesceMs: Schema.number(),
     maxBatch: Schema.number(),
@@ -551,10 +557,20 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   if (TOOL_MODE_NOTICE.length > TOOL_MODE_NOTICE_MAX) {
     throw new ConfigError(`the tool-mode block is longer than ${TOOL_MODE_NOTICE_MAX} characters`, ['reply'])
   }
-  type AnyTool = SendTextTool | ReturnType<typeof createNoReplyTool> | ReturnType<typeof createDeclineTool>
+  type AnyTool =
+    | SendTextTool
+    | ReturnType<typeof createNoReplyTool>
+    | ReturnType<typeof createDeclineTool>
+    | ReturnType<typeof createImpressionPut>
+    | ReturnType<typeof createImpressionGet>
+    | ReturnType<typeof createImpressionForget>
+  const impressionsConfig = readImpressionsConfig(config.impressions)
   const tools = ctx.get('tools') as { register: (definition: AnyTool) => () => void } | undefined
   if (reply.possibleTool && (tools === undefined || typeof tools.register !== 'function')) {
     throw new ConfigError('the tools service is required when a profile can choose tool mode', ['reply'])
+  }
+  if (impressionsConfig !== undefined && (tools === undefined || typeof tools.register !== 'function')) {
+    throw new ConfigError('the tools service is required when impressions.dir is set', ['impressions'])
   }
   const byBot = new Map<string, MountedChannel>()
   for (const channel of channels) {
@@ -595,6 +611,14 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   const eventKeys = new KeyGuard()
   const chainKeys = new ChainGuard()
   const turns = new TurnStats()
+  const impressionStores = new Map<string, ImpressionStore>()
+  if (impressionsConfig !== undefined) {
+    for (const botName of new Set(channels.map((channel) => channel.config.botName))) {
+      const store = new ImpressionStore({ dir: impressionsConfig.dir, bot: botName, now: clock, warn })
+      await store.load()
+      impressionStores.set(botName, store)
+    }
+  }
   const resolveSecret = async (reference: string): Promise<string | undefined> => {
     const found = await credentials.resolve?.(reference)
     return found?.value
@@ -611,10 +635,18 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     const turnRef: TurnRef = {
       // The refusal answers the newest message of the batch; the record below uses the first.
       eventId: last.requestId,
+      eventKey: message.eventKey,
+      eventKeys: [message.eventKey, ...rest.map((one) => one.eventKey)],
       chainId: message.chainId,
       channel: adapter.channel,
       target: message.replyTarget,
       sender: message.author.senderId,
+      bot: adapter.botName,
+      sessionKey: message.sessionKey,
+      kind: transport.kind,
+      scope: message.source.scope,
+      personId: message.author.personId,
+      sideEffect: false,
       suppressed: message.suppressed === true || chains.isClosed(message.chainId),
       pushed: false,
     }
@@ -687,7 +719,10 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         return
       }
       if (turn.text.length === 0) {
-        warn(`dsbot-channel: the turn for ${message.requestId} from ${message.replyTarget} ended with no text and no tool call`)
+        const why = turnRef.sideEffect
+          ? 'ended without an answer after a side-effect tool ran'
+          : 'ended with no text and no tool call'
+        warn(`dsbot-channel: the turn for ${message.requestId} from ${message.replyTarget} ${why}`)
         turns.empty()
         ended('empty')
         runtime.billing.reject(hold)
@@ -999,6 +1034,16 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     }
     ctx.effect(() => tools.register(createNoReplyTool(ports)), 'dsbot-channel: no_reply tool')
     ctx.effect(() => tools.register(createDeclineTool(ports)), 'dsbot-channel: decline tool')
+    if (impressionStores.size > 0) {
+      const impressionPorts: ImpressionPorts = {
+        storeOf: (bot) => impressionStores.get(bot),
+        turnOf: (sessionId) => (sessionId === undefined ? undefined : activeTurns.get(sessionId)),
+        now: clock,
+      }
+      ctx.effect(() => tools.register(createImpressionPut(impressionPorts)), 'dsbot-channel: impression_put tool')
+      ctx.effect(() => tools.register(createImpressionGet(impressionPorts)), 'dsbot-channel: impression_get tool')
+      ctx.effect(() => tools.register(createImpressionForget(impressionPorts)), 'dsbot-channel: impression_forget tool')
+    }
   }
 }
 
