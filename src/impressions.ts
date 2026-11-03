@@ -552,13 +552,13 @@ export class ImpressionStore {
 
   /** Reads one file through every check a turn's write must respect; missing means an empty subject. */
   async #readNow(path: string): Promise<ImpressionFile | undefined> {
-    const existing = await this.#stat(path)
-    if (existing === undefined) return undefined
-    if (existing.isSymbolicLink() || !existing.isFile()) throw new StoreProblem(`${path} is not a regular file`)
     const rootProblem = await this.#rootProblem()
     if (rootProblem !== undefined) throw new StoreProblem(rootProblem)
     const leafProblem = await this.#modeProblem(path)
     if (leafProblem !== undefined) throw new StoreProblem(leafProblem)
+    const existing = await this.#stat(path)
+    if (existing === undefined) return undefined
+    if (existing.isSymbolicLink() || !existing.isFile()) throw new StoreProblem(`${path} is not a regular file`)
     const handle = await this.#open(path)
     try {
       const stat = await handle.stat()

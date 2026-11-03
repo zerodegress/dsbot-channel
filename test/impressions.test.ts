@@ -511,6 +511,16 @@ describe('the store transaction', () => {
     expect(warnings.some((message) => message.includes('created impression storage') && message.includes(root))).toBe(true)
   })
 
+  test('reports a wide leaf even when the subject file does not exist yet', async () => {
+    const dir = await tempRoot()
+    const store = new ImpressionStore({ dir, bot: BOT })
+    await store.load()
+    await store.transact('person', 'alice', () => [note()])
+    await chmod(dirname(pathOf(dir, 'person', 'alice')), 0o755)
+    const missing = await store.read('person', 'bob')
+    expect(missing).toEqual({ ok: false, code: 'storage_error', reason: expect.stringContaining('wider than 700') })
+  })
+
   test('returns a failure instead of throwing when the file turned bad after mount', async () => {
     const dir = await tempRoot()
     const store = new ImpressionStore({ dir, bot: BOT })
