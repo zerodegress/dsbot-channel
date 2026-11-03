@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net'
 import type { AdapterStatus, CapabilitySet } from '../../adapter-status.js'
 import { buildListenerHealth, buildStatus } from '../../adapter-status.js'
 import { answerStatus } from '../shared/status-route.js'
+import { ForwardLink } from './ws-forward.js'
 import type { ChannelSnapshot } from '../../channel-stats.js'
 import { ChannelStats, countersOf } from '../../channel-stats.js'
 import { ConfigError } from '../../config.js'
@@ -284,6 +285,7 @@ export class OneBotAdapter implements ChannelAdapter {
   readonly #chainRoot = new Map<string, string>()
   #ports: AdapterPorts | undefined
   #server: Server | undefined
+  #forward: ForwardLink | undefined
   #warn: ((message: string) => void) | undefined
 
   constructor(config: OneBotAdapterConfig, options: { warn?: (message: string) => void; now?: () => number } = {}) {
@@ -333,17 +335,18 @@ export class OneBotAdapter implements ChannelAdapter {
   status(): AdapterStatus {
     const snapshot = this.#stats.snapshot()
     const listening = snapshot.state === 'listening'
+    const forward = this.#forward
     return buildStatus({
       channel: this.#config.channel,
       account: this.#config.instance,
       bot: this.#config.botName,
-      health: buildListenerHealth({
+      health: forward === undefined ? buildListenerHealth({
         listenState: listening ? 'listening' : snapshot.state === 'failed' ? 'failed' : 'stopped',
         boundPort: snapshot.boundPort,
         lastAuthenticatedAt: snapshot.lastAuthenticatedAt,
         lastFailure: snapshot.lastFailure,
         queueDepth: snapshot.inFlight,
-      }),
+      }) : forward.health(),
       counters: countersOf(snapshot),
       capabilities: this.capabilities,
       attributes: { stableMessageId: true },
@@ -444,6 +447,20 @@ export class OneBotAdapter implements ChannelAdapter {
     if (ports === undefined) {
       return { ok: false, code: 'unreachable', reason: 'the onebot adapter is not started' }
     }
+    if (this.#config.protocol === 'ws-forward') {
+      const forward = this.#forward
+      if (forward === undefined) {
+        return { ok: false, code: 'unreachable', reason: 'the forward socket is not open' }
+      }
+      const answer = await forward.request(action, params, undefined)
+      if (!answer.ok) {
+        if (/^消息.*不存在$/.test(answer.reason)) return { ok: true, data: {} }
+        if (/^记录.*不存在$/.test(answer.reason)) return { ok: false, code: 'rejected', reason: answer.reason }
+        return { ok: false, code: answer.code, reason: answer.reason }
+      }
+      const data = answer.frame.data
+      return { ok: true, data: data !== null && typeof data === 'object' ? (data as Record<string, unknown>) : {} }
+    }
     const api = this.#config.api
     if (api === undefined) {
       return { ok: false, code: 'unsupported', reason: 'this protocol has no http action api' }
@@ -539,6 +556,20 @@ export class OneBotAdapter implements ChannelAdapter {
     const ports = this.#ports
     if (ports === undefined) {
       return { ok: false, code: 'unreachable', retryable: true, reason: 'the onebot adapter is not started' }
+    }
+    if (this.#config.protocol === 'ws-forward') {
+      const forward = this.#forward
+      if (forward === undefined) {
+        return { ok: false, code: 'unreachable', retryable: true, reason: 'the forward socket is not open' }
+      }
+      const answer = await forward.request(action, params, timeoutMs)
+      if (!answer.ok) {
+        return { ok: false, code: answer.code, retryable: answer.code !== 'rejected', reason: answer.reason }
+      }
+      const data = answer.frame.data
+      const payload = data !== null && typeof data === 'object' ? (data as Record<string, unknown>) : {}
+      const given = idOf(payload.file_id) ?? idOf(payload.message_id)
+      return { ok: true, messageId: given ?? `local:${randomUUID()}`, duplicate: false }
     }
     const api = this.#config.api
     if (api === undefined) {
@@ -649,6 +680,7 @@ export class OneBotAdapter implements ChannelAdapter {
   }
 
   async start(ports: AdapterPorts): Promise<AdapterHandle> {
+    if (this.#config.protocol === 'ws-forward') return this.#startForward(ports)
     const listen = this.#config.listen
     if (this.#config.protocol !== 'http' || listen === undefined) {
       throw new ConfigError(
@@ -728,6 +760,21 @@ export class OneBotAdapter implements ChannelAdapter {
   ): Promise<{ ok: true; messageId: string; duplicate: false } | { ok: false; code: SendFailure['code']; retryable: boolean; reason: string }> {
     const ports = this.#ports
     if (ports === undefined) return { ok: false, code: 'unreachable', retryable: true, reason: 'the onebot adapter is not started' }
+    if (this.#config.protocol === 'ws-forward') {
+      const forward = this.#forward
+      if (forward === undefined) return { ok: false, code: 'unreachable', retryable: true, reason: 'the forward socket is not open' }
+      const answer = await forward.request(action, params, timeoutMs)
+      if (!answer.ok) {
+        return { ok: false, code: answer.code, retryable: answer.code !== 'rejected', reason: answer.reason }
+      }
+      const data = answer.frame.data
+      const messageId =
+        data !== null && typeof data === 'object' ? idOf((data as Record<string, unknown>).message_id) : undefined
+      if (messageId === undefined) {
+        return { ok: false, code: 'rejected', retryable: false, reason: 'the api answered without a message id' }
+      }
+      return { ok: true, messageId, duplicate: false }
+    }
     const api = this.#config.api
     if (api === undefined) {
       return { ok: false, code: 'unsupported', retryable: false, reason: 'this protocol has no http action api' }
@@ -837,6 +884,11 @@ export class OneBotAdapter implements ChannelAdapter {
     // OneBot implementations resend a non-2xx answer, so every event is accepted or dropped here, not refused.
     response.writeHead(204)
     response.end()
+    await this.#acceptEvent(event)
+  }
+
+  /** Turns one OneBot event into a message and hands it to core, whatever carried it. */
+  async #acceptEvent(event: OneBotEvent): Promise<void> {
     const message = mapOneBotEvent(
       event,
       this.#config,
@@ -859,6 +911,45 @@ export class OneBotAdapter implements ChannelAdapter {
       }
     } catch (error) {
       this.#warn?.(`dsbot-channel: handing off ${message.requestId} failed: ${String(error)}`)
+    }
+  }
+
+  /** Dials the implementation's socket and hands what arrives to the same event path. */
+  async #startForward(ports: AdapterPorts): Promise<AdapterHandle> {
+    const api = this.#config.api
+    if (api === undefined) {
+      throw new ConfigError('transport.api is required for ws-forward', ['adapters', 'transport', 'api'])
+    }
+    const token = this.#config.accessToken === undefined ? undefined : await ports.resolveSecret(this.#config.accessToken)
+    if (this.#config.accessToken !== undefined && token === undefined) {
+      throw new ConfigError('transport.accessToken names a credential that did not resolve', [
+        'adapters',
+        'transport',
+        'accessToken',
+      ])
+    }
+    this.#ports = ports
+    const link = new ForwardLink({
+      apiUrl: api.url,
+      ...(this.#config.event === undefined ? {} : { eventUrl: this.#config.event.url }),
+      token,
+      reconnect: this.#config.reconnect ?? { initialMs: 500, maxMs: 30_000, factor: 2 },
+      ...(this.#config.heartbeat === undefined ? {} : { heartbeat: this.#config.heartbeat }),
+      timeoutMs: this.#config.sendTimeoutMs,
+      maxFrameBytes: ONEBOT_MAX_BODY_BYTES,
+      onEvent: (frame) => {
+        void this.#acceptEvent(frame as OneBotEvent)
+      },
+      onMismatch: () => this.#stats.protocolMismatch(),
+      warn: (message) => this.#warn?.(message),
+    })
+    this.#forward = link
+    link.start()
+    return {
+      stop: async () => {
+        link.close()
+        this.#forward = undefined
+      },
     }
   }
 
