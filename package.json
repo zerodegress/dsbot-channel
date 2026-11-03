@@ -73,6 +73,7 @@
     "@deepseek-ai/schemastery": "~3.18.5",
     "@eslint/js": "~10.0.1",
     "@types/node": "~22.20.5",
+    "@types/ws": "~8.18.1",
     "eslint": "~10.13.0",
     "rolldown": "~1.2.15",
     "typescript": "~5.9.3",
@@ -95,5 +96,8 @@
       "patch": "./cordis.patch.yml"
     }
   },
-  "packageManager": "pnpm@10.34.9"
+  "packageManager": "pnpm@10.34.9",
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
 }

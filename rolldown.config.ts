@@ -7,5 +7,5 @@ export default defineConfig({
     format: 'esm',
     sourcemap: process.env.SOURCE_MAP === '1',
   },
-  external: ['@deepseek-ai/cordis', '@deepseek-ai/dsh-tools', '@deepseek-ai/schemastery', /^node:/],
+  external: ['@deepseek-ai/cordis', '@deepseek-ai/dsh-tools', '@deepseek-ai/schemastery', 'ws', /^node:/],
 })
