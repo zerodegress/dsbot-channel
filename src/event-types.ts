@@ -45,6 +45,8 @@ export interface MediaInput {
   type: MediaType
   url: string | null
   handle: string | null
+  /** A file's name, when the sender gave one; a label for readers, never a path. */
+  name?: string | undefined
 }
 
 /** A media reference an event carries, with the instance that owns its handle. */

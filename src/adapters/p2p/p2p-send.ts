@@ -1,3 +1,4 @@
+import type { P2PMediaItem } from './p2p-wire.js'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import { canonicalEnvelope, signEnvelope } from './p2p-auth.js'
@@ -39,7 +40,7 @@ export interface P2PSendInput {
   inReplyTo?: string
   inReplyToExcerpt?: string
   /** Media to carry, as `[type, url]`; every url must be an http(s) address. */
-  media?: readonly (readonly [string, string])[]
+  media?: readonly P2PMediaItem[]
 }
 
 function failure(code: SendFailureCode, retryable: boolean, reason: string): SendFailure {

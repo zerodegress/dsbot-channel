@@ -117,4 +117,18 @@ describe('the handle a header carries', () => {
   test('a short id is left as it is', () => {
     expect(shortHandle('p2p-evt-1')).toBe('p2p-evt-1')
   })
+
+  test('a named file keeps its name in the event, with the owner stamped', () => {
+    const event = toP2PEvent({
+      ...inbound,
+      media: [['file', 'https://example.test/a.txt', 'a.txt']],
+    })
+    expect(event.body.media[0]).toMatchObject({
+      type: 'file',
+      url: 'https://example.test/a.txt',
+      handle: null,
+      name: 'a.txt',
+      owner: { kind: 'p2p', instance: 'peer-a' },
+    })
+  })
 })

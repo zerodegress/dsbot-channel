@@ -76,7 +76,7 @@ export class P2PAdapter implements ChannelAdapter {
   readonly capabilities = {
     text: true,
     image: { in: true, out: true, fromUrl: true, fromHandle: false },
-    file: { in: true, out: false, fromUrl: false, fromHandle: false },
+    file: { in: true, out: true, fromUrl: true, fromHandle: false },
     voice: { in: true, out: true, fromUrl: true, fromHandle: false },
     recall: false,
     history: NO_HISTORY,
@@ -218,7 +218,11 @@ export class P2PAdapter implements ChannelAdapter {
         reason: 'every media item was dropped and the body is empty, so there is nothing a peer could accept',
       }
     }
-    const media = usable.map((item) => [item.type, item.url as string] as const)
+    const media = usable.map((item) =>
+      item.type === 'file' && item.name !== undefined
+        ? ([item.type, item.url as string, item.name] as const)
+        : ([item.type, item.url as string] as const),
+    )
     const result = await sendToPeer({
       peer: target,
       ...(input.chainId === undefined ? {} : { chainId: input.chainId }),

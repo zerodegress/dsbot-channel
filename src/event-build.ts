@@ -55,7 +55,8 @@ function assertMedia(media: readonly MediaInput[], owner: MediaOwner): MediaRef[
     const handle =
       rawHandle !== null && typeof rawHandle === 'string' && handleProblem(rawHandle) === undefined ? rawHandle : null
     if (url === null && handle === null) return
-    kept.push({ type: item.type, url, handle, owner })
+    const name = typeof item.name === 'string' && item.name.length > 0 ? item.name : undefined
+    kept.push({ type: item.type, url, handle, owner, ...(name === undefined ? {} : { name }) })
   })
   return kept
 }
