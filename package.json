@@ -59,17 +59,18 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "prepack": "pnpm build",
-    "prepublishOnly": "pnpm lint && pnpm typecheck && pnpm test"
+    "prepublishOnly": "pnpm lint && pnpm typecheck && pnpm test && pnpm audit:prod",
+    "audit:prod": "pnpm audit --prod"
   },
-  "dependencies": {
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.0.5",
     "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
     "@deepseek-ai/schemastery": "~3.18.5"
   },
-  "peerDependencies": {
-    "@deepseek-ai/cordis": "~4.0.5"
-  },
   "devDependencies": {
     "@deepseek-ai/cordis": "~4.0.5",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
+    "@deepseek-ai/schemastery": "~3.18.5",
     "@eslint/js": "~10.0.1",
     "@types/node": "~22.20.5",
     "eslint": "~10.13.0",
@@ -80,6 +81,12 @@
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    },
+    "@deepseek-ai/schemastery": {
       "optional": true
     }
   },
