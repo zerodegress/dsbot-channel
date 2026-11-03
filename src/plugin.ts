@@ -708,6 +708,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     for (const botName of new Set(channels.map((channel) => channel.config.botName))) {
       const store = new ImpressionStore({ dir: impressionsConfig.dir, bot: botName, now: clock, warn })
       await store.load()
+      await store.renderAtMount()
       impressionStores.set(botName, store)
     }
   }

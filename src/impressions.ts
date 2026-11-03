@@ -104,6 +104,10 @@ export interface ImpressionsTurn {
 
 export const DEFAULT_IMPRESSION_CHARS = 400
 export const IMPRESSION_CHARS_MAX = 2000
+/** The read-only export the store keeps beside its subject directories. */
+export const IMPRESSION_VIEW_NAME = 'MEMORY.md'
+export const IMPRESSION_VIEW_HEADER =
+  '# Impressions\n\nGenerated from the impression store; read-only. This file is not read by the host.\n'
 
 export interface ImpressionStoreOptions {
   dir: string
@@ -469,6 +473,9 @@ export class ImpressionStore {
   readonly #warned = new Set<string>()
   #directorySyncWarned = false
   #creationWarned = false
+  #dirty = false
+  #rendering: Promise<void> | undefined
+  #renderWarned = false
 
   constructor(options: ImpressionStoreOptions) {
     if (options.dir.length === 0) throw new ConfigError('impressions.dir must be a non-empty string', ['impressions', 'dir'])
@@ -529,6 +536,7 @@ export class ImpressionStore {
         const changed = change(current?.records ?? [])
         if (changed.length === 0) {
           await this.#deleteNow(path)
+          this.#markDirty()
           return { ok: true as const, records: [] }
         }
         const records = normalizeRecords(changed)
@@ -548,6 +556,7 @@ export class ImpressionStore {
           touchedAt: file.touchedAt,
           records: file.records.length,
         })
+        this.#markDirty()
         return { ok: true as const, records }
       })
     } catch (error) {
@@ -575,6 +584,69 @@ export class ImpressionStore {
     } catch (error) {
       return { ok: false, code: 'storage_error', reason: describe(error) }
     }
+  }
+
+  /** Renders the read-only view once when the bot directory already exists. */
+  async renderAtMount(): Promise<void> {
+    if ((await this.#stat(this.root)) === undefined) return
+    this.#markDirty()
+    const running = this.#rendering
+    if (running !== undefined) await running
+    if (this.#rendering === undefined && this.#dirty) await this.#scheduleRender()
+  }
+
+  #markDirty(): void {
+    this.#dirty = true
+    void this.#scheduleRender()
+  }
+
+  #scheduleRender(): Promise<void> {
+    const running = this.#rendering
+    if (running !== undefined) return running
+    const run = this.#renderLoop().finally(() => {
+      if (this.#rendering === run) this.#rendering = undefined
+    })
+    this.#rendering = run
+    return run
+  }
+
+  async #renderLoop(): Promise<void> {
+    while (this.#dirty) {
+      this.#dirty = false
+      try {
+        await this.#renderOnce()
+      } catch (error) {
+        if (!this.#renderWarned) {
+          this.#renderWarned = true
+          this.#warn(`dsbot-channel: could not render ${join(this.root, IMPRESSION_VIEW_NAME)}: ${describe(error)}`)
+        }
+        this.#dirty = true
+        return
+      }
+    }
+  }
+
+  /** Reads every known subject from disk and writes the view through the same atomic path as notes. */
+  async #renderOnce(): Promise<void> {
+    const subjects = [...this.#index.entries()]
+      .map(([path, entry]) => ({ path, ...entry }))
+      .sort((left, right) =>
+        left.subject === right.subject
+          ? left.subjectKind.localeCompare(right.subjectKind)
+          : left.subject.localeCompare(right.subject),
+      )
+    const sections: string[] = []
+    for (const subject of subjects) {
+      const file = await this.#readAt(subject.path)
+      const records = [...file.records].sort((left, right) => left.id.localeCompare(right.id))
+      if (records.length === 0) continue
+      const lines = records.map(
+        (record) =>
+          `- [${record.kind}] ${record.confidence} ${new Date(record.updatedAt).toISOString()} ${record.text}`,
+      )
+      sections.push(`\n## ${subject.subjectKind}: ${subject.subject}\n${lines.join('\n')}\n`)
+    }
+    await this.#writeAtomic(join(this.root, IMPRESSION_VIEW_NAME), `${IMPRESSION_VIEW_HEADER}${sections.join('')}`)
   }
 
   async #scanKind(dir: string): Promise<void> {

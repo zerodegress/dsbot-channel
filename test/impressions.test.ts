@@ -8,6 +8,8 @@ import {
   IMPRESSION_RECORDS_MAX,
   IMPRESSION_SUBJECTS_MAX,
   IMPRESSION_TEXT_MAX,
+  IMPRESSION_VIEW_HEADER,
+  IMPRESSION_VIEW_NAME,
   ImpressionStore,
   botDirectoryName,
   impressionId,
@@ -272,7 +274,7 @@ describe('the store on disk', () => {
   }
 
   afterEach(async () => {
-    await Promise.all(roots.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
+    await Promise.all(roots.splice(0).map((dir) => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })))
   })
 
   function pathOf(dir: string, kind: 'person' | 'group', subject: string): string {
@@ -460,7 +462,7 @@ describe('the store transaction', () => {
   }
 
   afterEach(async () => {
-    await Promise.all(roots.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
+    await Promise.all(roots.splice(0).map((dir) => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })))
   })
 
   function pathOf(dir: string, kind: 'person' | 'group', subject: string): string {
@@ -594,7 +596,7 @@ describe('what is written is what a reader accepts', () => {
   }
 
   afterEach(async () => {
-    await Promise.all(roots.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
+    await Promise.all(roots.splice(0).map((dir) => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })))
   })
 
   test('remounts after puts, dedupe and eviction with the same content', async () => {
@@ -676,5 +678,109 @@ describe('what is written is what a reader accepts', () => {
     await chmod(store.root, 0o775)
     const refused = await watching.transact('person', 'alice', (records) => records)
     expect(refused).toEqual({ ok: false, code: 'storage_error', reason: expect.stringContaining('wider than 700') })
+  })
+})
+
+
+describe('the read-only export view', () => {
+  const roots: string[] = []
+
+  async function tempRoot(): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), 'dsbot-impressions-'))
+    roots.push(dir)
+    return dir
+  }
+
+  afterEach(async () => {
+    await Promise.all(roots.splice(0).map((dir) => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })))
+  })
+
+  function viewOf(dir: string): string {
+    return join(dir, botDirectoryName(BOT), IMPRESSION_VIEW_NAME)
+  }
+
+  test('renders the stored values, never the decayed ones, through an atomic 0600 file', async () => {
+    const dir = await tempRoot()
+    const store = new ImpressionStore({ dir, bot: BOT, now: () => AT })
+    await store.load()
+    await store.transact('person', 'alice', () => [note()])
+    await store.renderAtMount()
+    const path = viewOf(dir)
+    expect((await stat(path)).mode & 0o777).toBe(0o600)
+    expect(await readFile(path, 'utf8')).toBe(
+      `${IMPRESSION_VIEW_HEADER}\n## person: alice\n- [fact] 0.6 ${new Date(AT).toISOString()} alice likes short answers\n`,
+    )
+  })
+
+  test('renders twice byte-identically', async () => {
+    const dir = await tempRoot()
+    const store = new ImpressionStore({ dir, bot: BOT, now: () => AT })
+    await store.load()
+    await store.transact('person', 'alice', () => [note()])
+    await store.renderAtMount()
+    const first = await readFile(viewOf(dir), 'utf8')
+    await store.renderAtMount()
+    expect(await readFile(viewOf(dir), 'utf8')).toBe(first)
+  })
+
+  test('drops the line once the last record is forgotten', async () => {
+    const dir = await tempRoot()
+    const store = new ImpressionStore({ dir, bot: BOT, now: () => AT })
+    await store.load()
+    await store.transact('person', 'alice', () => [note()])
+    await store.renderAtMount()
+    await store.transact('person', 'alice', () => [])
+    await store.renderAtMount()
+    expect(await readFile(viewOf(dir), 'utf8')).toBe(IMPRESSION_VIEW_HEADER)
+  })
+
+  test('matches a fresh render after two concurrent writes to different subjects', async () => {
+    const dir = await tempRoot()
+    const store = new ImpressionStore({ dir, bot: BOT, now: () => AT })
+    await store.load()
+    await Promise.all([
+      store.transact('person', 'alice', () => [note()]),
+      store.transact('person', 'bob', () => [note({ subject: 'bob', text: 'bob likes long ones' })]),
+    ])
+    await store.renderAtMount()
+    const rendered = await readFile(viewOf(dir), 'utf8')
+    const fresh = new ImpressionStore({ dir, bot: BOT, now: () => AT })
+    await fresh.load()
+    await rm(viewOf(dir), { force: true })
+    await fresh.renderAtMount()
+    expect(await readFile(viewOf(dir), 'utf8')).toBe(rendered)
+  })
+
+  test('writes nothing when the bot directory does not exist', async () => {
+    const dir = await tempRoot()
+    const store = new ImpressionStore({ dir, bot: BOT })
+    await store.load()
+    await store.renderAtMount()
+    await expect(stat(join(dir, botDirectoryName(BOT)))).rejects.toThrow()
+  })
+
+  test('rewrites a stale view at mount', async () => {
+    const dir = await tempRoot()
+    await mkdir(join(dir, botDirectoryName(BOT)), { recursive: true, mode: 0o700 })
+    await writeFile(viewOf(dir), 'stale', { mode: 0o600 })
+    const store = new ImpressionStore({ dir, bot: BOT })
+    await store.load()
+    await store.renderAtMount()
+    expect(await readFile(viewOf(dir), 'utf8')).toBe(IMPRESSION_VIEW_HEADER)
+  })
+
+  test('warns once when it cannot render and still lets the write through', async () => {
+    const dir = await tempRoot()
+    const botDir = join(dir, botDirectoryName(BOT))
+    await mkdir(join(botDir, IMPRESSION_VIEW_NAME), { recursive: true, mode: 0o700 })
+    const warnings: string[] = []
+    const store = new ImpressionStore({ dir, bot: BOT, now: () => AT, warn: (message) => warnings.push(message) })
+    await store.load()
+    expect(await store.transact('person', 'alice', () => [note()])).toMatchObject({ ok: true })
+    await store.renderAtMount()
+    expect(warnings.filter((message) => message.includes('could not render'))).toHaveLength(1)
+    await rm(join(botDir, IMPRESSION_VIEW_NAME), { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })
+    await store.renderAtMount()
+    expect(await readFile(viewOf(dir), 'utf8')).toContain('alice likes short answers')
   })
 })
