@@ -8,6 +8,7 @@ import { ReverseLink } from '../src/adapters/onebot/ws-reverse.js'
 interface Harness {
   port: number
   link: ReverseLink
+  frames: Record<string, unknown>[]
   warnings: string[]
   failures: { auth: number; unknown: number; mismatch: number }
   close: () => Promise<void>
@@ -17,15 +18,51 @@ const servers: Server[] = []
 const links: ReverseLink[] = []
 const clients: WebSocket[] = []
 
+
+/** A timer source a test walks by hand, so a ping window is walked, not slept through. */
+function manualClock(): { clock: { setTimer: (run: () => void, ms: number) => unknown; clearTimer: (handle: unknown) => void }; advance: (ms: number) => Promise<void> } {
+  let time = 0
+  let seq = 0
+  const timers = new Map<number, { at: number; run: () => void }>()
+  return {
+    clock: {
+      setTimer: (run, ms) => {
+        const id = ++seq
+        timers.set(id, { at: time + ms, run })
+        return id
+      },
+      clearTimer: (handle) => {
+        timers.delete(handle as number)
+      },
+    },
+    advance: async (ms: number) => {
+      const target = time + ms
+      for (;;) {
+        const due = [...timers.entries()]
+          .filter(([, timer]) => timer.at <= target)
+          .sort((left, right) => left[1].at - right[1].at)[0]
+        if (due === undefined) break
+        timers.delete(due[0])
+        time = due[1].at
+        due[1].run()
+        await new Promise((resolve) => setImmediate(resolve))
+      }
+      time = target
+    },
+  }
+}
+
 async function serve(
   path = '/onebot/ws',
   token?: string,
   selfId?: string,
   timeoutMs = 500,
   liveness?: { intervalMs: number; timeoutMs: number },
+  clock?: { setTimer: (run: () => void, ms: number) => unknown; clearTimer: (handle: unknown) => void },
 ): Promise<Harness> {
   const failures = { auth: 0, unknown: 0, mismatch: 0 }
   const warnings: string[] = []
+  const frames: Record<string, unknown>[] = []
   const server = createServer()
   servers.push(server)
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
@@ -36,7 +73,8 @@ async function serve(
     maxFrameBytes: 1024 * 1024,
     timeoutMs,
     ...(liveness === undefined ? {} : { liveness }),
-    onEvent: () => undefined,
+    ...(clock === undefined ? {} : { clock }),
+    onEvent: (frame) => frames.push(frame),
     onMismatch: () => (failures.mismatch += 1),
     onAuthFailure: () => (failures.auth += 1),
     onUnknownPath: () => (failures.unknown += 1),
@@ -48,6 +86,7 @@ async function serve(
   return {
     port,
     link,
+    frames,
     warnings,
     failures,
     close: async () => {
@@ -164,27 +203,41 @@ describe('the reverse websocket link', () => {
   })
 
   test('a client that never answers a ping is dropped', async () => {
-    const one = await serve('/onebot/ws', undefined, undefined, 500, { intervalMs: 20, timeoutMs: 25 })
+    const { clock, advance } = manualClock()
+    const one = await serve('/onebot/ws', undefined, undefined, 500, { intervalMs: 20, timeoutMs: 25 }, clock)
     dial(one.port, '/onebot/ws', {}, { autoPong: false })
     await waitFor(() => one.link.connection() !== undefined)
+
+    await advance(20)
+    await advance(25)
     await waitFor(() => one.warnings.some((line) => line.includes('ping')), 3000)
     await waitFor(() => one.link.connection() === undefined, 3000)
   })
 
   test('a client that answers its pings is kept', async () => {
-    const one = await serve('/onebot/ws', undefined, undefined, 500, { intervalMs: 20, timeoutMs: 25 })
-    dial(one.port)
+    const { clock, advance } = manualClock()
+    const one = await serve('/onebot/ws', undefined, undefined, 500, { intervalMs: 20, timeoutMs: 25 }, clock)
+    const client = dial(one.port)
+    // The pong and this frame travel the same socket in order, so the frame proves the pong landed.
+    client.on('ping', () => client.send(JSON.stringify({ post_type: 'message', message_id: 9002 })))
     await waitFor(() => one.link.connection() !== undefined)
-    await new Promise((resolve) => setTimeout(resolve, 150))
+
+    await advance(20)
+    await waitFor(() => one.frames.length === 1)
+    await advance(25)
     expect(one.link.connection()?.readyState).toBe(WebSocket.OPEN)
   })
 
   test('a disconnect during the wait for a pong is not reported as an unanswered ping', async () => {
-    const one = await serve('/onebot/ws', undefined, undefined, 500, { intervalMs: 20, timeoutMs: 60 })
+    const { clock, advance } = manualClock()
+    const one = await serve('/onebot/ws', undefined, undefined, 500, { intervalMs: 20, timeoutMs: 60 }, clock)
     const client = dial(one.port, '/onebot/ws', {}, { autoPong: false })
     client.on('ping', () => client.terminate())
     await waitFor(() => one.link.connection() !== undefined)
-    await new Promise((resolve) => setTimeout(resolve, 200))
+
+    await advance(20)
+    await waitFor(() => one.link.connection() === undefined, 3000)
+    await advance(60)
     expect(one.warnings.some((line) => line.includes('ping'))).toBe(false)
   })
 })

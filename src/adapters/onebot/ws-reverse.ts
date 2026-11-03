@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, Server } from 'node:http'
 import type { Duplex } from 'node:stream'
 import WebSocket, { WebSocketServer } from 'ws'
-import type { ActionAnswer, LivenessOptions } from './ws-forward.js'
+import type { ActionAnswer, LinkClock, LivenessOptions } from './ws-forward.js'
 import { ONEBOT_PING_INTERVAL_MS, ONEBOT_PONG_TIMEOUT_MS } from './ws-forward.js'
 
 export interface ReverseOptions {
@@ -12,6 +12,8 @@ export interface ReverseOptions {
   maxFrameBytes: number
   /** Protocol-level ping/pong; always on in production, shortened in tests. */
   liveness?: LivenessOptions | undefined
+  /** Timer source for liveness; real timers unless a test hands in its own. */
+  clock?: LinkClock | undefined
   /** How long an action waits for its answer; the profile's `sendTimeoutMs`. */
   timeoutMs: number
   heartbeat?: { intervalMs: number; timeoutMs: number } | undefined
@@ -214,29 +216,48 @@ export class ReverseLink {
     return match !== null && match[1] === this.#options.token
   }
 
+  #clock(): LinkClock {
+    return (
+      this.#options.clock ?? {
+        setTimer: (callback, ms) => setTimeout(callback, ms),
+        clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+      }
+    )
+  }
+
   /** Pings the reverse socket on the same fixed beat as the forward link. */
   #watch(socket: WebSocket): void {
     const liveness = this.#options.liveness ?? {
       intervalMs: ONEBOT_PING_INTERVAL_MS,
       timeoutMs: ONEBOT_PONG_TIMEOUT_MS,
     }
-    let waiting: ReturnType<typeof setTimeout> | undefined
-    const timer = setInterval(() => {
-      if (socket.readyState !== WebSocket.OPEN || waiting !== undefined) return
-      socket.ping()
-      waiting = setTimeout(() => {
-        waiting = undefined
-        this.#options.warn('dsbot-channel: closed the onebot socket: its ping went unanswered')
-        socket.close(1001, 'ping timeout')
-      }, liveness.timeoutMs)
-    }, liveness.intervalMs)
+    const clock = this.#clock()
+    let waiting: unknown
+    let tick: unknown
+    const schedule = (): void => {
+      tick = clock.setTimer(() => {
+        tick = undefined
+        if (socket.readyState !== WebSocket.OPEN) return
+        if (waiting === undefined) {
+          socket.ping()
+          waiting = clock.setTimer(() => {
+            waiting = undefined
+            this.#options.warn('dsbot-channel: closed the onebot socket: its ping went unanswered')
+            socket.close(1001, 'ping timeout')
+          }, liveness.timeoutMs)
+        }
+        schedule()
+      }, liveness.intervalMs)
+    }
+    schedule()
     socket.on('pong', () => {
-      if (waiting !== undefined) clearTimeout(waiting)
+      if (waiting !== undefined) clock.clearTimer(waiting)
       waiting = undefined
     })
     socket.on('close', () => {
-      clearInterval(timer)
-      if (waiting !== undefined) clearTimeout(waiting)
+      if (tick !== undefined) clock.clearTimer(tick)
+      tick = undefined
+      if (waiting !== undefined) clock.clearTimer(waiting)
       waiting = undefined
     })
   }
