@@ -51,7 +51,7 @@ config:
 
 `channel`, `instance`, `botName` and `transport` are required, and `channel` must be unique. `kind` defaults to `p2p`; `onebot` is the other built-in, and a third-party transport registers as `x-[a-z0-9-]+`, at most 32 characters. `secret` and `accessToken` are reference names in the host credentials service, not the secrets themselves. Paths in a profile are read as POSIX paths; Windows is not supported.
 
-The impression library is off until a top-level `impressions` block names an absolute `dir`; point it outside this repository, because it holds notes, not sources. Each bot keeps its notes under `<dir>/<sha256(botName)>/`, split into `person/` and `group/`, one `<sha256(subject)>.json` per subject; files are `0600` under `0700` directories and replaced by an atomic rename. `impression_put`, `impression_get` and `impression_forget` only act on the person this turn answers or, with `about: "group"`, on the group; every note carries the messages that support it, and `impression_get` reports the confidence left after its 90-day half-life.
+The impression library is off until a top-level `impressions` block names an absolute `dir`; point it outside this repository. Each bot keeps its notes under `<dir>/<sha256(botName)>/`, split into `person/` and `group/`, one `<sha256(subject)>.json` per subject; files are `0600` under `0700` directories and replaced by an atomic rename. `impression_put`, `impression_get` and `impression_forget` only act on the person this turn answers or, with `about: "group"`, on the group; every note carries the messages that support it, and `impression_get` reports the confidence left after its 90-day half-life.
 
 | Field | Default | Meaning |
 | --- | --- | --- |

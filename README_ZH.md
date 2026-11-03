@@ -51,7 +51,7 @@ config:
 
 `channel`、`instance`、`botName`、`transport` 必填，`channel` 不能重复。`kind` 默认 `p2p`；另一个内置是 `onebot`，第三方传输用 `x-[a-z0-9-]+` 的名字，最长 32 字符。`secret` 与 `accessToken` 填的是宿主任凭服务里的引用名，不是密钥本身。配置里的路径按 POSIX 解释，暂不支持 Windows。
 
-印象库默认关闭；`impressions` 是配置顶层的块，不是 adapter 里的字段，`dir` 指向绝对路径才启用。把它放在本仓库之外，因为里面是笔记不是源码。每只 Bot 的笔记放在 `<dir>/<sha256(botName)>/` 下，按 `person/` 与 `group/` 分两层，每个 subject 一个 `<sha256(subject)>.json`；文件 `0600`、目录 `0700`，用原子 rename 替换。`impression_put`、`impression_get`、`impression_forget` 只作用于本回合对端，或带 `about: "group"` 时作用于本群；每条笔记带支持它的消息，`impression_get` 返回 90 天半衰后剩下的置信度。
+印象库默认关闭；`impressions` 是配置顶层的块，不是 adapter 里的字段，`dir` 指向绝对路径才启用。把它放在本仓库之外。每只 Bot 的笔记放在 `<dir>/<sha256(botName)>/` 下，按 `person/` 与 `group/` 分两层，每个 subject 一个 `<sha256(subject)>.json`；文件 `0600`、目录 `0700`，用原子 rename 替换。`impression_put`、`impression_get`、`impression_forget` 只作用于本回合对端，或带 `about: "group"` 时作用于本群；每条笔记带支持它的消息，`impression_get` 返回 90 天半衰后剩下的置信度。
 
 | 字段 | 默认值 | 作用 |
 | --- | --- | --- |
