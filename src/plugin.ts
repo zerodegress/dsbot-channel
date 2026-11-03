@@ -621,6 +621,17 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   }
   const config = readConfig(raw)
   const warn = createWarn(ctx)
+  const flushFailures = { count: 0 }
+  const flushSessions = async (when: 'reply' | 'shutdown'): Promise<void> => {
+    const service = ctx.get('sessionPersistence') as { flush?: () => Promise<void> } | undefined
+    if (typeof service?.flush !== 'function') return
+    try {
+      await service.flush()
+    } catch (error) {
+      flushFailures.count += 1
+      warn(`dsbot-channel: the session log could not be flushed after ${when}: ${String(error)}`)
+    }
+  }
   const settings: PipelineSettings = {
     maxTurnMs: config.pipeline.maxTurnMs,
     judgeTimeoutMs: config.pipeline.judgeTimeoutMs,
@@ -888,6 +899,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         runtime.gate.recordReply(adapter.botName, message.sessionKey)
         runtime.billing.accept(hold)
         hold = undefined
+        await flushSessions('reply')
         return
       }
       turns.sendFailed(sent.code)
@@ -915,9 +927,12 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   const ledgers: BotLedger[] = []
   const reporting = new Set(channels.map((channel) => channel.adapter))
   const started: AdapterHandle[] = []
+  const runtimes: PeerSessions[] = []
   ctx.effect(() => async () => {
     windows.clear()
     await Promise.allSettled(started.map((handle) => handle.stop()))
+    for (const sessions of runtimes.splice(0)) sessions.dispose()
+    await flushSessions('shutdown')
     reporting.clear()
     started.length = 0
   }, 'dsbot-channel: peer listeners')
@@ -929,6 +944,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         observe,
         ...(adapter.session === undefined ? {} : { session: adapter.session }),
       })
+      runtimes.push(sessions)
       const compiled = compilePolicy(adapter.policy)
       const budget = adapter.policy.budget
       const ledger = budget === undefined ? undefined : createLedger(budget)
@@ -1054,6 +1070,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
           }
           setTimer(() => {
             void runTurn(runtime, first, sessionId, batch.slice(1)).catch((error: unknown) => {
+              if (runtime.sessions.disposed) return
               turns.failed()
               turns.close({
                 eventKey: first.eventKey,
@@ -1078,11 +1095,16 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     }
   } catch (error) {
     await Promise.allSettled(started.map((handle) => handle.stop()))
+    for (const sessions of runtimes.splice(0)) sessions.dispose()
     throw error
   }
   ctx.provide('dsbot-channel.status')
   ctx.set('dsbot-channel.status', {
-    snapshot: () => ({ sampledAt: Date.now(), adapters: [...reporting].map((adapter) => adapter.status()) }),
+    snapshot: () => ({
+      sampledAt: Date.now(),
+      adapters: [...reporting].map((adapter) => adapter.status()),
+      flushFailures: flushFailures.count,
+    }),
   })
   ctx.provide('dsbot-channel.turns')
   ctx.set('dsbot-channel.turns', { snapshot: () => turns.snapshot() })
