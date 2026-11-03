@@ -4,10 +4,12 @@ import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
 import {
   IMPRESSION_RECORDS_MAX,
+  IMPRESSION_SUBJECTS_MAX,
   IMPRESSION_TEXT_MAX,
   ImpressionStore,
   botDirectoryName,
   impressionId,
+  mergeEvidence,
   parseImpressionFile,
   readImpressionsConfig,
   subjectFileName,
@@ -386,5 +388,245 @@ describe('the store on disk', () => {
     expect(result).toEqual({ ok: false, code: 'storage_error', reason: expect.stringContaining('wider than 700') })
     const saved = await store.save(inputOf([note({ text: 'another' })]))
     expect(saved).toEqual({ ok: false, code: 'storage_error', reason: expect.stringContaining('wider than 700') })
+  })
+})
+
+
+describe('evidence and one file per subject', () => {
+  test('merges evidence by event key and keeps the newest sixteen', () => {
+    const record = note()
+    const merged = mergeEvidence(record, [evidence({ eventKey: 'inst:2', at: AT + 1 })], AT + 1)
+    expect(merged.id).toBe(record.id)
+    expect(merged.createdAt).toBe(record.createdAt)
+    expect(merged.updatedAt).toBe(AT + 1)
+    expect(merged.evidence.map((entry) => entry.eventKey)).toEqual(['inst:1', 'inst:2'])
+
+    const repeated = mergeEvidence(merged, [evidence({ eventKey: 'inst:2', at: AT + 1 })], AT + 1)
+    expect(repeated.evidence.length).toBe(2)
+
+    const many = Array.from({ length: 20 }, (_, index) => evidence({ eventKey: `inst:${index}`, at: AT + index }))
+    const capped = mergeEvidence(record, many, AT + 19)
+    expect(capped.evidence.length).toBe(16)
+    expect(capped.evidence[0]!.eventKey).toBe('inst:4')
+    expect(capped.evidence.at(-1)!.eventKey).toBe('inst:19')
+  })
+})
+
+describe('the store transaction', () => {
+  const roots: string[] = []
+
+  async function tempRoot(): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), 'dsbot-impressions-'))
+    roots.push(dir)
+    return dir
+  }
+
+  afterEach(async () => {
+    await Promise.all(roots.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
+  })
+
+  function pathOf(dir: string, kind: 'person' | 'group', subject: string): string {
+    return join(dir, botDirectoryName(BOT), kind, `${subjectFileName(subject)}.json`)
+  }
+
+  test('applies a change and reads it back', async () => {
+    const dir = await tempRoot()
+    const store = new ImpressionStore({ dir, bot: BOT })
+    await store.load()
+    const record = note()
+    const written = await store.transact('person', 'alice', () => [record])
+    expect(written).toEqual({ ok: true, records: [record] })
+    expect(await store.read('person', 'alice')).toEqual({ ok: true, records: [record] })
+  })
+
+  test('serializes read-modify-write so two sessions both land', async () => {
+    const dir = await tempRoot()
+    const store = new ImpressionStore({ dir, bot: BOT })
+    await store.load()
+    const first = note({ text: 'first note' })
+    const second = note({ text: 'second note' })
+    await Promise.all([
+      store.transact('person', 'alice', (records) => [...records, first]),
+      store.transact('person', 'alice', (records) => [...records, second]),
+    ])
+    const read = await store.read('person', 'alice')
+    expect(read.ok).toBe(true)
+    if (!read.ok) throw new Error(read.reason)
+    expect(read.records.map((record) => record.text).sort()).toEqual(['first note', 'second note'])
+  })
+
+  test('drops the oldest records of a subject past its bound', async () => {
+    const dir = await tempRoot()
+    const store = new ImpressionStore({ dir, bot: BOT })
+    await store.load()
+    const many = Array.from({ length: IMPRESSION_RECORDS_MAX + 1 }, (_, index) =>
+      note({ text: `note ${index}`, createdAt: AT + index, updatedAt: AT + index }),
+    )
+    const written = await store.transact('person', 'alice', () => many)
+    expect(written.ok).toBe(true)
+    if (!written.ok) throw new Error(written.reason)
+    expect(written.records.length).toBe(IMPRESSION_RECORDS_MAX)
+    expect(written.records.map((record) => record.text)).not.toContain('note 0')
+    expect(written.records.map((record) => record.text)).toContain(`note ${IMPRESSION_RECORDS_MAX}`)
+  })
+
+  test('deletes the subject file when its last record goes', async () => {
+    const dir = await tempRoot()
+    const store = new ImpressionStore({ dir, bot: BOT })
+    await store.load()
+    await store.transact('person', 'alice', () => [note()])
+    const forgotten = await store.transact('person', 'alice', () => [])
+    expect(forgotten).toEqual({ ok: true, records: [] })
+    expect(store.stats()).toEqual({ subjects: 0, records: 0 })
+    await expect(stat(pathOf(dir, 'person', 'alice'))).rejects.toThrow()
+  })
+
+  test('prunes the oldest subject file to stay within the bot bound', async () => {
+    const dir = await tempRoot()
+    const personDir = join(dir, botDirectoryName(BOT), 'person')
+    await mkdir(personDir, { recursive: true, mode: 0o700 })
+    for (let index = 0; index < IMPRESSION_SUBJECTS_MAX; index += 1) {
+      const record = note({ subject: `user-${index}` })
+      const file = { ...fileOf([record]), touchedAt: AT + index }
+      await writeFile(join(personDir, `${subjectFileName(`user-${index}`)}.json`), JSON.stringify(file), { mode: 0o600 })
+    }
+    const warnings: string[] = []
+    const store = new ImpressionStore({ dir, bot: BOT, warn: (message) => warnings.push(message) })
+    await store.load()
+    expect(store.stats().subjects).toBe(IMPRESSION_SUBJECTS_MAX)
+    const written = await store.transact('person', 'newcomer', () => [note({ subject: 'newcomer' })])
+    expect(written.ok).toBe(true)
+    expect(store.stats().subjects).toBe(IMPRESSION_SUBJECTS_MAX)
+    await expect(stat(pathOf(dir, 'person', 'user-0'))).rejects.toThrow()
+    expect(warnings.some((message) => message.includes('dropped 1 oldest impression file'))).toBe(true)
+  })
+
+  test('warns with the full path when it creates the storage on first write', async () => {
+    const dir = await tempRoot()
+    const warnings: string[] = []
+    const store = new ImpressionStore({ dir, bot: BOT, warn: (message) => warnings.push(message) })
+    await store.load()
+    await store.transact('person', 'alice', () => [note()])
+    const root = join(dir, botDirectoryName(BOT))
+    expect(warnings.some((message) => message.includes('created impression storage') && message.includes(root))).toBe(true)
+  })
+
+  test('returns a failure instead of throwing when the file turned bad after mount', async () => {
+    const dir = await tempRoot()
+    const store = new ImpressionStore({ dir, bot: BOT })
+    await store.load()
+    await store.transact('person', 'alice', () => [note()])
+    const path = pathOf(dir, 'person', 'alice')
+    await writeFile(path, '{not json', { mode: 0o600 })
+    const read = await store.read('person', 'alice')
+    expect(read).toEqual({ ok: false, code: 'storage_error', reason: expect.stringContaining('not valid JSON') })
+    const written = await store.transact('person', 'alice', (records) => records)
+    expect(written).toEqual({ ok: false, code: 'storage_error', reason: expect.stringContaining('not valid JSON') })
+  })
+
+  test('refuses to write through a leaf directory that is wider than 0700', async () => {
+    const dir = await tempRoot()
+    const store = new ImpressionStore({ dir, bot: BOT })
+    await store.load()
+    await store.transact('person', 'alice', () => [note()])
+    await chmod(dirname(pathOf(dir, 'person', 'alice')), 0o755)
+    const written = await store.transact('person', 'alice', (records) => [...records, note({ text: 'another' })])
+    expect(written).toEqual({ ok: false, code: 'storage_error', reason: expect.stringContaining('wider than 700') })
+  })
+})
+
+
+describe('what is written is what a reader accepts', () => {
+  const roots: string[] = []
+
+  async function tempRoot(): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), 'dsbot-impressions-'))
+    roots.push(dir)
+    return dir
+  }
+
+  afterEach(async () => {
+    await Promise.all(roots.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
+  })
+
+  test('remounts after puts, dedupe and eviction with the same content', async () => {
+    const dir = await tempRoot()
+    const store = new ImpressionStore({ dir, bot: BOT })
+    await store.load()
+
+    for (let index = 0; index < 5; index += 1) {
+      await store.transact('person', 'alice', (records) => [...records, note({ text: `note ${index}` })])
+    }
+    const shared = note({ text: 'shared note' })
+    await store.transact('person', 'alice', (records) => [...records, shared])
+    await store.transact('person', 'alice', (records) => {
+      const index = records.findIndex((record) => record.id === shared.id)
+      const merged = mergeEvidence(records[index]!, [evidence({ eventKey: 'inst:9', at: AT + 9 })], AT + 9)
+      return [...records.slice(0, index), merged, ...records.slice(index + 1)]
+    })
+    const many = Array.from({ length: IMPRESSION_RECORDS_MAX + 6 }, (_, index) =>
+      note({ subject: 'bob', text: `bob note ${index}`, createdAt: AT + index, updatedAt: AT + index }),
+    )
+    await store.transact('person', 'bob', (records) => [...records, ...many])
+
+    const alice = await store.read('person', 'alice')
+    const bob = await store.read('person', 'bob')
+    const reloaded = new ImpressionStore({ dir, bot: BOT })
+    await reloaded.load()
+    expect(await reloaded.read('person', 'alice')).toEqual(alice)
+    expect(await reloaded.read('person', 'bob')).toEqual(bob)
+  })
+
+  test('normalizes evidence and duplicate ids into a file the reader accepts', async () => {
+    const dir = await tempRoot()
+    const store = new ImpressionStore({ dir, bot: BOT })
+    await store.load()
+    const record = note()
+    const noisy = [
+      {
+        ...record,
+        evidence: [
+          ...Array.from({ length: 20 }, (_, index) => evidence({ eventKey: `inst:${index}`, at: AT + index })),
+          evidence({ eventKey: 'inst:0', at: AT }),
+        ],
+      },
+      { ...record, evidence: [evidence({ eventKey: 'inst:30', at: AT + 30 })] },
+    ]
+    const written = await store.transact('person', 'alice', () => noisy)
+    expect(written.ok).toBe(true)
+    if (!written.ok) throw new Error(written.reason)
+    expect(written.records.length).toBe(1)
+    expect(written.records[0]!.evidence.length).toBe(16)
+    expect(new Set(written.records[0]!.evidence.map((entry) => entry.eventKey)).size).toBe(16)
+    const reloaded = new ImpressionStore({ dir, bot: BOT })
+    await reloaded.load()
+    expect(await reloaded.read('person', 'alice')).toEqual({ ok: true, records: written.records })
+  })
+
+  test('names the outermost directory it created on first write', async () => {
+    const base = await tempRoot()
+    const dir = join(base, 'deep', 'store')
+    const warnings: string[] = []
+    const store = new ImpressionStore({ dir, bot: BOT, warn: (message) => warnings.push(message) })
+    await store.load()
+    await store.transact('person', 'alice', () => [note()])
+    expect(warnings.some((message) => message.includes('created impression storage') && message.includes(dir))).toBe(true)
+  })
+
+  test('warns about a readable bot directory and refuses a writable one', async () => {
+    const dir = await tempRoot()
+    const store = new ImpressionStore({ dir, bot: BOT })
+    await store.load()
+    await store.transact('person', 'alice', () => [note()])
+    await chmod(store.root, 0o755)
+    const warnings: string[] = []
+    const watching = new ImpressionStore({ dir, bot: BOT, warn: (message) => warnings.push(message) })
+    await watching.load()
+    expect((await watching.transact('person', 'alice', (records) => records)).ok).toBe(true)
+    expect(warnings.some((message) => message.includes('readable beyond its owner'))).toBe(true)
+
+    await chmod(store.root, 0o775)
+    const refused = await watching.transact('person', 'alice', (records) => records)
+    expect(refused).toEqual({ ok: false, code: 'storage_error', reason: expect.stringContaining('wider than 700') })
   })
 })

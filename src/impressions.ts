@@ -106,7 +106,15 @@ export interface ImpressionStoreOptions {
 export type ImpressionReadResult =
   | { ok: true; records: readonly Impression[] }
   | { ok: false; code: 'storage_error'; reason: string }
+export type ImpressionWriteResult =
+  | { ok: true; records: readonly Impression[] }
+  | { ok: false; code: 'storage_error'; reason: string }
 export type ImpressionSaveResult = { ok: true } | { ok: false; code: 'storage_error'; reason: string }
+
+/** Applies one turn's change to a subject under the file's queue; an empty result deletes the file. */
+export type ImpressionChange = (records: readonly Impression[]) => readonly Impression[]
+
+class StoreProblem extends Error {}
 
 function sha256(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex')
@@ -126,6 +134,40 @@ export function subjectFileName(subject: string): string {
 /** The directory a bot owns under the configured root; hashed for the same reason. */
 export function botDirectoryName(bot: string): string {
   return sha256(bot)
+}
+
+/** One entry per event key, oldest dropped first, so a file never grows past what a reader accepts. */
+export function normalizeEvidence(entries: readonly ImpressionEvidence[]): ImpressionEvidence[] {
+  const merged = new Map<string, ImpressionEvidence>()
+  for (const entry of entries) merged.set(entry.eventKey, entry)
+  return [...merged.values()].sort((left, right) => left.at - right.at).slice(-IMPRESSION_EVIDENCE_MAX)
+}
+
+/** Adds evidence to a record, one entry per event key, keeping the newest 16. */
+export function mergeEvidence(record: Impression, evidence: readonly ImpressionEvidence[], at: number): Impression {
+  return { ...record, evidence: normalizeEvidence([...record.evidence, ...evidence]), updatedAt: Math.max(record.updatedAt, at) }
+}
+
+/** Dedupes ids and evidence and drops the oldest records, so what is written is what the reader accepts. */
+export function normalizeRecords(records: readonly Impression[]): Impression[] {
+  const byId = new Map<string, Impression>()
+  for (const record of records) {
+    const next: Impression = { ...record, evidence: normalizeEvidence(record.evidence) }
+    const seen = byId.get(next.id)
+    if (seen === undefined) {
+      byId.set(next.id, next)
+      continue
+    }
+    byId.set(next.id, {
+      ...seen,
+      evidence: normalizeEvidence([...seen.evidence, ...next.evidence]),
+      createdAt: Math.min(seen.createdAt, next.createdAt),
+      updatedAt: Math.max(seen.updatedAt, next.updatedAt),
+    })
+  }
+  const unique = [...byId.values()]
+  if (unique.length <= IMPRESSION_RECORDS_MAX) return unique
+  return unique.sort((left, right) => left.updatedAt - right.updatedAt).slice(-IMPRESSION_RECORDS_MAX)
 }
 
 /** Reads the plugin-level block; an absent block means the whole feature is off. */
@@ -345,6 +387,7 @@ export class ImpressionStore {
   readonly #queues = new Map<string, Promise<void>>()
   readonly #warned = new Set<string>()
   #directorySyncWarned = false
+  #creationWarned = false
 
   constructor(options: ImpressionStoreOptions) {
     if (options.dir.length === 0) throw new ConfigError('impressions.dir must be a non-empty string', ['impressions', 'dir'])
@@ -388,32 +431,9 @@ export class ImpressionStore {
 
   /** Reads one subject from disk; a file made unreadable by hand comes back as a failure. */
   async read(subjectKind: ImpressionSubjectKind, subject: string): Promise<ImpressionReadResult> {
-    const path = this.fileFor(subjectKind, subject)
     try {
-      const existing = await this.#stat(path)
-      if (existing === undefined) return { ok: true, records: [] }
-      if (existing.isSymbolicLink() || !existing.isFile()) {
-        return { ok: false, code: 'storage_error', reason: `${path} is not a regular file` }
-      }
-      const problem = await this.#modeProblem(path)
-      if (problem !== undefined) return { ok: false, code: 'storage_error', reason: problem }
-      const handle = await this.#open(path)
-      try {
-        const stat = await handle.stat()
-        if (widerThan(stat.mode & 0o777, 0o600)) {
-          return { ok: false, code: 'storage_error', reason: this.#modeWarning(stat.mode, path, 0o600) }
-        }
-        const raw = await handle.readFile('utf8')
-        let parsed: unknown
-        try {
-          parsed = JSON.parse(raw)
-        } catch {
-          return { ok: false, code: 'storage_error', reason: `${path} is not valid JSON` }
-        }
-        return { ok: true, records: parseImpressionFile(parsed, this.#bot, path).records }
-      } finally {
-        await handle.close()
-      }
+      const file = await this.#readNow(this.fileFor(subjectKind, subject))
+      return { ok: true, records: file?.records ?? [] }
     } catch (error) {
       return { ok: false, code: 'storage_error', reason: describe(error) }
     }
@@ -425,37 +445,56 @@ export class ImpressionStore {
     return { subjects: this.#index.size, records }
   }
 
-  /** Writes one subject file behind that file's queue; failures come back, they never throw. */
+  /** Applies one change under the file's queue, so a read and the write after it cannot interleave. */
+  async transact(subjectKind: ImpressionSubjectKind, subject: string, change: ImpressionChange): Promise<ImpressionWriteResult> {
+    const path = this.fileFor(subjectKind, subject)
+    try {
+      return await this.#enqueue(path, async () => {
+        const current = await this.#readNow(path)
+        const changed = change(current?.records ?? [])
+        if (changed.length === 0) {
+          await this.#deleteNow(path)
+          return { ok: true as const, records: [] }
+        }
+        const records = normalizeRecords(changed)
+        await this.#ensureSpace(path)
+        const file: ImpressionFile = {
+          version: IMPRESSION_FILE_VERSION,
+          subject,
+          subjectKind,
+          touchedAt: this.#now(),
+          records,
+        }
+        parseImpressionFile(file, this.#bot, path)
+        await this.#writeNow(path, file)
+        this.#index.set(path, {
+          subject: file.subject,
+          subjectKind: file.subjectKind,
+          touchedAt: file.touchedAt,
+          records: file.records.length,
+        })
+        return { ok: true as const, records }
+      })
+    } catch (error) {
+      return { ok: false, code: 'storage_error', reason: describe(error) }
+    }
+  }
+
+  /** Writes one whole subject file; the tools go through `transact` instead. */
   async save(file: ImpressionFileInput): Promise<ImpressionSaveResult> {
     const stamped: ImpressionFile = { ...file, touchedAt: this.#now() }
     const path = this.fileFor(stamped.subjectKind, stamped.subject)
     try {
       parseImpressionFile(stamped, this.#bot, path)
-    } catch (error) {
-      return { ok: false, code: 'storage_error', reason: describe(error) }
-    }
-    const payload = `${JSON.stringify(stamped, null, 2)}\n`
-    try {
-      await mkdir(dirname(path), { recursive: true, mode: 0o700 })
-      const leafProblem = await this.#modeProblem(path, true)
-      if (leafProblem !== undefined) return { ok: false, code: 'storage_error', reason: leafProblem }
-      const existing = await this.#stat(path)
-      if (existing !== undefined) {
-        if (existing.isSymbolicLink() || !existing.isFile()) {
-          return { ok: false, code: 'storage_error', reason: `${path} is not a regular file` }
-        }
-        if (widerThan(existing.mode & 0o777, 0o600)) {
-          return { ok: false, code: 'storage_error', reason: this.#modeWarning(existing.mode, path, 0o600) }
-        }
-      }
       await this.#enqueue(path, async () => {
-        await this.#writeAtomic(path, payload)
-      })
-      this.#index.set(path, {
-        subject: stamped.subject,
-        subjectKind: stamped.subjectKind,
-        touchedAt: stamped.touchedAt,
-        records: stamped.records.length,
+        await this.#ensureSpace(path)
+        await this.#writeNow(path, stamped)
+        this.#index.set(path, {
+          subject: stamped.subject,
+          subjectKind: stamped.subjectKind,
+          touchedAt: stamped.touchedAt,
+          records: stamped.records.length,
+        })
       })
       return { ok: true }
     } catch (error) {
@@ -505,6 +544,74 @@ export class ImpressionStore {
     }
   }
 
+  /** Reads one file through every check a turn's write must respect; missing means an empty subject. */
+  async #readNow(path: string): Promise<ImpressionFile | undefined> {
+    const existing = await this.#stat(path)
+    if (existing === undefined) return undefined
+    if (existing.isSymbolicLink() || !existing.isFile()) throw new StoreProblem(`${path} is not a regular file`)
+    const rootProblem = await this.#rootProblem()
+    if (rootProblem !== undefined) throw new StoreProblem(rootProblem)
+    const leafProblem = await this.#modeProblem(path)
+    if (leafProblem !== undefined) throw new StoreProblem(leafProblem)
+    const handle = await this.#open(path)
+    try {
+      const stat = await handle.stat()
+      if (widerThan(stat.mode & 0o777, 0o600)) throw new StoreProblem(this.#modeWarning(stat.mode, path, 0o600))
+    } finally {
+      await handle.close()
+    }
+    return this.#readAt(path)
+  }
+
+  async #deleteNow(path: string): Promise<void> {
+    await rm(path, { force: true })
+    this.#index.delete(path)
+  }
+
+  async #ensureSpace(path: string): Promise<void> {
+    if (this.#index.has(path)) return
+    if (this.#index.size < IMPRESSION_SUBJECTS_MAX) return
+    const oldest = [...this.#index.entries()].sort((left, right) => left[1].touchedAt - right[1].touchedAt)
+    let pruned = 0
+    for (const [oldPath] of oldest) {
+      if (this.#index.size < IMPRESSION_SUBJECTS_MAX) break
+      await this.#deleteNow(oldPath)
+      pruned += 1
+    }
+    if (pruned > 0) {
+      this.#warn(`dsbot-channel: dropped ${pruned} oldest impression file(s) under ${this.root} to stay within ${IMPRESSION_SUBJECTS_MAX}`)
+    }
+  }
+
+  /** Creates the bot's directories on first write and says so, because a wrong dir looks like lost notes. */
+  async #writeNow(path: string, file: ImpressionFile): Promise<void> {
+    const outer =
+      (await this.#stat(this.#dir)) === undefined
+        ? this.#dir
+        : (await this.#stat(this.root)) === undefined
+          ? this.root
+          : undefined
+    await mkdir(dirname(path), { recursive: true, mode: 0o700 })
+    if (outer !== undefined) this.#warnCreated(outer)
+    const rootProblem = await this.#rootProblem()
+    if (rootProblem !== undefined) throw new StoreProblem(rootProblem)
+    const leafProblem = await this.#modeProblem(path)
+    if (leafProblem !== undefined) throw new StoreProblem(leafProblem)
+    const existing = await this.#stat(path)
+    if (existing !== undefined) {
+      if (existing.isSymbolicLink() || !existing.isFile()) throw new StoreProblem(`${path} is not a regular file`)
+      if (widerThan(existing.mode & 0o777, 0o600)) throw new StoreProblem(this.#modeWarning(existing.mode, path, 0o600))
+    }
+    const payload = `${JSON.stringify(file, null, 2)}\n`
+    await this.#writeAtomic(path, payload)
+  }
+
+  #warnCreated(outer: string): void {
+    if (this.#creationWarned) return
+    this.#creationWarned = true
+    this.#warn(`dsbot-channel: created impression storage ${outer} on its first write`)
+  }
+
   async #open(path: string): Promise<FileHandle> {
     const noFollow = constants.O_NOFOLLOW ?? 0
     try {
@@ -515,17 +622,32 @@ export class ImpressionStore {
     }
   }
 
-  async #modeProblem(path: string, create = false): Promise<string | undefined> {
+  async #modeProblem(path: string): Promise<string | undefined> {
     const leaf = dirname(path)
     const stat = await this.#stat(leaf)
-    if (stat === undefined) {
-      if (!create) return undefined
-      await mkdir(leaf, { recursive: true, mode: 0o700 })
-      return undefined
-    }
+    if (stat === undefined) return undefined
     if (stat.isSymbolicLink() || !stat.isDirectory()) return `${leaf} is not a directory`
     if (widerThan(stat.mode & 0o777, 0o700)) return this.#modeWarning(stat.mode, leaf, 0o700)
     return undefined
+  }
+
+  /** The bot directory gets the same split as the leaves: writable by others is refused, readable is a warn. */
+  async #rootProblem(): Promise<string | undefined> {
+    const stat = await this.#stat(this.root)
+    if (stat === undefined) return undefined
+    if (stat.isSymbolicLink() || !stat.isDirectory()) return `${this.root} is not a directory`
+    const mode = stat.mode & 0o777
+    if ((mode & 0o022) !== 0) return this.#modeWarning(mode, this.root, 0o700)
+    if (widerThan(mode, 0o700)) {
+      this.#warnOnce(`dsbot-channel: impression directory ${this.root} is readable beyond its owner; its leaves stay 0700`)
+    }
+    return undefined
+  }
+
+  #warnOnce(message: string): void {
+    if (this.#warned.has(message)) return
+    this.#warned.add(message)
+    this.#warn(message)
   }
 
   #modeWarning(mode: number, path: string, allowed: number): string {
@@ -595,7 +717,7 @@ export class ImpressionStore {
     this.#warn(`dsbot-channel: cannot fsync an impression directory (${describe(error)}); a write is an atomic rename only`)
   }
 
-  #enqueue(key: string, job: () => Promise<void>): Promise<void> {
+  #enqueue<T>(key: string, job: () => Promise<T>): Promise<T> {
     const previous = this.#queues.get(key) ?? Promise.resolve()
     const run = previous.then(job, job)
     const settled: Promise<void> = run.then(
