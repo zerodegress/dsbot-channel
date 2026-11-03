@@ -154,8 +154,9 @@ describe('two adapters in one process', () => {
         throw error
       }
     })
+    const failurePorts = adapterPorts(mounted.ctx)
     onTestFailed(() => {
-      console.error(`ports: ${adapterPorts(mounted.ctx)}`)
+      console.error(`ports: ${failurePorts}`)
     })
     expect(mounted.ctx.get('dsbot-channel.peers')).toHaveLength(2)
 
@@ -296,8 +297,9 @@ describe('two adapters in one process', () => {
       }
     })
 
+    const failurePorts = adapterPorts(mounted.ctx)
     onTestFailed(() => {
-      console.error(`ports: ${adapterPorts(mounted.ctx)}`)
+      console.error(`ports: ${failurePorts}`)
     })
     await sendToPeer({
       peer: { instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${mounted.portB}` },
@@ -500,8 +502,9 @@ async function pair(
         ],
       })
       forks.push(fork)
+      const failurePorts = adapterPorts(ctx)
       onTestFailed(() => {
-        console.error(`ports: ${adapterPorts(ctx)}`)
+        console.error(`ports: ${failurePorts}`)
       })
       return { sessions, portB, ctx }
     } catch (error) {
@@ -518,6 +521,10 @@ async function mountWithPorts(
   return withPortRetry(freePortPair, async ([portA, portB]) => {
     const fork = await ctx.plugin(entry, build([portA, portB]) as never)
     forks.push(fork)
+    const failurePorts = adapterPorts(ctx)
+    onTestFailed(() => {
+      console.error(`ports: ${failurePorts}`)
+    })
     return { fork, portA, portB }
   })
 }
@@ -660,8 +667,9 @@ describe('the send_text tool', () => {
           ],
         })
         forks.push(fork)
+        const failurePorts = adapterPorts(ctx)
         onTestFailed(() => {
-          console.error(`ports: ${adapterPorts(ctx)}`)
+          console.error(`ports: ${failurePorts}`)
         })
         return { tools, sessions, portA, portB, ctx }
       } catch (error) {
