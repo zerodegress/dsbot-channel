@@ -23,6 +23,7 @@ export async function freePortPair(): Promise<[number, number]> {
   }
 }
 
+/** Aggregate errors carry their reasons in `errors`, not `cause`; those are never retried. */
 function codeOf(error: unknown): string | undefined {
   let current: unknown = error
   for (let depth = 0; depth < 8 && current !== null && current !== undefined; depth += 1) {
@@ -69,6 +70,14 @@ export function boundPort(ctx: Context, channel: string): number {
   const port = entry?.health.boundPort
   if (typeof port !== 'number') throw new Error(`adapter "${channel}" reports no bound port`)
   return port
+}
+
+/** Every adapter's actual port, for a failure message that has to name them. */
+export function adapterPorts(ctx: Context): string {
+  const service = ctx.get('dsbot-channel.status') as StatusLike | undefined
+  const entries = service?.snapshot().adapters ?? []
+  if (entries.length === 0) return 'no adapters'
+  return entries.map((entry) => `${entry.channel}=${entry.health.boundPort ?? 'n/a'}`).join(', ')
 }
 
 /** The port an adapter instance actually bound. */

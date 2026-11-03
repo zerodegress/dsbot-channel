@@ -1,11 +1,11 @@
-import { afterEach, beforeEach, describe, expect, test } from 'vitest'
+import { afterEach, beforeEach, describe, expect, onTestFailed, test } from 'vitest'
 import { registryPlugin } from '../src/registry-plugin.js'
 import { createServer, request as httpRequest } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
-import { freePortPair, withPortRetry } from './ports.js'
+import { adapterPorts, freePortPair, withPortRetry } from './ports.js'
 import { sendToPeer } from '../src/adapters/p2p/p2p-send.js'
 import { PEER_GUIDANCE } from '../src/adapters/p2p/guidance.js'
 
@@ -292,13 +292,16 @@ describe('two adapters in one process', () => {
           ],
         })
         forks.push(fork)
-        return { sessions, portB }
+        return { sessions, portB, ctx }
       } catch (error) {
         await (ctx as unknown as { dispose?: () => Promise<void> }).dispose?.()
         throw error
       }
     })
 
+    onTestFailed(() => {
+      console.error(`ports: ${adapterPorts(mounted.ctx)}`)
+    })
     await sendToPeer({
       peer: { instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${mounted.portB}` },
       credentials,
@@ -505,6 +508,9 @@ async function pair(
         ],
       })
       forks.push(fork)
+      onTestFailed(() => {
+        console.error(`ports: ${adapterPorts(ctx)}`)
+      })
       return { sessions, portB, ctx }
     } catch (error) {
       await (ctx as unknown as { dispose?: () => Promise<void> }).dispose?.()
@@ -651,7 +657,10 @@ describe('the send_text tool', () => {
           ],
         })
         forks.push(fork)
-        return { tools, sessions, portA, portB }
+        onTestFailed(() => {
+          console.error(`ports: ${adapterPorts(ctx)}`)
+        })
+        return { tools, sessions, portA, portB, ctx }
       } catch (error) {
         await (ctx as unknown as { dispose?: () => Promise<void> }).dispose?.()
         throw error
