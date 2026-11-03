@@ -168,6 +168,16 @@ describe('identity stamped at the gateway', () => {
     expect(one.author.personId).toBe('alice')
   })
 
+  test('stamps even a message whose source.kind is malformed past repair', async () => {
+    await mount({ identity: bound })
+    const one = message({ eventKey: 'm-5', personId: 'evil' })
+    one.source.kind = 'x'.repeat(200)
+    await deliver(one)
+
+    expect(verdicts[0]).toMatchObject({ ok: false, code: 'source_kind_invalid' })
+    expect(one.author.personId).toBe('alice')
+  })
+
   test('never touches the conversation key the adapter supplied', async () => {
     await mount({ identity: bound })
     const one = message({ eventKey: 'm-4' })
