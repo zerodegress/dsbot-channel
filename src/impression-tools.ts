@@ -250,7 +250,7 @@ export function createImpressionGet(ports: ImpressionPorts) {
           id: entry.record.id,
           text: entry.record.text,
           kind: entry.record.kind,
-          confidence: Number(entry.effective.toFixed(3)),
+          effectiveConfidence: Number(entry.effective.toFixed(3)),
           updatedAt: entry.record.updatedAt,
         }))
       return JSON.stringify({ ok: true, records })

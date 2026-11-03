@@ -172,7 +172,7 @@ describe('impression_get', () => {
       id: expect.any(String),
       text: 'alice is the release manager',
       kind: 'fact',
-      confidence: 0.6,
+      effectiveConfidence: 0.6,
       updatedAt: AT,
     })
     expect(records[0]).not.toHaveProperty('evidence')
