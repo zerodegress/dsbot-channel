@@ -234,7 +234,11 @@ export class ReverseLink {
       if (waiting !== undefined) clearTimeout(waiting)
       waiting = undefined
     })
-    socket.on('close', () => clearInterval(timer))
+    socket.on('close', () => {
+      clearInterval(timer)
+      if (waiting !== undefined) clearTimeout(waiting)
+      waiting = undefined
+    })
   }
 
   #startBeat(): void {

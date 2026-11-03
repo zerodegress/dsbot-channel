@@ -240,4 +240,14 @@ describe('the forward websocket link', () => {
     await new Promise((resolve) => setTimeout(resolve, 200))
     expect(one.health().state).toBe('online')
   })
+
+  test('a disconnect during the wait for a pong is not reported as an unanswered ping', async () => {
+    const warnings: string[] = []
+    const harness = await serve(undefined, false)
+    const one = link(harness.url, { liveness: { intervalMs: 20, timeoutMs: 60 }, warn: (m) => warnings.push(m) })
+    await waitFor(() => one.health().state === 'online')
+    harness.sockets[0]!.on('ping', () => harness.sockets[0]!.terminate())
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(warnings.some((line) => line.includes('ping'))).toBe(false)
+  })
 })

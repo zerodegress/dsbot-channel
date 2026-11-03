@@ -209,6 +209,8 @@ export class ForwardLink {
     socket.on('close', () => {
       clearInterval(timer)
       this.#pings.delete(timer)
+      if (waiting !== undefined) clearTimeout(waiting)
+      waiting = undefined
     })
   }
 

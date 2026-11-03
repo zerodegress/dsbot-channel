@@ -178,4 +178,13 @@ describe('the reverse websocket link', () => {
     await new Promise((resolve) => setTimeout(resolve, 150))
     expect(one.link.connection()?.readyState).toBe(WebSocket.OPEN)
   })
+
+  test('a disconnect during the wait for a pong is not reported as an unanswered ping', async () => {
+    const one = await serve('/onebot/ws', undefined, undefined, 500, { intervalMs: 20, timeoutMs: 60 })
+    const client = dial(one.port, '/onebot/ws', {}, { autoPong: false })
+    client.on('ping', () => client.terminate())
+    await waitFor(() => one.link.connection() !== undefined)
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(one.warnings.some((line) => line.includes('ping'))).toBe(false)
+  })
 })
