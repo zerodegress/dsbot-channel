@@ -42,6 +42,36 @@ async function contextWithCredentials(): Promise<Context> {
   return ctx
 }
 
+async function contextWithSessions(
+  controller: {
+    create: () => Promise<{ sessionId: string }>
+    prompt: (request: unknown, signal: AbortSignal) => Promise<unknown>
+  },
+  persistence?: { flush: () => Promise<void> },
+): Promise<Context> {
+  const ctx = new Context()
+  await ctx.plugin(credentialsProvider)
+  await ctx.plugin({
+    name: 'stub-sessions',
+    apply(c: Context) {
+      c.provide('sessionController')
+      c.set('sessionController', controller)
+      if (persistence === undefined) return
+      c.provide('sessionPersistence')
+      c.set('sessionPersistence', persistence)
+    },
+  })
+  return ctx
+}
+
+async function waitFor(check: () => boolean, timeoutMs = 5000): Promise<void> {
+  const started = Date.now()
+  while (!check()) {
+    if (Date.now() - started > timeoutMs) throw new Error('timed out waiting for the turn to start')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+}
+
 const adapter = (overrides: Record<string, unknown> = {}) => {
   const { peers, listen, dedupe, inflightTtlMs, sentAtWindowMs, maxBodyBytes, waitMs, ...rest } = overrides
   return {
@@ -186,6 +216,86 @@ describe('plugin lifecycle', () => {
     const cfg = { adapters: [adapter(), adapter({ botName: 'bot-b' })] }
     await ctx.plugin(registryPlugin)
     await expect(ctx.plugin(entry.default, cfg)).rejects.toThrow(/duplicate adapter channel/)
+  })
+})
+
+describe('unloading while a turn is in flight', () => {
+  test('aborts the signal the controller was handed and starts no further prompt', async () => {
+    const signals: AbortSignal[] = []
+    const prompts: string[] = []
+    const ctx = await contextWithSessions({
+      create: () => Promise.resolve({ sessionId: 'session-1' }),
+      prompt: (request, signal) => {
+        prompts.push((request as { requestId: string }).requestId)
+        signals.push(signal)
+        return new Promise<never>(() => undefined)
+      },
+    })
+    const warnings: string[] = []
+    ctx.logger.exporter({
+      levels: { default: 3 },
+      export(message: { args: unknown[] }) {
+        warnings.push(message.args.map((arg) => String(arg)).join(' '))
+      },
+    })
+    await ctx.plugin(registryPlugin)
+    const fork = await ctx.plugin(entry.default, config())
+    const port = (ctx.get('dsbot-channel.peers') as Listener[])[0]!.address().port
+
+    expect(await post(port, message)).toBe(200)
+    await waitFor(() => signals.length === 1)
+
+    await fork.dispose()
+
+    expect(signals[0]?.aborted).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(prompts).toHaveLength(1)
+    expect(warnings.filter((line) => line.includes('the peer sessions were disposed'))).toEqual([])
+  })
+
+  test('still warns about a turn that fails for its own reason', async () => {
+    const ctx = await contextWithSessions({
+      create: () => Promise.resolve({ sessionId: 'session-1' }),
+      prompt: () => Promise.reject(new Error('the session could not run this turn')),
+    })
+    const warnings: string[] = []
+    ctx.logger.exporter({
+      levels: { default: 3 },
+      export(message: { args: unknown[] }) {
+        warnings.push(message.args.map((arg) => String(arg)).join(' '))
+      },
+    })
+    await ctx.plugin(registryPlugin)
+    const fork = await ctx.plugin(entry.default, config())
+    const port = (ctx.get('dsbot-channel.peers') as Listener[])[0]!.address().port
+
+    expect(await post(port, message)).toBe(200)
+    await waitFor(() => warnings.some((line) => line.includes('peer turn for')))
+
+    expect(warnings.some((line) => line.includes('the session could not run this turn'))).toBe(true)
+    await fork.dispose()
+  })
+})
+
+describe('unloading with a session log', () => {
+  test('flushes once when the plugin unloads', async () => {
+    let flushes = 0
+    const ctx = await contextWithSessions(
+      { create: () => Promise.resolve({ sessionId: 'session-1' }), prompt: () => new Promise<never>(() => undefined) },
+      {
+        flush: () => {
+          flushes += 1
+          return Promise.resolve()
+        },
+      },
+    )
+    await ctx.plugin(registryPlugin)
+    const fork = await ctx.plugin(entry.default, config())
+    expect(flushes).toBe(0)
+
+    await fork.dispose()
+
+    expect(flushes).toBe(1)
   })
 })
 

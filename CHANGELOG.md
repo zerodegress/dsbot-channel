@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A p2p media item may carry a file's name as a third element: `['file', url, name]`. An item without one is unchanged; a peer from 0.2.0 refuses an item with one whole. A receiver that knows the shape stamps the name on the event, and only a file carries one. `capabilities.file.out` is on again for p2p, and `send_file` sends there.
 - The package declares `@deepseek-ai/dsh-tools` and `@deepseek-ai/schemastery` as optional peers instead of dependencies; the bundle leaves both external. The production tree declares no harness package, publishing runs `pnpm audit --prod` before it packs, and `packageManager` pins the pnpm that wrote the lockfile.
 
+### Fixed
+
+- Unloading the gateway aborts the peer turns still running, instead of leaving them to write into a session nothing reads any more, and detaches their event observers. The session log is flushed after every delivered reply and once more on unload; a flush that fails is warned about and counted in `dsbot-channel.status` as `flushFailures`, and the reply that was already sent stands.
+
 ## [0.2.0] - 2026-11-03
 
 ### Added
