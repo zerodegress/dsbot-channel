@@ -9,7 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- An impression library keeps short notes about the person a turn answers, or about its group: `impression_put`, `impression_get` and `impression_forget` act only on that counterpart, a note carries the messages that support it (at least one, at most 16), a repeated note gains evidence instead of a copy, confidence halves every 90 days and a record below 0.2 is no longer read, a note may cross platforms only as address, language, taboo or manner, and forgetting a record takes its evidence with it. Notes live under `impressions.dir`, one JSON file per subject, `0600` under `0700` and replaced by an atomic rename; without that field the library is off, a damaged file refuses the mount instead of being rebuilt, and the directory is created only on the first write.
+- A bot can keep short notes about the person a turn answers, or about its group, through `impression_put`, `impression_get` and `impression_forget`; the tools act only on that counterpart. A note carries the messages that support it (one to sixteen), and writing the same note again adds evidence instead of a copy.
+- Confidence in a note halves every 90 days, and a record below 0.2 is no longer read. Only address, language, taboo and manner may be shared across platforms, and forgetting a record takes its evidence with it.
+- The library is off unless `impressions.dir` names a directory: each subject gets one JSON file, `0600` under `0700` and replaced by an atomic rename. A damaged file refuses the mount instead of being rebuilt, and the directory appears only on the first write.
 
 ### Changed
 
