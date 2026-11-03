@@ -14,7 +14,7 @@ const base = {
     isReply: false,
     signature: null,
   },
-  declared: { nickname: '', avatar: '', claimedIdentity: null },
+  declared: { nickname: '', avatar: '' },
 }
 
 const withAdapter = (adapter: unknown): EventInput => ({ ...base, adapter: adapter as Record<string, unknown> })

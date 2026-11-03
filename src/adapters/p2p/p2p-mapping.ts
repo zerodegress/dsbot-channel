@@ -87,7 +87,7 @@ export function toP2PEvent(inbound: P2PInbound): Event {
       isReply: false,
       signature: null,
     },
-    declared: { nickname: '', avatar: '', claimedIdentity: null },
+    declared: { nickname: '', avatar: '' },
     adapter: {
       sentAt: inbound.sentAt,
       ...(inbound.inReplyTo === undefined ? {} : { inReplyTo: inbound.inReplyTo }),

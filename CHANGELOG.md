@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- `DeclaredMeta.claimedIdentity` is gone. It was a leftover slot that every adapter filled with `null` and nothing ever read; with identity now declared in the profile, a per-event field that looks like a claim would only invite an adapter to think it can name its sender. It never took part in any decision.
 - `registerAdapter`, `adapterFactory` and `knownAdapterKinds` are gone from the entry. A third-party transport ships as a plugin built with `defineAdapterPlugin({ kind, create })`, which registers with the context's registry when it mounts; the old module-level call would register into one copy's map and leave the gateway's copy empty.
 - `judge` and `push` are gone from `CHARGE_KINDS` and from the point table: nothing charged either kind, the `judge` node cannot be bound in this version, and the push tool never touched the ledger. `points` holds `accepted` and `rejected` only, a turn is always charged as a bot call, and `TurnBilling` no longer takes a `chargeKind`.
 

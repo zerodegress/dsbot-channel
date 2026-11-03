@@ -34,7 +34,7 @@ function message(options: { eventKey: string; personId?: string | null; mentione
       isReply: false,
       signature: null,
     },
-    declared: { nickname: '', avatar: '', claimedIdentity: null },
+    declared: { nickname: '', avatar: '' },
     adapter: {},
     receivedAt: 1,
   }
@@ -157,6 +157,7 @@ describe('identity stamped at the gateway', () => {
     await deliver(one)
 
     expect(one.author.personId).toBeNull()
+    expect(verdicts[0]).toEqual({ ok: true })
   })
 
   test('stamps a message the gate then refuses', async () => {
@@ -165,6 +166,16 @@ describe('identity stamped at the gateway', () => {
     await deliver(one)
 
     expect(verdicts[0]).toMatchObject({ ok: false, code: 'rejected' })
+    expect(one.author.personId).toBe('alice')
+  })
+
+  test('does not write through the author object the adapter still holds', async () => {
+    await mount({ identity: bound })
+    const one = message({ eventKey: 'm-6', personId: 'evil' })
+    const adapterAuthor = one.author
+    await deliver(one)
+
+    expect(adapterAuthor.personId).toBe('evil')
     expect(one.author.personId).toBe('alice')
   })
 
@@ -200,7 +211,7 @@ describe('identity does not change what an event is', () => {
       isReply: false,
       signature: null,
     },
-    declared: { nickname: '', avatar: '', claimedIdentity: null },
+    declared: { nickname: '', avatar: '' },
   })
 
   test('eventKey and contentHash are byte-identical with and without a person', () => {

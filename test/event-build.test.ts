@@ -13,7 +13,7 @@ const base = {
     isReply: false,
     signature: null,
   },
-  declared: { nickname: 'someone', avatar: 'a', claimedIdentity: null },
+  declared: { nickname: 'someone', avatar: 'a' },
 }
 
 const media = (one: unknown) => ({ ...base, body: { ...base.body, media: [one] } }) as EventInput

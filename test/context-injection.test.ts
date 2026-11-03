@@ -49,7 +49,7 @@ function message(options: {
       replyTo: null,
     },
     transport: { messageId: options.eventKey, timestamp: 1, mentioned, isReply: false, signature: null },
-    declared: { nickname: options.nickname ?? '', avatar: '', claimedIdentity: null },
+    declared: { nickname: options.nickname ?? '', avatar: '' },
     adapter: {},
     receivedAt: 1,
   }

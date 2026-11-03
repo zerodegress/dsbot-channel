@@ -778,11 +778,14 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
       const onMessage = async (message: InboundMessage): Promise<InboundVerdict> => {
         // Identity is a property of the message, so it is stamped before anything may refuse it,
         // including a malformed source.kind: the account is named by the adapter kind, not by that field.
-        message.author.personId = identity.resolve({
-          kind: transport.kind,
-          instance: message.source.instance,
-          accountId: message.author.senderId,
-        })
+        message.author = {
+          ...message.author,
+          personId: identity.resolve({
+            kind: transport.kind,
+            instance: message.source.instance,
+            accountId: message.author.senderId,
+          }),
+        }
         const kindProblem = tokenProblem('source.kind', message.source.kind, SOURCE_KIND_MAX)
         if (kindProblem !== undefined) return { ok: false, code: 'source_kind_invalid', reason: kindProblem }
         if (message.source.kind !== transport.kind) {
