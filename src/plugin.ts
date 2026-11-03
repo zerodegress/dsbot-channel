@@ -23,6 +23,7 @@ import type { ControlPorts, TurnRef } from './control-tools.js'
 import { createImpressionForget, createImpressionGet, createImpressionPut } from './impression-tools.js'
 import type { ImpressionPorts } from './impression-tools.js'
 import { pickImpressions, renderImpressionBlock } from './impression-block.js'
+import { importMemory } from './impression-import.js'
 import { DEFAULT_IMPRESSION_CHARS, ImpressionStore, readImpressionsConfig, readImpressionsTurn } from './impressions.js'
 import type { Impression, ImpressionImport, ImpressionsTurn } from './impressions.js'
 import { ChainGuard, KeyGuard } from './event-keys.js'
@@ -727,6 +728,16 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     for (const botName of new Set(channels.map((channel) => channel.config.botName))) {
       const store = new ImpressionStore({ dir: impressionsConfig.dir, bot: botName, now: clock, warn })
       await store.load()
+      if (impressionsConfig.import !== undefined) {
+        const outcome = await importMemory({ store, bot: botName, config: impressionsConfig.import, now: clock() })
+        if (!outcome.ok) {
+          warn(`dsbot-channel: impression import source is unreadable: ${outcome.path}`)
+        } else {
+          warn(
+            `dsbot-channel: imported ${outcome.counts.imported} impressions into bot "${botName}" (${outcome.counts.skipped} lines skipped, ${outcome.counts.topics} topic files skipped)`,
+          )
+        }
+      }
       await store.renderAtMount()
       impressionStores.set(botName, store)
     }

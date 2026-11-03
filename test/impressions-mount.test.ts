@@ -505,3 +505,46 @@ describe('reading the store for a turn', () => {
     expect(failures()).toHaveLength(2)
   })
 })
+
+
+describe('the one-time import at mount', () => {
+  const bound = {
+    people: [{ id: 'alice', accounts: [{ kind: 'x-group', instance: 'inst-a', accountId: 'u1' }] }],
+  }
+
+  test('imports a host memory file and shows it in a private turn', async () => {
+    const dir = await tempRoot()
+    const memoryDir = await tempRoot()
+    const path = join(memoryDir, 'MEMORY.md')
+    await writeFile(path, '- alice prefers short answers [source: 1]\n', { mode: 0o600 })
+    let start: () => void = () => undefined
+    let release: () => void = () => undefined
+    const started = new Promise<void>((resolve) => {
+      start = resolve
+    })
+    const done = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const mounted = await mount({
+      impressions: { dir, import: { path, as: { personId: 'alice' } } },
+      identity: bound,
+      gate: { started: start, done },
+    })
+    const one = message('imp-1')
+    one.source.scope = 'c2c'
+    one.sessionKey = 'peer:1'
+    const turn = ports!.onMessage(one)
+    await started
+    expect(mounted.prompts[0]).toContain('alice prefers short answers')
+    expect(mounted.warnings.some((line) => line.includes('imported 1 impressions'))).toBe(true)
+    release()
+    await turn
+  })
+
+  test('warns when the source is unreadable and still mounts', async () => {
+    const dir = await tempRoot()
+    const missing = join(dir, 'nope', 'MEMORY.md')
+    const mounted = await mount({ impressions: { dir, import: { path: missing, as: { personId: 'alice' } } }, identity: bound })
+    expect(mounted.warnings.some((line) => line.includes('import source is unreadable'))).toBe(true)
+  })
+})
