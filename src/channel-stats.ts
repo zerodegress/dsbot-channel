@@ -18,6 +18,8 @@ export interface ChannelSnapshot {
   state: ChannelState
   boundPort: number | null
   lastAuthenticatedAt: number | null
+  /** sentAt minus this clock on the last authenticated message; null until one arrives. */
+  lastSkewMs: number | null
   lastFailure: ChannelFailure | null
   inFlight: number
   /** Deliveries that ended without one having begun, which is always a bug. */
@@ -39,6 +41,7 @@ export class ChannelStats {
   #state: ChannelState = 'starting'
   #boundPort: number | null = null
   #lastAuthenticatedAt: number | null = null
+  #lastSkewMs: number | null = null
   #lastFailure: ChannelFailure | null = null
   #inFlight = 0
   #underruns = 0
@@ -71,6 +74,11 @@ export class ChannelStats {
 
   authenticated(): void {
     this.#lastAuthenticatedAt = this.#now()
+  }
+
+  /** Records how far the sender's clock was from this one on the message just seen. */
+  skew(sentAtMinusNow: number): void {
+    this.#lastSkewMs = sentAtMinusNow
   }
 
   rejected(reason: string): void {
@@ -115,6 +123,7 @@ export class ChannelStats {
       state: this.#state,
       boundPort: this.#boundPort,
       lastAuthenticatedAt: this.#lastAuthenticatedAt,
+      lastSkewMs: this.#lastSkewMs,
       lastFailure: this.#lastFailure === null ? null : { at: this.#lastFailure.at, reason: this.#lastFailure.reason },
       inFlight: this.#inFlight,
       underruns: this.#underruns,

@@ -1656,7 +1656,12 @@ describe('a mounted adapter can report on itself', () => {
     const reply = await getStatus(port)
 
     expect(reply.status).toBe(200)
-    expect(reply.body).toMatchObject({ channel: 'p2p:a', health: { kind: 'listener' }, counters: { sendFailures: {} } })
+    expect(reply.body).toMatchObject({
+      channel: 'p2p:a',
+      health: { kind: 'listener' },
+      counters: { sendFailures: {} },
+      dedupe: { epoch: expect.any(Number) },
+    })
   })
 
   test('an empty turn is reported in the log', async () => {

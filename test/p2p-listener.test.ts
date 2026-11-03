@@ -79,7 +79,7 @@ const statusFixture = () => ({
   channel: 'p2p:self',
   account: 'self',
   bot: 'self-bot',
-  health: { kind: 'listener' as const, listenState: 'listening' as const, boundPort: 7123, lastAuthenticatedAt: null, lastFailure: null, queueDepth: 0 },
+  health: { kind: 'listener' as const, listenState: 'listening' as const, boundPort: 7123, lastAuthenticatedAt: null, lastSkewMs: null, lastFailure: null, queueDepth: 0 },
   counters: {
     authFailures: 0,
     unknownPaths: 0,

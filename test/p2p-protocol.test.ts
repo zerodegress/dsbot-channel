@@ -431,6 +431,42 @@ describe('sentAt freshness', () => {
     expect(stats.snapshot().lastAuthenticatedAt).toBe(NOW)
   })
 
+  test('records how far the sender clock was from this one', async () => {
+    const stats = new ChannelStats(() => NOW)
+    const { signature, payload } = sign('hello', NOW - 60_000)
+    const result = await handleMessage({
+      config: { ...config, now: () => NOW },
+      table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
+      auth: { signature, claimedInstance: 'peer-a' },
+      payload,
+      stats,
+    })
+
+    expect(result.ok).toBe(true)
+    expect(stats.snapshot().lastSkewMs).toBe(-60_000)
+  })
+
+  test('a stale refusal is logged with both clocks and never the body', async () => {
+    const warnings: string[] = []
+    const stats = new ChannelStats(() => NOW)
+    const { signature, payload } = sign('the body stays out of the log', NOW - 400_000)
+    const result = await handleMessage({
+      config: { ...config, now: () => NOW, warn: (line) => warnings.push(line) },
+      table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
+      auth: { signature, claimedInstance: 'peer-a' },
+      payload,
+      stats,
+    })
+
+    expect(result).toMatchObject({ ok: false, status: 403, body: { code: 'stale_sent_at' } })
+    expect(stats.snapshot().lastSkewMs).toBe(-400_000)
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('peer-a')
+    expect(warnings[0]).toContain('-400000ms')
+    expect(warnings[0]).toContain('300000ms')
+    expect(warnings[0]).not.toContain('the body stays out of the log')
+  })
+
   test('the window can be narrowed', async () => {
     expect((await signed(NOW - 2_000, { window: 1_000 })).ok).toBe(false)
     expect((await signed(NOW - 2_000, { window: 5_000 })).ok).toBe(true)

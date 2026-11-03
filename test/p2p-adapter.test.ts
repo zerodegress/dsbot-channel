@@ -10,7 +10,7 @@ import { sendToPeer } from '../src/adapters/p2p/p2p-send.js'
 import { DedupeTable } from '../src/adapters/p2p/p2p-dedupe.js'
 import { startListener } from '../src/adapters/p2p/p2p-listener.js'
 import type { InboundRequest } from '../src/adapters/p2p/p2p-wire.js'
-import type { InboundMessage } from '../src/contract.js'
+import type { AdapterPorts, InboundMessage } from '../src/contract.js'
 
 const REF = '{{SECRET_7k3mwq8t}}'
 const credentials = staticCredentials({ [REF]: 'shared-value' })
@@ -151,6 +151,54 @@ describe('the p2p adapter carries a message through the contract', () => {
 
     await waitFor(() => warnings.length > 0)
     expect(warnings[0]).toMatch(/kept evt-adapter-2 from inst-a out of a turn: session_key_invalid/)
+  })
+})
+
+describe('the replay window a restart reopens', () => {
+  test('a message replayed after a restart is accepted again, under a new epoch', async () => {
+    let clock = 1_700_000_000_000
+    const seen: string[] = []
+    const ports: AdapterPorts = {
+      onMessage: async (message) => {
+        seen.push(message.requestId)
+        return { ok: true }
+      },
+      resolveSecret: (ref) => Promise.resolve(credentials.resolve(ref).then((one) => one?.value)),
+    }
+    const send = (port: number) =>
+      sendToPeer({
+        peer: { instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${port}` },
+        credentials,
+        to: 'bot-b',
+        body: 'hello',
+        eventId: 'evt-replay-1',
+        sender: 'bot-a',
+        instance: 'inst-a',
+      })
+
+    const first = new P2PAdapter(config(0), { now: () => clock })
+    first.checkConfig({ maxTurnMs: 120_000 })
+    const firstHandle = await first.start(ports)
+    stops.push(firstHandle.stop)
+    const epochA = first.status().dedupe?.epoch
+
+    expect(await send(instancePort(first))).toMatchObject({ ok: true, duplicate: false })
+    expect(await send(instancePort(first))).toMatchObject({ ok: true, duplicate: true })
+    expect(seen).toEqual(['evt-replay-1'])
+    expect(first.status().health).toMatchObject({ lastSkewMs: expect.any(Number) })
+
+    clock += 1_000
+    const second = new P2PAdapter(config(0), { now: () => clock })
+    second.checkConfig({ maxTurnMs: 120_000 })
+    const secondHandle = await second.start(ports)
+    stops.push(secondHandle.stop)
+    const epochB = second.status().dedupe?.epoch
+
+    expect(await send(instancePort(second))).toMatchObject({ ok: true, duplicate: false })
+    expect(seen).toEqual(['evt-replay-1', 'evt-replay-1'])
+    expect(typeof epochA).toBe('number')
+    expect(typeof epochB).toBe('number')
+    expect(epochB).not.toBe(epochA)
   })
 })
 

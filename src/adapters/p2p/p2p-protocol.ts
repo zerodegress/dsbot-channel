@@ -43,6 +43,7 @@ export interface P2PConfig {
   waitMs?: number
   sentAtWindowMs?: number
   now?: () => number
+  warn?: (message: string) => void
 }
 
 export interface P2PPayload {
@@ -234,7 +235,13 @@ export async function handleMessage(input: HandleInput): Promise<HandleResult> {
   input.stats?.authenticated()
   const window = config.sentAtWindowMs ?? DEFAULT_SENT_AT_WINDOW_MS
   const at = config.now?.() ?? Date.now()
-  if (Math.abs(at - request.sentAt) > window) {
+  const skewMs = request.sentAt - at
+  input.stats?.skew(skewMs)
+  if (Math.abs(skewMs) > window) {
+    config.warn?.(
+      `dsbot-channel: refused a message from ${verified.instance} for ${config.botName}: ` +
+        `sentAt is ${skewMs}ms from the local clock, outside the ${window}ms window`,
+    )
     return {
       ok: false,
       status: 403,

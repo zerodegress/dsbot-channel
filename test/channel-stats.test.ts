@@ -35,6 +35,7 @@ describe('a channel reports its own state', () => {
       state: 'starting',
       boundPort: null,
       lastAuthenticatedAt: null,
+      lastSkewMs: null,
       lastFailure: null,
       inFlight: 0,
       underruns: 0,

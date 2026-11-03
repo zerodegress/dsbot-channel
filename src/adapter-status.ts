@@ -60,6 +60,8 @@ export interface ListenerHealth {
   listenState: ListenState
   boundPort: number | null
   lastAuthenticatedAt: number | null
+  /** sentAt minus this clock on the last authenticated message; null until one arrives. */
+  lastSkewMs: number | null
   lastFailure: { at: number; reason: string } | null
   queueDepth: number
 }
@@ -93,12 +95,15 @@ export interface AdapterStatus {
   quota: QuotaView
   sampledAt: number
   queueDepth: number
+  /** The replay window a transport keeps, when it keeps one. */
+  dedupe?: { epoch: number } | undefined
 }
 
 export interface ListenerInput {
   listenState: ListenState
   boundPort: number | null
   lastAuthenticatedAt: number | null
+  lastSkewMs?: number | null | undefined
   lastFailure?: { at: number; reason: string } | null | undefined
   queueDepth: number
 }
@@ -114,6 +119,7 @@ export interface StatusInput {
   quota: QuotaView
   sampledAt: number
   queueDepth: number
+  dedupe?: { epoch: number } | undefined
 }
 
 function assertMember<T extends string>(name: string, allowed: readonly T[], value: string): T {
@@ -131,6 +137,7 @@ export function buildListenerHealth(input: ListenerInput): ListenerHealth {
     listenState,
     boundPort: listenState === 'listening' ? input.boundPort : null,
     lastAuthenticatedAt: input.lastAuthenticatedAt,
+    lastSkewMs: input.lastSkewMs ?? null,
     lastFailure: listenState === 'listening' ? null : input.lastFailure ?? null,
     queueDepth: input.queueDepth,
   }
@@ -169,6 +176,7 @@ export function buildStatus(input: StatusInput): AdapterStatus {
     quota: { softLimit: input.quota.softLimit, hardLimit: input.quota.hardLimit },
     sampledAt: input.sampledAt,
     queueDepth: input.queueDepth,
+    ...(input.dedupe === undefined ? {} : { dedupe: { epoch: input.dedupe.epoch } }),
   }
 }
 

@@ -15,6 +15,8 @@ type Waiter = (entry: DedupeEntry | null) => void
 
 /** Dedupe table with single-flight: a concurrent duplicate waits instead of reprocessing. */
 export class DedupeTable {
+  /** When this table started; a replay carried into a table with a newer epoch crossed a restart. */
+  readonly epoch: number
   private readonly done = new Map<string, DedupeEntry>()
   private readonly inflight = new Map<string, { at: number; waiters: Waiter[] }>()
   private readonly now: () => number
@@ -24,6 +26,7 @@ export class DedupeTable {
       throw new Error('inflightTtlMs must exceed maxTurnMs')
     }
     this.now = options.now ?? Date.now
+    this.epoch = this.now()
   }
 
   has(key: string): DedupeEntry | undefined {
