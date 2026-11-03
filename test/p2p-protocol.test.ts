@@ -484,4 +484,31 @@ describe('a delivery that carries media', () => {
     })
     expect(result).toMatchObject({ ok: false, status: 401 })
   })
+
+  test('a file may carry its name as the third element', async () => {
+    const payload = { ...request(), body: '', media: [['file', 'https://example.test/a.txt', 'a.txt'] as const] }
+    const result = await handleMessage({
+      config,
+      table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
+      auth: signedAuth(payload),
+      payload,
+    })
+    expect(result).toMatchObject({ ok: true, status: 200 })
+  })
+
+  test.each([
+    ['an empty name', ['file', 'https://example.test/a.txt', '']],
+    ['a name with a newline', ['file', 'https://example.test/a.txt', 'a\nb']],
+    ['a name above the bound', ['file', 'https://example.test/a.txt', 'x'.repeat(129)]],
+    ['a fourth element', ['file', 'https://example.test/a.txt', 'a.txt', 'extra']],
+  ])('refuses %s', async (_label, item) => {
+    const payload = { ...request(), body: '', media: [item] }
+    const result = await handleMessage({
+      config,
+      table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
+      auth: signedAuth(payload),
+      payload,
+    })
+    expect(result).toMatchObject({ ok: false, status: 400 })
+  })
 })

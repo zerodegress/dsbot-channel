@@ -4,7 +4,8 @@ import { SecretRefError, resolvePeers } from './p2p-secrets.js'
 import type { DedupeTable } from './p2p-dedupe.js'
 import type { ChannelStats } from '../../channel-stats.js'
 import { EXCERPT_CHARS } from './p2p-mapping.js'
-import { MEDIA_TYPES } from '../../event-types.js'
+import { MEDIA_TYPES, mediaNameProblem } from '../../event-types.js'
+import type { P2PMediaItem } from './p2p-wire.js'
 
 export const P2P_ROUTE = '/p2p/v1/message'
 
@@ -69,7 +70,7 @@ export interface ParsedMessage {
   sender: string
   instance: string
   body: string
-  media: readonly (readonly [string, string])[]
+  media: readonly P2PMediaItem[]
   sentAt: number
   status?: typeof DECLINED
   reason?: string
@@ -153,22 +154,30 @@ export function parseRequest(payload: P2PPayload, maxBodyBytes = MAX_BODY_BYTES)
   }
 }
 
-/** Media is a list of [type, url] pairs; anything else is refused whole, never trimmed. */
-function parseMedia(raw: unknown): { ok: true; value: readonly (readonly [string, string])[] } | { ok: false; reason: string } {
+/** Media is a list of [type, url, name?] items; anything else is refused whole, never trimmed. */
+function parseMedia(raw: unknown): { ok: true; value: readonly P2PMediaItem[] } | { ok: false; reason: string } {
   if (raw === undefined) return { ok: true, value: [] }
-  if (!Array.isArray(raw)) return { ok: false, reason: 'media must be an array of [type, url] pairs' }
+  if (!Array.isArray(raw)) return { ok: false, reason: 'media must be an array of [type, url] or [type, url, name] items' }
   if (raw.length > MEDIA_MAX_ITEMS) return { ok: false, reason: `media carries at most ${MEDIA_MAX_ITEMS} items` }
-  const value: [string, string][] = []
+  const value: P2PMediaItem[] = []
   for (const item of raw) {
-    if (!Array.isArray(item) || item.length !== 2) return { ok: false, reason: 'each media item must be a [type, url] pair' }
-    const [type, url] = item as [unknown, unknown]
+    if (!Array.isArray(item) || (item.length !== 2 && item.length !== 3)) {
+      return { ok: false, reason: 'each media item must be a [type, url] or [type, url, name] item' }
+    }
+    const [type, url, name] = item as [unknown, unknown, unknown?]
     if (typeof type !== 'string' || !(MEDIA_TYPES as readonly string[]).includes(type)) {
       return { ok: false, reason: `media type must be one of ${MEDIA_TYPES.join(', ')}` }
     }
     if (typeof url !== 'string' || url.length === 0 || url.length > MEDIA_URL_MAX || !/^https?:\/\/[^\s]+$/i.test(url)) {
       return { ok: false, reason: `media url must be an http(s) address of at most ${MEDIA_URL_MAX} characters` }
     }
-    value.push([type, url])
+    if (item.length === 2) {
+      value.push([type, url])
+      continue
+    }
+    const nameProblem = mediaNameProblem(name)
+    if (nameProblem !== undefined) return { ok: false, reason: nameProblem }
+    value.push([type, url, name as string])
   }
   if (JSON.stringify(value).length > MEDIA_TOTAL_MAX) return { ok: false, reason: `media must fit in ${MEDIA_TOTAL_MAX} bytes` }
   return { ok: true, value }

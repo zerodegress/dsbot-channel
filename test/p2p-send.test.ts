@@ -259,4 +259,36 @@ describe('failures are told apart', () => {
     const result = await sendToPeer({ ...base('http://127.0.0.1:1'), timeoutMs: 1, fetchImpl: fetchImpl as never })
     expect(result).toMatchObject({ ok: false, code: 'timeout', retryable: true })
   })
+
+  test('a named file travels as a third element and the signature covers it', async () => {
+    const target = await capture()
+    const result = await sendToPeer({
+      ...base(target.url),
+      media: [['file', 'https://example.test/a.txt', 'a.txt'] as const],
+    })
+    expect(result.ok).toBe(true)
+    const seen = target.seen()
+    const sent = JSON.parse(seen.body) as Envelope
+    expect(sent.media).toEqual([['file', 'https://example.test/a.txt', 'a.txt']])
+    expect(signEnvelope(SECRET, sent)).toBe(seen.headers['x-p2p-signature'])
+  })
+
+  test('an item without a name keeps the old two-element bytes', async () => {
+    const target = await capture()
+    await sendToPeer({ ...base(target.url), media: [['image', 'https://example.test/a.png'] as const] })
+    const sent = JSON.parse(target.seen().body) as Envelope
+    expect(sent.media).toEqual([['image', 'https://example.test/a.png']])
+  })
+
+  test('a name on an image is dropped at the wire, so an older peer still reads two elements', async () => {
+    const target = await capture()
+    await sendToPeer({
+      ...base(target.url),
+      media: [['image', 'https://example.test/a.png', 'a.png'] as const],
+    })
+    const seen = target.seen()
+    const sent = JSON.parse(seen.body) as Envelope
+    expect(sent.media).toEqual([['image', 'https://example.test/a.png']])
+    expect(signEnvelope(SECRET, sent)).toBe(seen.headers['x-p2p-signature'])
+  })
 })

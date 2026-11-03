@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
+import type { P2PMediaItem } from './p2p-wire.js'
 
 export interface PeerSecret {
   instance: string
@@ -28,7 +29,7 @@ export interface Envelope {
   inReplyTo?: string | undefined
   inReplyToExcerpt?: string | undefined
   /** Only present when the message carries media, so a text-only envelope keeps its old bytes. */
-  media?: readonly (readonly [string, string])[] | undefined
+  media?: readonly P2PMediaItem[] | undefined
 }
 
 export interface AuthInput {

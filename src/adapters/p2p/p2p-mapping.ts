@@ -1,5 +1,6 @@
 import { buildEvent } from '../../event-build.js'
 import type { MediaType } from '../../event-types.js'
+import type { P2PMediaItem } from './p2p-wire.js'
 import type { Event } from '../../event-types.js'
 
 /** How much of the message being answered travels back with the reply. */
@@ -48,7 +49,7 @@ export interface P2PInbound {
   sender: string
   messageId: string
   body: string
-  media?: readonly (readonly [string, string])[]
+  media?: readonly P2PMediaItem[]
   sentAt: number
   inReplyTo?: string
   inReplyToExcerpt?: string
@@ -69,7 +70,16 @@ export function toP2PEvent(inbound: P2PInbound): Event {
   return buildEvent({
     source: { kind: 'p2p', instance: inbound.instance, peer: inbound.instance, scope: 'p2p' },
     author: { senderId: inbound.sender, kind: 'bot', personId: null },
-    body: { text, media: (inbound.media ?? []).map(([type, url]) => ({ type: type as MediaType, url, handle: null })), replyTo: null },
+    body: {
+      text,
+      media: (inbound.media ?? []).map(([type, url, name]) => ({
+        type: type as MediaType,
+        url,
+        handle: null,
+        ...(name === undefined ? {} : { name }),
+      })),
+      replyTo: null,
+    },
     transport: {
       messageId: inbound.messageId,
       timestamp: inbound.sentAt,

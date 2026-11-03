@@ -159,4 +159,14 @@ describe('the bytes a text-only envelope signs', () => {
     )
     expect(canonicalEnvelope({ ...base, media: [] })).toBe(canonicalEnvelope(base))
   })
+
+  test('carry a file name as a third element, and only when one is given', () => {
+    const named = { ...base, media: [['file', 'https://example.test/a.txt', 'a.txt'] as const] }
+    expect(canonicalEnvelope(named)).toBe(
+      '{"eventId":"e-1","chainId":"e-1","to":"bot-b","sender":"bot-a","instance":"inst-a","body":"hello","sentAt":1700000000000,"media":[["file","https://example.test/a.txt","a.txt"]]}',
+    )
+    expect(canonicalEnvelope({ ...base, media: [['file', 'https://example.test/a.txt'] as const] })).toBe(
+      '{"eventId":"e-1","chainId":"e-1","to":"bot-b","sender":"bot-a","instance":"inst-a","body":"hello","sentAt":1700000000000,"media":[["file","https://example.test/a.txt"]]}',
+    )
+  })
 })

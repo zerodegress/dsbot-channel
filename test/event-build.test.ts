@@ -187,4 +187,19 @@ describe('chargeKey', () => {
   test('rejects a chargeKind outside the closed set', () => {
     expect(() => chargeKey('k', 'b', 'other' as never)).toThrow()
   })
+
+  test('keeps a short printable name and drops anything else', () => {
+    const named = buildEvent(media({ type: 'file', url: 'https://example.test/a.txt', handle: null, name: 'a.txt' }))
+    expect(named.body.media[0]).toMatchObject({ name: 'a.txt' })
+
+    const tooLong = buildEvent(
+      media({ type: 'file', url: 'https://example.test/a.txt', handle: null, name: 'x'.repeat(129) }),
+    )
+    expect(tooLong.body.media[0]?.name).toBeUndefined()
+
+    const unprintable = buildEvent(
+      media({ type: 'file', url: 'https://example.test/a.txt', handle: null, name: 'a\nb' }),
+    )
+    expect(unprintable.body.media[0]?.name).toBeUndefined()
+  })
 })
