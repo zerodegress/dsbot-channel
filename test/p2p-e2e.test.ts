@@ -26,17 +26,6 @@ function bodyOf(text: string): string {
   return text.startsWith(GUIDANCE_BLOCK) ? text.slice(GUIDANCE_BLOCK.length + 2) : text
 }
 
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer()
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const port = (server.address() as AddressInfo).port
-      server.close(() => resolve(port))
-    })
-  })
-}
-
 interface Prompted {
   sessionId: string
   requestId: string
@@ -121,47 +110,57 @@ afterEach(async () => {
 
 describe('two adapters in one process', () => {
   test('a message runs a turn and the reply comes back to the sender', async () => {
-    const [portA, portB] = [await freePort(), await freePort()]
-    const ctx = new Context()
-    captureWarnings(ctx)
-    const sessions = new StubSessions(ctx)
-    await ctx.plugin({
-      name: 'probe-services',
-      apply(scope: Context) {
-        scope.provide('credentials')
-        scope.set('credentials', credentials)
-        scope.provide('sessionController')
-        scope.set('sessionController', sessions)
-      },
+    const mounted = await withPortRetry(freePortPair, async ([portA, portB]) => {
+      const ctx = new Context()
+      captureWarnings(ctx)
+      const sessions = new StubSessions(ctx)
+      await ctx.plugin({
+        name: 'probe-services',
+        apply(scope: Context) {
+          scope.provide('credentials')
+          scope.set('credentials', credentials)
+          scope.provide('sessionController')
+          scope.set('sessionController', sessions)
+        },
+      })
+      const adapter = (
+        channel: string,
+        instance: string,
+        botName: string,
+        peerInstance: string,
+        port: number,
+        peerPort: number,
+      ) => ({
+        channel,
+        instance,
+        botName,
+        transport: {
+          peers: [{ instance: peerInstance, secret: REF, url: `http://127.0.0.1:${peerPort}` }],
+          listen: { host: '127.0.0.1', port },
+        },
+      })
+      await ctx.plugin(registryPlugin)
+      try {
+        const fork = await ctx.plugin(entry, {
+          adapters: [
+            adapter('p2p:a', 'inst-a', 'bot-a', 'inst-b', portA, portB),
+            adapter('p2p:b', 'inst-b', 'bot-b', 'inst-a', portB, portA),
+          ],
+        })
+        forks.push(fork)
+        return { ctx, sessions, portB }
+      } catch (error) {
+        await (ctx as unknown as { dispose?: () => Promise<void> }).dispose?.()
+        throw error
+      }
     })
-    const adapter = (
-      channel: string,
-      instance: string,
-      botName: string,
-      peerInstance: string,
-      port: number,
-      peerPort: number,
-    ) => ({
-      channel,
-      instance,
-      botName,
-      transport: {
-        peers: [{ instance: peerInstance, secret: REF, url: `http://127.0.0.1:${peerPort}` }],
-        listen: { host: '127.0.0.1', port },
-      },
+    onTestFailed(() => {
+      console.error(`ports: ${adapterPorts(mounted.ctx)}`)
     })
-    await ctx.plugin(registryPlugin)
-    const fork = await ctx.plugin(entry, {
-      adapters: [
-        adapter('p2p:a', 'inst-a', 'bot-a', 'inst-b', portA, portB),
-        adapter('p2p:b', 'inst-b', 'bot-b', 'inst-a', portB, portA),
-      ],
-    })
-    forks.push(fork)
-    expect(ctx.get('dsbot-channel.peers')).toHaveLength(2)
+    expect(mounted.ctx.get('dsbot-channel.peers')).toHaveLength(2)
 
     const sent = await sendToPeer({
-      peer: { instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${portB}` },
+      peer: { instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${mounted.portB}` },
       credentials,
       to: 'bot-b',
       body: 'hello',
@@ -171,21 +170,19 @@ describe('two adapters in one process', () => {
     })
     expect(sent).toMatchObject({ ok: true, duplicate: false })
 
-    await waitFor(() => sessions.prompted.length >= 2)
+    await waitFor(() => mounted.sessions.prompted.length >= 2)
 
-    expect(sessions.prompted[0]?.text.startsWith(`[p2p] ${PEER_GUIDANCE}`)).toBe(true)
-    expect(bodyOf(sessions.prompted[0]?.text ?? '').startsWith('[p2p from inst-a · bot-a · p2p-evt-1] ')).toBe(true)
-    expect(bodyOf(sessions.prompted[0]?.text ?? '').endsWith(' hello')).toBe(true)
-    expect(bodyOf(sessions.prompted[0]?.text ?? '')).toBe(INCOMING)
-    expect(sessions.prompted[0]?.requestId).toBe('evt-1')
-    expect(bodyOf(sessions.prompted[1]?.text ?? '').startsWith('[p2p from inst-b · bot-b · p2p-reply:')).toBe(true)
-    expect(bodyOf(sessions.prompted[1]?.text ?? '')).toContain(INCOMING)
+    expect(mounted.sessions.prompted[0]?.text.startsWith(`[p2p] ${PEER_GUIDANCE}`)).toBe(true)
+    expect(bodyOf(mounted.sessions.prompted[0]?.text ?? '').startsWith('[p2p from inst-a · bot-a · p2p-evt-1] ')).toBe(true)
+    expect(bodyOf(mounted.sessions.prompted[0]?.text ?? '').endsWith(' hello')).toBe(true)
+    expect(bodyOf(mounted.sessions.prompted[0]?.text ?? '')).toBe(INCOMING)
+    expect(mounted.sessions.prompted[0]?.requestId).toBe('evt-1')
+    expect(bodyOf(mounted.sessions.prompted[1]?.text ?? '').startsWith('[p2p from inst-b · bot-b · p2p-reply:')).toBe(true)
+    expect(bodyOf(mounted.sessions.prompted[1]?.text ?? '')).toContain(INCOMING)
 
-    await waitFor(() => sessions.prompted.length === 2)
+    await waitFor(() => mounted.sessions.prompted.length === 2)
     await new Promise((resolve) => setTimeout(resolve, 30))
-    expect(sessions.prompted).toHaveLength(2)
-
-    await fork.dispose()
+    expect(mounted.sessions.prompted).toHaveLength(2)
   })
 
   test('refuses two adapters for one bot when their rules cannot bind the pipeline it runs', async () => {
@@ -321,7 +318,6 @@ describe('two adapters in one process', () => {
     expect(mounted.sessions.prompted).toHaveLength(2)
   })
   test('two adapters that answer for one bot with the same rules run a turn on each', async () => {
-    const [portA, portB] = [await freePort(), await freePort()]
     const ctx = new Context()
     captureWarnings(ctx)
     const sessions = new StubSessions(ctx, 2)
@@ -345,16 +341,15 @@ describe('two adapters in one process', () => {
       policy: { deny: { words: ['spam'] }, allow: { peers: ['inst-a', 'inst-b'] } },
     })
     await ctx.plugin(registryPlugin)
-    const fork = await ctx.plugin(entry, {
+    const mounted = await mountWithPorts(ctx, ([portA, portB]) => ({
       adapters: [
         adapter('p2p:a', 'inst-a', 'inst-b', portA, portB),
         adapter('p2p:b', 'inst-b', 'inst-a', portB, portA),
       ],
-    })
-    forks.push(fork)
+    }))
 
     const toB = await sendToPeer({
-      peer: { instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${portB}` },
+      peer: { instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${mounted.portB}` },
       credentials,
       to: 'bot-shared',
       body: 'hello',
@@ -363,7 +358,7 @@ describe('two adapters in one process', () => {
       instance: 'inst-a',
     })
     const toA = await sendToPeer({
-      peer: { instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${portA}` },
+      peer: { instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${mounted.portA}` },
       credentials,
       to: 'bot-shared',
       body: 'hi there',
@@ -379,13 +374,11 @@ describe('two adapters in one process', () => {
     expect(texts.some((text) => text.includes('hello'))).toBe(true)
     expect(texts.some((text) => text.includes('hi there'))).toBe(true)
 
-    await fork.dispose()
   })
 })
 
 describe('reporting failures', () => {
   test('a log sink that throws does not break the round trip', async () => {
-    const [portA, portB] = [await freePort(), await freePort()]
     const ctx = new Context()
     ctx.logger.exporter({
       levels: { default: 3 },
@@ -406,7 +399,7 @@ describe('reporting failures', () => {
       },
     })
     await ctx.plugin(registryPlugin)
-    const fork = await ctx.plugin(entry, {
+    const mounted = await mountWithPorts(ctx, ([portA, portB]) => ({
       adapters: [
         {
           channel: 'p2p:a',
@@ -427,11 +420,10 @@ describe('reporting failures', () => {
           },
         },
       ],
-    })
-    forks.push(fork)
+    }))
 
     await sendToPeer({
-      peer: { instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${portB}` },
+      peer: { instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${mounted.portB}` },
       credentials,
       to: 'bot-b',
       body: 'hello',
@@ -519,6 +511,17 @@ async function pair(
   })
 }
 
+async function mountWithPorts(
+  ctx: Context,
+  build: (pair: [number, number]) => unknown,
+): Promise<{ fork: { dispose(): Promise<void> }; portA: number; portB: number }> {
+  return withPortRetry(freePortPair, async ([portA, portB]) => {
+    const fork = await ctx.plugin(entry, build([portA, portB]) as never)
+    forks.push(fork)
+    return { fork, portA, portB }
+  })
+}
+
 function send(port: number, eventId: string, body: string, sender = 'bot-a', chainId?: string) {
   return sendToPeer({
     peer: { instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${port}` },
@@ -566,7 +569,7 @@ describe('the configured session', () => {
           botName: 'bot-a',
           session,
           transport: {
-            peers: [{ instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${await freePort()}` }],
+            peers: [{ instance: 'inst-b', secret: REF }],
             listen: { host: '127.0.0.1', port: 0 },
           },
         },
@@ -1897,7 +1900,6 @@ describe('the reply ceiling', () => {
   })
 
   test('relayLimit below one is refused at mount time', async () => {
-    const [portA, portB] = [await freePort(), await freePort()]
     const ctx = new Context()
     captureWarnings(ctx)
     const sessions = new StubSessions(ctx, 99)
@@ -1918,7 +1920,7 @@ describe('the reply ceiling', () => {
           botName: 'bot-a',
           transport: {
             peers: [{ instance: 'inst-b', secret: REF }],
-            listen: { host: '127.0.0.1', port: portA },
+            listen: { host: '127.0.0.1', port: 0 },
           },
           policy: { relayLimit: 0 },
         },
@@ -1928,7 +1930,7 @@ describe('the reply ceiling', () => {
           botName: 'bot-b',
           transport: {
             peers: [{ instance: 'inst-a', secret: REF }],
-            listen: { host: '127.0.0.1', port: portB },
+            listen: { host: '127.0.0.1', port: 0 },
           },
         },
       ],
@@ -2004,7 +2006,7 @@ describe('policy budget', () => {
           botName: 'bot-a',
           transport: {
             peers: [{ instance: 'inst-b', secret: REF }],
-            listen: { host: '127.0.0.1', port: await freePort() },
+            listen: { host: '127.0.0.1', port: 0 },
           },
           policy,
         },
@@ -2161,7 +2163,6 @@ async function mounted(
   sessions: StubSessions,
   options: { budget?: { capacity: number }; denyWords?: string[]; allowPeers?: string[] } = {},
 ): Promise<{ portB: number }> {
-  const [portA, portB] = [await freePort(), await freePort()]
   await ctx.plugin({
     name: 'probe-services',
     apply(scope: Context) {
@@ -2193,14 +2194,13 @@ async function mounted(
     },
   })
   await ctx.plugin(registryPlugin)
-  const fork = await ctx.plugin(entry, {
+  const mountedPorts = await mountWithPorts(ctx, ([portA, portB]) => ({
     adapters: [
       adapter('p2p:a', 'inst-a', 'bot-a', 'inst-b', portA, portB),
       adapter('p2p:b', 'inst-b', 'bot-b', 'inst-a', portB, portA),
     ],
-  })
-  forks.push(fork)
-  return { portB }
+  }))
+  return { portB: mountedPorts.portB }
 }
 
 describe('what the wiring charges', () => {
@@ -2369,7 +2369,6 @@ describe('an active push to another peer on the same channel', () => {
     })
     await new Promise<void>((resolve) => capture.listen(0, '127.0.0.1', resolve))
     const capturePort = (capture.address() as AddressInfo).port
-    const portB = await freePort()
     const ctx = new Context()
     captureWarnings(ctx)
     const sessions = new StubSessions(ctx, 99)
@@ -2402,12 +2401,13 @@ describe('an active push to another peer on the same channel', () => {
               { instance: 'inst-a', secret: REF },
               { instance: 'inst-c', secret: REF, url: `http://127.0.0.1:${capturePort}`, botName: 'bot-c' },
             ],
-            listen: { host: '127.0.0.1', port: portB },
+            listen: { host: '127.0.0.1', port: 0 },
           },
         },
       ],
     })
     forks.push(fork)
+    const portB = boundPort(ctx, 'p2p:b')
 
     try {
       await sendToPeer({
