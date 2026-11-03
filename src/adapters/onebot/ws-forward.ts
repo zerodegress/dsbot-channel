@@ -11,6 +11,17 @@ export interface LivenessOptions {
   timeoutMs: number
 }
 
+/** The timers a link runs on; a test hands in its own so a window can be walked deterministically. */
+export interface LinkClock {
+  setTimer: (callback: () => void, ms: number) => unknown
+  clearTimer: (handle: unknown) => void
+}
+
+const REAL_CLOCK: LinkClock = {
+  setTimer: (callback, ms) => setTimeout(callback, ms),
+  clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+}
+
 /** What an action call answers: the payload of a `status: ok` reply, or why none came. */
 export type ActionAnswer =
   | { ok: true; frame: Record<string, unknown> }
@@ -26,6 +37,8 @@ export interface ForwardOptions {
   timeoutMs: number
   /** Protocol-level ping/pong; always on in production, shortened in tests. */
   liveness?: LivenessOptions | undefined
+  /** Timer source for liveness; real timers unless a test hands in its own. */
+  clock?: LinkClock | undefined
   maxFrameBytes: number
   onEvent: (frame: Record<string, unknown>) => void
   onMismatch: () => void
@@ -56,7 +69,6 @@ export class ForwardLink {
   #lastConnectedAt: number | null = null
   #lastFrameAt = 0
   #warnedSize = false
-  readonly #pings = new Set<ReturnType<typeof setInterval>>()
 
   constructor(options: ForwardOptions) {
     this.#options = options
@@ -75,8 +87,6 @@ export class ForwardLink {
     if (this.#retry !== undefined) clearTimeout(this.#retry)
     if (this.#eventRetry !== undefined) clearTimeout(this.#eventRetry)
     if (this.#beat !== undefined) clearInterval(this.#beat)
-    for (const timer of this.#pings) clearInterval(timer)
-    this.#pings.clear()
     this.#retry = undefined
     this.#eventRetry = undefined
     this.#beat = undefined
@@ -185,31 +195,43 @@ export class ForwardLink {
     })
   }
 
+  #clock(): LinkClock {
+    return this.#options.clock ?? REAL_CLOCK
+  }
+
   /** Pings this socket on a fixed beat and closes it when a pong does not come back. */
   #watch(socket: WebSocket): void {
     const liveness = this.#options.liveness ?? {
       intervalMs: ONEBOT_PING_INTERVAL_MS,
       timeoutMs: ONEBOT_PONG_TIMEOUT_MS,
     }
-    let waiting: ReturnType<typeof setTimeout> | undefined
-    const timer = setInterval(() => {
-      if (socket.readyState !== WebSocket.OPEN || waiting !== undefined) return
-      socket.ping()
-      waiting = setTimeout(() => {
-        waiting = undefined
-        this.#options.warn('dsbot-channel: closed the onebot socket: its ping went unanswered')
-        socket.close(1001, 'ping timeout')
-      }, liveness.timeoutMs)
-    }, liveness.intervalMs)
-    this.#pings.add(timer)
+    const clock = this.#clock()
+    let waiting: unknown
+    let tick: unknown
+    const schedule = (): void => {
+      tick = clock.setTimer(() => {
+        tick = undefined
+        if (socket.readyState !== WebSocket.OPEN) return
+        if (waiting === undefined) {
+          socket.ping()
+          waiting = clock.setTimer(() => {
+            waiting = undefined
+            this.#options.warn('dsbot-channel: closed the onebot socket: its ping went unanswered')
+            socket.close(1001, 'ping timeout')
+          }, liveness.timeoutMs)
+        }
+        schedule()
+      }, liveness.intervalMs)
+    }
+    schedule()
     socket.on('pong', () => {
-      if (waiting !== undefined) clearTimeout(waiting)
+      if (waiting !== undefined) clock.clearTimer(waiting)
       waiting = undefined
     })
     socket.on('close', () => {
-      clearInterval(timer)
-      this.#pings.delete(timer)
-      if (waiting !== undefined) clearTimeout(waiting)
+      if (tick !== undefined) clock.clearTimer(tick)
+      tick = undefined
+      if (waiting !== undefined) clock.clearTimer(waiting)
       waiting = undefined
     })
   }

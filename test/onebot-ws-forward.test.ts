@@ -55,6 +55,40 @@ function link(url: string, overrides: Partial<ConstructorParameters<typeof Forwa
   return one
 }
 
+
+/** A timer source a test walks by hand, so a ping window is walked, not slept through. */
+function manualClock(): { clock: { setTimer: (run: () => void, ms: number) => unknown; clearTimer: (handle: unknown) => void }; advance: (ms: number) => Promise<void> } {
+  let time = 0
+  let seq = 0
+  const timers = new Map<number, { at: number; run: () => void }>()
+  return {
+    clock: {
+      setTimer: (run, ms) => {
+        const id = ++seq
+        timers.set(id, { at: time + ms, run })
+        return id
+      },
+      clearTimer: (handle) => {
+        timers.delete(handle as number)
+      },
+    },
+    advance: async (ms: number) => {
+      const target = time + ms
+      for (;;) {
+        const due = [...timers.entries()]
+          .filter(([, timer]) => timer.at <= target)
+          .sort((left, right) => left[1].at - right[1].at)[0]
+        if (due === undefined) break
+        timers.delete(due[0])
+        time = due[1].at
+        due[1].run()
+        await new Promise((resolve) => setImmediate(resolve))
+      }
+      time = target
+    },
+  }
+}
+
 async function waitFor(check: () => boolean, timeoutMs = 2000): Promise<void> {
   const started = Date.now()
   while (!check()) {
@@ -187,7 +221,7 @@ describe('the forward websocket link', () => {
 
     const one = link(api.url, { eventUrl: `ws://127.0.0.1:${deadPort}/onebot/event` })
     await waitFor(() => api.sockets.length === 1)
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    await waitFor(() => one.health().lastFailure !== null)
     expect(one.health().state).not.toBe('online')
   })
 
@@ -197,7 +231,7 @@ describe('the forward websocket link', () => {
     const one = link(api.url, { eventUrl: events.url, reconnect: false })
     await waitFor(() => events.sockets.length >= 1)
     await waitFor(() => one.health().state === 'offline', 3000)
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    await waitFor(() => events.sockets.every((socket) => socket.readyState !== 1), 3000)
     expect(events.sockets.length).toBe(1)
   })
 
@@ -226,28 +260,46 @@ describe('the forward websocket link', () => {
 
   test('a socket that never answers a ping is closed', async () => {
     const warnings: string[] = []
+    const { clock, advance } = manualClock()
     const harness = await serve(undefined, false)
-    const one = link(harness.url, { liveness: { intervalMs: 20, timeoutMs: 25 }, warn: (m) => warnings.push(m) })
+    const one = link(harness.url, { liveness: { intervalMs: 20, timeoutMs: 25 }, clock, warn: (m) => warnings.push(m) })
     await waitFor(() => one.health().state === 'online')
+
+    await advance(20)
+    await advance(25)
+    await waitFor(() => warnings.some((line) => line.includes('ping')))
     await waitFor(() => one.health().state === 'offline', 3000)
-    expect(warnings.some((line) => line.includes('ping'))).toBe(true)
   })
 
   test('a socket that answers its pings is left alone', async () => {
+    const { clock, advance } = manualClock()
+    const frames: Record<string, unknown>[] = []
     const harness = await serve()
-    const one = link(harness.url, { liveness: { intervalMs: 20, timeoutMs: 25 } })
+    const one = link(harness.url, { liveness: { intervalMs: 20, timeoutMs: 25 }, clock, onEvent: (f) => frames.push(f) })
     await waitFor(() => one.health().state === 'online')
-    await new Promise((resolve) => setTimeout(resolve, 200))
+    // The pong and this frame travel the same socket in order, so seeing the frame proves the
+    // pong was handled before the deadline is walked past; no timing luck involved.
+    harness.sockets[0]!.on('ping', () => {
+      harness.sockets[0]!.send(JSON.stringify({ post_type: 'message', message_id: 9001 }))
+    })
+
+    await advance(20)
+    await waitFor(() => frames.length === 1)
+    await advance(25)
     expect(one.health().state).toBe('online')
   })
 
   test('a disconnect during the wait for a pong is not reported as an unanswered ping', async () => {
     const warnings: string[] = []
+    const { clock, advance } = manualClock()
     const harness = await serve(undefined, false)
-    const one = link(harness.url, { liveness: { intervalMs: 20, timeoutMs: 60 }, warn: (m) => warnings.push(m) })
+    const one = link(harness.url, { liveness: { intervalMs: 20, timeoutMs: 60 }, clock, warn: (m) => warnings.push(m) })
     await waitFor(() => one.health().state === 'online')
     harness.sockets[0]!.on('ping', () => harness.sockets[0]!.terminate())
-    await new Promise((resolve) => setTimeout(resolve, 200))
+
+    await advance(20)
+    await waitFor(() => one.health().state === 'offline', 3000)
+    await advance(60)
     expect(warnings.some((line) => line.includes('ping'))).toBe(false)
   })
 })
