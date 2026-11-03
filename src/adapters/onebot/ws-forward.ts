@@ -185,7 +185,6 @@ export class ForwardLink {
     })
   }
 
-  /** Online means every socket this profile needs is open; anything else says why it is not. */
   /** Pings this socket on a fixed beat and closes it when a pong does not come back. */
   #watch(socket: WebSocket): void {
     const liveness = this.#options.liveness ?? {
@@ -213,6 +212,7 @@ export class ForwardLink {
     })
   }
 
+  /** Online means every socket this profile needs is open; anything else says why it is not. */
   #settle(): void {
     if (this.#closed) {
       this.#state = 'offline'
