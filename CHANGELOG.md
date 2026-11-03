@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The package declares `@deepseek-ai/dsh-tools` and `@deepseek-ai/schemastery` as optional peers instead of dependencies: the bundle leaves both external, so a dependency entry only made every install fetch a second copy of the harness tree. The production tree now declares nothing, publishing runs `pnpm audit --prod` before it packs, and `packageManager` pins the pnpm that wrote the lockfile.
+
 - `capabilities.history` answers `{ group, private }` instead of one boolean, and `SendFailureCode` gains `unsupported` for a request the transport cannot carry at all: neither OneBot history API belongs to OneBot 11, so a link declares each address kind it really serves rather than guessing, and an implementation without the action says so instead of showing an empty page.
 - A p2p message may now carry an empty `body` when it also carries media: a media-only message has no words to send, and the receiver used to refuse it with `400 body must be a non-empty string`. A request with neither text nor media is still refused.
 - A context owns its adapter registry: `dsbot-channel/registry` provides it, an adapter plugin injects it, and the gateway reads it, so two copies of the package no longer each keep a module-level map that the other cannot see. The profile mounts `dsbot-channel/registry`, then the adapters, then `dsbot-channel`; a missing registry now fails the mount and names the plugin to add, and an adapter mounted after the gateway fails with the kinds the gateway could see.
