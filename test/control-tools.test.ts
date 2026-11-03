@@ -19,7 +19,6 @@ function harness(options: { declined?: { ok: boolean; code?: string; reason?: st
     kind: 'p2p',
     scope: 'p2p',
     personId: null,
-    sideEffect: false,
     suppressed: false,
     pushed: false,
   }

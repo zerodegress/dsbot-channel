@@ -24,8 +24,6 @@ export interface TurnRef {
   scope: Scope
   /** The stamped identity of the triggering author, or null when the account is unbound. */
   personId: string | null
-  /** Set when a side-effect tool wrote something, so the empty-turn warn tells the truth. */
-  sideEffect: boolean
   /** Set by end or decline so the turn that just ran sends nothing back. */
   suppressed: boolean
   /** Set by decline, so a reader can tell a refusal from a quiet end. */

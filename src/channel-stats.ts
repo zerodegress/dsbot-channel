@@ -8,7 +8,7 @@ export interface ChannelFailure {
 }
 
 export interface ChannelHealth {
-  /** Turns that ended with no text and no tool call: always a lost answer. */
+  /** Turns that ended without an answer. */
   emptyTurns: number
   /** Outbound failures counted by the code the send layer reported. */
   sendFailures: Record<string, number>

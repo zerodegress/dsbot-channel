@@ -1288,7 +1288,7 @@ transport: {
     forks.push(fork)
     try {
       await send(port, 'evt-1', 'hello')
-      await waitFor(() => warnings.some((line) => line.includes('no text and no tool call')))
+      await waitFor(() => warnings.some((line) => line.includes('ended without an answer')))
       await new Promise((resolve) => setTimeout(resolve, 40))
       expect(posted).toHaveLength(0)
     } finally {
@@ -1550,7 +1550,7 @@ transport: {
       sender: 'bot-b',
       instance: 'inst-b',
     })
-    await waitFor(() => warnings.some((line) => line.includes('no text and no tool call')))
+    await waitFor(() => warnings.some((line) => line.includes('ended without an answer')))
 
     const turns = ctx.get('dsbot-channel.turns') as { snapshot(): { empty: number; started: number } }
     expect(turns.snapshot()).toMatchObject({ started: 1, empty: 1 })

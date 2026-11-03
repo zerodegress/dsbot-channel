@@ -646,7 +646,6 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
       kind: transport.kind,
       scope: message.source.scope,
       personId: message.author.personId,
-      sideEffect: false,
       suppressed: message.suppressed === true || chains.isClosed(message.chainId),
       pushed: false,
     }
@@ -719,10 +718,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         return
       }
       if (turn.text.length === 0) {
-        const why = turnRef.sideEffect
-          ? 'ended without an answer after a side-effect tool ran'
-          : 'ended with no text and no tool call'
-        warn(`dsbot-channel: the turn for ${message.requestId} from ${message.replyTarget} ${why}`)
+        warn(`dsbot-channel: the turn for ${message.requestId} from ${message.replyTarget} ended without an answer`)
         turns.empty()
         ended('empty')
         runtime.billing.reject(hold)
