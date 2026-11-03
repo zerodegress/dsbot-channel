@@ -40,7 +40,7 @@ export interface TurnStatsSnapshot {
   started: number
   /** Turns whose reply was delivered. */
   replied: number
-  /** Turns that ended with no text and no tool call, which always loses an answer. */
+  /** Turns that ended without an answer. */
   empty: number
   /** Turns whose plain text was discarded because the session requires a tool call. */
   dropped: number

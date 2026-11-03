@@ -21,7 +21,6 @@ import { SOURCE_KIND_MAX } from './event-types.js'
 import { createDeclineTool, createNoReplyTool } from './control-tools.js'
 import type { ControlPorts, TurnRef } from './control-tools.js'
 import { createImpressionForget, createImpressionGet, createImpressionPut } from './impression-tools.js'
-import { markToolRan } from './tool-mark.js'
 import type { ImpressionPorts } from './impression-tools.js'
 import { ImpressionStore, readImpressionsConfig } from './impressions.js'
 import { ChainGuard, KeyGuard } from './event-keys.js'
@@ -647,7 +646,6 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
       kind: transport.kind,
       scope: message.source.scope,
       personId: message.author.personId,
-      toolRan: false,
       suppressed: message.suppressed === true || chains.isClosed(message.chainId),
       pushed: false,
     }
@@ -720,10 +718,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         return
       }
       if (turn.text.length === 0) {
-        const why = turnRef.toolRan
-          ? 'ended without an answer after a side-effect tool ran'
-          : 'ended with no text and no tool call'
-        warn(`dsbot-channel: the turn for ${message.requestId} from ${message.replyTarget} ${why}`)
+        warn(`dsbot-channel: the turn for ${message.requestId} from ${message.replyTarget} ended without an answer`)
         turns.empty()
         ended('empty')
         runtime.billing.reject(hold)
@@ -950,12 +945,6 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   ctx.provide('dsbot-channel.peers')
   ctx.set('dsbot-channel.peers', started)
   if (tools !== undefined && typeof tools.register === 'function') {
-    const register = (definition: AnyTool, label: string): void => {
-      const marked = markToolRan(definition, (sessionId) =>
-        sessionId === undefined ? undefined : activeTurns.get(sessionId),
-      )
-      ctx.effect(() => tools.register(marked), label)
-    }
     const byChannel = new Map(channels.map((channel) => [channel.config.channel, channel]))
     const router = new PushRouter({
       channels: channels.map((channel) => ({
@@ -993,7 +982,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         })
       },
     })
-    register(createSendText(router), 'dsbot-channel: send_text tool')
+    ctx.effect(() => tools.register(createSendText(router)), 'dsbot-channel: send_text tool')
     const gate = new CapabilityGate({
       router,
       capabilities: (channel) => byChannel.get(channel)?.adapter.capabilities,
@@ -1010,9 +999,9 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         return adapter.history(input)
       },
     })
-    register(createSendImage(gate), 'dsbot-channel: send_image tool')
-    register(createSendFile(gate), 'dsbot-channel: send_file tool')
-    register(createReadHistory(gate), 'dsbot-channel: read_history tool')
+    ctx.effect(() => tools.register(createSendImage(gate)), 'dsbot-channel: send_image tool')
+    ctx.effect(() => tools.register(createSendFile(gate)), 'dsbot-channel: send_file tool')
+    ctx.effect(() => tools.register(createReadHistory(gate)), 'dsbot-channel: read_history tool')
     const ports: ControlPorts = {
       turnOf: (sessionId) => (sessionId === undefined ? undefined : activeTurns.get(sessionId)),
       isClosed: (eventId) => chains.isClosed(eventId),
@@ -1039,17 +1028,17 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         return sent.ok ? { ok: true } : { ok: false, code: sent.code, reason: sent.reason }
       },
     }
-    register(createNoReplyTool(ports), 'dsbot-channel: no_reply tool')
-    register(createDeclineTool(ports), 'dsbot-channel: decline tool')
+    ctx.effect(() => tools.register(createNoReplyTool(ports)), 'dsbot-channel: no_reply tool')
+    ctx.effect(() => tools.register(createDeclineTool(ports)), 'dsbot-channel: decline tool')
     if (impressionStores.size > 0) {
       const impressionPorts: ImpressionPorts = {
         storeOf: (bot) => impressionStores.get(bot),
         turnOf: (sessionId) => (sessionId === undefined ? undefined : activeTurns.get(sessionId)),
         now: clock,
       }
-      register(createImpressionPut(impressionPorts), 'dsbot-channel: impression_put tool')
-      register(createImpressionGet(impressionPorts), 'dsbot-channel: impression_get tool')
-      register(createImpressionForget(impressionPorts), 'dsbot-channel: impression_forget tool')
+      ctx.effect(() => tools.register(createImpressionPut(impressionPorts)), 'dsbot-channel: impression_put tool')
+      ctx.effect(() => tools.register(createImpressionGet(impressionPorts)), 'dsbot-channel: impression_get tool')
+      ctx.effect(() => tools.register(createImpressionForget(impressionPorts)), 'dsbot-channel: impression_forget tool')
     }
   }
 }

@@ -33,7 +33,6 @@ async function harness(turn: Partial<TurnRef> = {}) {
     kind: 'onebot',
     scope: 'group',
     personId: 'alice',
-    toolRan: false,
     suppressed: false,
     pushed: false,
     ...turn,
