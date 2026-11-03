@@ -477,6 +477,7 @@ export class ImpressionStore {
   #dirty = false
   #rendering: Promise<void> | undefined
   #renderWarned = false
+  #retryAfterFailure = false
 
   constructor(options: ImpressionStoreOptions) {
     if (options.dir.length === 0) throw new ConfigError('impressions.dir must be a non-empty string', ['impressions', 'dir'])
@@ -606,7 +607,13 @@ export class ImpressionStore {
     const running = this.#rendering
     if (running !== undefined) return running
     const run = this.#renderLoop().finally(() => {
-      if (this.#rendering === run) this.#rendering = undefined
+      if (this.#rendering === run) {
+        this.#rendering = undefined
+        if (this.#retryAfterFailure) {
+          this.#retryAfterFailure = false
+          void this.#scheduleRender()
+        }
+      }
     })
     this.#rendering = run
     return run
@@ -617,11 +624,13 @@ export class ImpressionStore {
       this.#dirty = false
       try {
         await this.#renderOnce()
+        this.#retryAfterFailure = false
       } catch (error) {
         if (!this.#renderWarned) {
           this.#renderWarned = true
           this.#warn(`dsbot-channel: could not render ${join(this.root, IMPRESSION_VIEW_NAME)}: ${describe(error)}`)
         }
+        if (this.#dirty) this.#retryAfterFailure = true
         this.#dirty = true
         return
       }
