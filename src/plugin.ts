@@ -11,7 +11,7 @@ import type { BudgetConfig } from './budget-config.js'
 import type { Hold } from './budget-ledger.js'
 import { ClosedChains } from './chain-closer.js'
 import { buildIdentity } from './identity.js'
-import type { MountedAccountSpace } from './identity.js'
+import type { IdentityGraph, MountedAccountSpace } from './identity.js'
 import { ContextBuffer, DEFAULT_CONTEXT_CHARS, DEFAULT_CONTEXT_MESSAGES, renderContext } from './context-buffer.js'
 import type { ContextLimits } from './context-buffer.js'
 import { ConfigError, validateConfig } from './config.js'
@@ -22,7 +22,10 @@ import { createDeclineTool, createNoReplyTool } from './control-tools.js'
 import type { ControlPorts, TurnRef } from './control-tools.js'
 import { createImpressionForget, createImpressionGet, createImpressionPut } from './impression-tools.js'
 import type { ImpressionPorts } from './impression-tools.js'
-import { ImpressionStore, readImpressionsConfig } from './impressions.js'
+import { pickImpressions, renderImpressionBlock } from './impression-block.js'
+import { importMemory } from './impression-import.js'
+import { DEFAULT_IMPRESSION_CHARS, ImpressionStore, readImpressionsConfig, readImpressionsTurn } from './impressions.js'
+import type { Impression, ImpressionImport, ImpressionsTurn } from './impressions.js'
 import { ChainGuard, KeyGuard } from './event-keys.js'
 import { InboundGate } from './inbound-gate.js'
 import type { GroupBotPolicy } from './inbound-gate.js'
@@ -97,6 +100,8 @@ export interface TurnSettings {
   maxChars: number
   /** What a turn may read of the messages it did not answer. */
   context: ContextLimits
+  /** How much text the impressions block may spend; zero leaves the block out. */
+  impressions: ImpressionsTurn
 }
 
 export const DEFAULT_TURN: TurnSettings = {
@@ -104,7 +109,11 @@ export const DEFAULT_TURN: TurnSettings = {
   maxBatch: 10,
   maxChars: 8000,
   context: { messages: DEFAULT_CONTEXT_MESSAGES, chars: DEFAULT_CONTEXT_CHARS },
+  impressions: { chars: DEFAULT_IMPRESSION_CHARS },
 }
+
+/** How many distinct read failures one mount remembers before it forgets the oldest. */
+export const IMPRESSION_READ_WARNINGS_MAX = 256
 
 const nodeSpecSchema = Schema.object({
   id: Schema.string().required(),
@@ -146,6 +155,7 @@ export const Config: any = Schema.object({
       messages: Schema.number(),
       chars: Schema.number(),
     }),
+    impressions: Schema.any(),
   }),
   adapters: Schema
     .array(
@@ -208,6 +218,7 @@ export function checkTurnSettings(
         maxBatch?: number | undefined
         maxChars?: number | undefined
         context?: { messages?: number | undefined; chars?: number | undefined } | undefined
+        impressions?: unknown
       }
     | undefined,
 ): TurnSettings {
@@ -219,6 +230,7 @@ export function checkTurnSettings(
       messages: raw?.context?.messages ?? DEFAULT_TURN.context.messages,
       chars: raw?.context?.chars ?? DEFAULT_TURN.context.chars,
     },
+    impressions: readImpressionsTurn(raw?.impressions),
   }
   if (!Number.isInteger(turn.coalesceMs) || turn.coalesceMs < 0) {
     throw new ConfigError(`turn.coalesceMs must be a whole number of milliseconds, at least 0: ${turn.coalesceMs}`, [
@@ -247,6 +259,78 @@ export function checkTurnSettings(
     ])
   }
   return turn
+}
+
+/** A one-time import must land on a person the graph declares or a session this profile can carry. */
+function checkImportSubject(
+  block: ImpressionImport,
+  identity: IdentityGraph,
+  channels: readonly MountedChannel[],
+  warn: (message: string) => void,
+): void {
+  const target = block.as
+  if ('personId' in target) {
+    const node = identity.nodes.find((entry) => entry.id === target.personId)
+    if (node === undefined) {
+      throw new ConfigError(`impressions.import.as names an undeclared person: ${target.personId}`, [
+        'impressions',
+        'import',
+        'as',
+        'personId',
+      ])
+    }
+    if (node.kind !== 'person') {
+      throw new ConfigError(`impressions.import.as names a bot node, not a person: ${target.personId}`, [
+        'impressions',
+        'import',
+        'as',
+        'personId',
+      ])
+    }
+    return
+  }
+  const split = target.groupKey.indexOf('|')
+  if (split <= 0 || split === target.groupKey.length - 1) {
+    throw new ConfigError(`impressions.import.as.groupKey must be "<channel>|<sessionKey>": ${target.groupKey}`, [
+      'impressions',
+      'import',
+      'as',
+      'groupKey',
+    ])
+  }
+  const channelName = target.groupKey.slice(0, split)
+  const sessionKey = target.groupKey.slice(split + 1)
+  const mounted = channels.find((entry) => entry.config.channel === channelName)
+  if (mounted === undefined) {
+    throw new ConfigError(`impressions.import.as names an unmounted channel: ${channelName}`, [
+      'impressions',
+      'import',
+      'as',
+      'groupKey',
+    ])
+  }
+  const problem = mounted.adapter.checkSessionKey(sessionKey)
+  if (problem !== undefined) {
+    throw new ConfigError(`impressions.import.as names a session key this adapter refuses: ${problem}`, [
+      'impressions',
+      'import',
+      'as',
+      'groupKey',
+    ])
+  }
+  if (mounted.adapter.sessionScope === undefined) {
+    warn(
+      `dsbot-channel: adapter "${channelName}" cannot name the scope of its session keys; the imported notes may never be injected`,
+    )
+    return
+  }
+  const scope = mounted.adapter.sessionScope(sessionKey)
+  if (scope !== 'group') {
+    throw new ConfigError(
+      `impressions.import.as.groupKey names a ${scope ?? 'unknown'} session, not a group: ${target.groupKey}`,
+      ['impressions', 'import', 'as', 'groupKey'],
+    )
+  }
 }
 
 /** Refuses a turn timing no pipeline can run with. */
@@ -550,6 +634,10 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   const channels = mountAdapters(config, settings, warn, registry)
   // Parsed after the adapters so a binding can be checked against instances that really exist.
   const identity = buildIdentity(config.identity, accountSpaces(channels), warn)
+  const impressionsConfig = readImpressionsConfig(config.impressions)
+  if (impressionsConfig?.import !== undefined) {
+    checkImportSubject(impressionsConfig.import, identity, channels, warn)
+  }
   checkGuidance(channels)
   checkPrepareSupport(bots, channels)
   const reply = compileReply(config.reply)
@@ -564,7 +652,6 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     | ReturnType<typeof createImpressionPut>
     | ReturnType<typeof createImpressionGet>
     | ReturnType<typeof createImpressionForget>
-  const impressionsConfig = readImpressionsConfig(config.impressions)
   const tools = ctx.get('tools') as { register: (definition: AnyTool) => () => void } | undefined
   if (reply.possibleTool && (tools === undefined || typeof tools.register !== 'function')) {
     throw new ConfigError('the tools service is required when a profile can choose tool mode', ['reply'])
@@ -611,11 +698,55 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   const eventKeys = new KeyGuard()
   const chainKeys = new ChainGuard()
   const turns = new TurnStats()
+  const impressionReadWarnings = new Map<string, true>()
+  const readImpressions = async (
+    store: ImpressionStore,
+    subjectKind: 'person' | 'group',
+    subject: string,
+  ): Promise<readonly Impression[]> => {
+    const path = store.fileFor(subjectKind, subject)
+    const read = await store.read(subjectKind, subject)
+    if (read.ok) {
+      for (const key of impressionReadWarnings.keys()) {
+        if (key.startsWith(`${path}\u0000`)) impressionReadWarnings.delete(key)
+      }
+      return read.records
+    }
+    const key = `${path}\u0000${read.reason}`
+    if (!impressionReadWarnings.has(key)) {
+      if (impressionReadWarnings.size >= IMPRESSION_READ_WARNINGS_MAX) {
+        const oldest = impressionReadWarnings.keys().next().value
+        if (oldest !== undefined) impressionReadWarnings.delete(oldest)
+      }
+      impressionReadWarnings.set(key, true)
+      warn(`dsbot-channel: could not read ${path}: ${read.reason}`)
+    }
+    return []
+  }
   const impressionStores = new Map<string, ImpressionStore>()
   if (impressionsConfig !== undefined) {
     for (const botName of new Set(channels.map((channel) => channel.config.botName))) {
       const store = new ImpressionStore({ dir: impressionsConfig.dir, bot: botName, now: clock, warn })
       await store.load()
+      if (impressionsConfig.import !== undefined) {
+        const outcome = await importMemory({ store, bot: botName, config: impressionsConfig.import, now: clock() })
+        if (!outcome.ok) {
+          const where = outcome.reason === 'unreadable' ? 'read' : 'store notes read from'
+          warn(`dsbot-channel: impression import could not ${where} ${outcome.path}`)
+        } else {
+          warn(
+            `dsbot-channel: imported ${outcome.counts.imported} impressions into bot "${botName}" (${outcome.counts.skipped} lines skipped, ${outcome.counts.overflow} without room, ${outcome.counts.topics} topic files skipped)`,
+          )
+          if (outcome.counts.overflow > 0) {
+            const subject =
+              'personId' in impressionsConfig.import.as
+                ? impressionsConfig.import.as.personId
+                : impressionsConfig.import.as.groupKey
+            warn(`dsbot-channel: import found no room for ${outcome.counts.overflow} lines about "${subject}"`)
+          }
+        }
+      }
+      await store.renderAtMount()
       impressionStores.set(botName, store)
     }
   }
@@ -673,6 +804,21 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         blocks.push(`[${transport.kind}] ${guidance}`)
       }
       if (injected.claimMode(message.sessionKey, mode)) blocks.push(TOOL_MODE_NOTICE)
+      if (runtime.turn.impressions.chars > 0 && message.source.scope !== 'p2p') {
+        const store = impressionStores.get(adapter.botName)
+        if (store !== undefined) {
+          const groupKey = `${adapter.channel}|${message.sessionKey}`
+          const inGroup = message.source.scope === 'group'
+          const person =
+            message.author.personId === null
+              ? []
+              : await readImpressions(store, 'person', message.author.personId)
+          const archive = inGroup ? await readImpressions(store, 'group', groupKey) : []
+          const seenNotes = pickImpressions(person, archive, { personId: message.author.personId, inGroup, groupKey })
+          const block = renderImpressionBlock(seenNotes, clock(), runtime.turn.impressions.chars)
+          if (block !== '') blocks.push(block)
+        }
+      }
       const mergedKeys = [message.eventKey, ...rest.map((one) => one.eventKey)]
       const seen = context.entries(`${adapter.botName}|${message.sessionKey}`, mergedKeys)
       if (seen.length > 0) blocks.push(renderContext(seen))

@@ -70,6 +70,11 @@ describe('the p2p adapter checks what it takes from a profile', () => {
 describe('the p2p adapter owns its own keys and addresses', () => {
   const adapter = new P2PAdapter(config(7123))
 
+  test('names the scope of its session keys without core parsing them', () => {
+    expect(adapter.sessionScope('p2p:inst-a')).toBe('p2p')
+    expect(adapter.sessionScope('group:1')).toBeUndefined()
+  })
+
   test('a session key names a configured peer', () => {
     expect(adapter.checkSessionKey('p2p:inst-a')).toBeUndefined()
     expect(adapter.checkSessionKey('p2p:inst-z')).toMatch(/addresses no peer "inst-z"/)

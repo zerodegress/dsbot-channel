@@ -16,6 +16,7 @@ import type {
   SendResult,
 } from '../../contract.js'
 import { REPLY_TARGET_MAX, SESSION_KEY_MAX, tokenProblem } from '../../contract.js'
+import type { Scope } from '../../event-types.js'
 import { GROUP_GUIDANCE, PEER_GUIDANCE } from './guidance.js'
 import { DedupeTable } from './p2p-dedupe.js'
 import type { InboundRequest } from './p2p-wire.js'
@@ -134,6 +135,10 @@ export class P2PAdapter implements ChannelAdapter {
       maxTurnMs: settings.maxTurnMs,
       ...(this.#options.now === undefined ? {} : { now: this.#options.now }),
     })
+  }
+
+  sessionScope(key: string): Scope | undefined {
+    return key.startsWith('p2p:') ? 'p2p' : undefined
   }
 
   checkSessionKey(key: string): string | undefined {

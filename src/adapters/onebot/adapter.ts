@@ -322,6 +322,12 @@ export class OneBotAdapter implements ChannelAdapter {
     }
   }
 
+  sessionScope(key: string): Scope | undefined {
+    if (key.startsWith('group:')) return 'group'
+    if (key.startsWith('peer:')) return 'c2c'
+    return undefined
+  }
+
   checkSessionKey(key: string): string | undefined {
     return this.#targetProblem(key, 'session key')
   }

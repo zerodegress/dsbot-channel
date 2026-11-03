@@ -85,16 +85,37 @@ export interface ImpressionFile {
 /** What a caller hands the store; the store stamps `touchedAt` itself. */
 export type ImpressionFileInput = Omit<ImpressionFile, 'touchedAt'>
 
+/** One-time import of a file in the host's memory format. */
+export interface ImpressionImport {
+  path: string
+  as: { personId: string } | { groupKey: string }
+}
+
 /** The plugin-level block; without a directory the feature is off. */
 export interface ImpressionsConfig {
   dir: string
+  import?: ImpressionImport | undefined
 }
+
+/** How much of a turn's text one impressions block may spend. */
+export interface ImpressionsTurn {
+  chars: number
+}
+
+export const DEFAULT_IMPRESSION_CHARS = 400
+export const IMPRESSION_CHARS_MAX = 2000
+/** The read-only export the store keeps beside its subject directories. */
+export const IMPRESSION_VIEW_NAME = 'MEMORY.md'
+export const IMPRESSION_VIEW_HEADER =
+  '# Impressions\n\nGenerated from the impression store; read-only. This file is not read by the host.\n'
 
 export interface ImpressionStoreOptions {
   dir: string
   bot: string
   now?: (() => number) | undefined
   warn?: ((message: string) => void) | undefined
+  /** A replaceable render entry; the default writes the read-only view. */
+  render?: (() => Promise<void>) | undefined
 }
 
 export type ImpressionReadResult =
@@ -105,8 +126,9 @@ export type ImpressionWriteResult =
   | { ok: false; code: 'storage_error'; reason: string }
 export type ImpressionSaveResult = { ok: true } | { ok: false; code: 'storage_error'; reason: string }
 
-/** Applies one turn's change to a subject under the file's queue; an empty result deletes the file. */
-export type ImpressionChange = (records: readonly Impression[]) => readonly Impression[]
+/** Applies one turn's change to a subject under the file's queue; an empty result deletes the file,
+ * and `undefined` leaves it untouched. */
+export type ImpressionChange = (records: readonly Impression[]) => readonly Impression[] | undefined
 
 class StoreProblem extends Error {}
 
@@ -177,7 +199,7 @@ export function readImpressionsConfig(raw: unknown): ImpressionsConfig | undefin
     throw new ConfigError('impressions must be an object', ['impressions'])
   }
   const block = raw as Record<string, unknown>
-  const unknown = Object.keys(block).filter((key) => key !== 'dir')
+  const unknown = Object.keys(block).filter((key) => key !== 'dir' && key !== 'import')
   if (unknown.length > 0) {
     throw new ConfigError(`impressions names a field it does not read: ${unknown.join(', ')}`, ['impressions'], unknown)
   }
@@ -191,7 +213,73 @@ export function readImpressionsConfig(raw: unknown): ImpressionsConfig | undefin
   if (dir.includes('\u0000')) {
     throw new ConfigError('impressions.dir must not carry a NUL byte', ['impressions', 'dir'])
   }
-  return { dir }
+  if (block.import === undefined) return { dir }
+  return { dir, import: readImport(block.import) }
+}
+
+function readImport(raw: unknown): ImpressionImport {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new ConfigError('impressions.import must be an object', ['impressions', 'import'])
+  }
+  const block = raw as Record<string, unknown>
+  const unknown = Object.keys(block).filter((key) => key !== 'path' && key !== 'as')
+  if (unknown.length > 0) {
+    throw new ConfigError(`impressions.import names a field it does not read: ${unknown.join(', ')}`, ['impressions', 'import'], unknown)
+  }
+  const path = block.path
+  if (typeof path !== 'string' || path.length === 0) {
+    throw new ConfigError('impressions.import.path must be a non-empty string', ['impressions', 'import', 'path'])
+  }
+  if (!path.startsWith('/')) {
+    throw new ConfigError(`impressions.import.path must be an absolute path: ${path}`, ['impressions', 'import', 'path'])
+  }
+  if (path.includes('\u0000')) {
+    throw new ConfigError('impressions.import.path must not carry a NUL byte', ['impressions', 'import', 'path'])
+  }
+  return { path, as: readImportSubject(block.as) }
+}
+
+function readImportSubject(raw: unknown): ImpressionImport['as'] {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new ConfigError('impressions.import.as must be an object', ['impressions', 'import', 'as'])
+  }
+  const block = raw as Record<string, unknown>
+  const unknown = Object.keys(block).filter((key) => key !== 'personId' && key !== 'groupKey')
+  if (unknown.length > 0) {
+    throw new ConfigError(`impressions.import.as names a field it does not read: ${unknown.join(', ')}`, ['impressions', 'import', 'as'], unknown)
+  }
+  const person = block.personId
+  const group = block.groupKey
+  if ((person === undefined) === (group === undefined)) {
+    throw new ConfigError('impressions.import.as must name exactly one of personId or groupKey', ['impressions', 'import', 'as'])
+  }
+  const value = person ?? group
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new ConfigError('impressions.import.as must name a non-empty string', ['impressions', 'import', 'as'])
+  }
+  return person === undefined ? { groupKey: value } : { personId: value }
+}
+
+/** Reads the turn-level budget; absent means the default, zero turns the block off. */
+export function readImpressionsTurn(raw: unknown): ImpressionsTurn {
+  if (raw === undefined) return { chars: DEFAULT_IMPRESSION_CHARS }
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new ConfigError('turn.impressions must be an object', ['turn', 'impressions'])
+  }
+  const block = raw as Record<string, unknown>
+  const unknown = Object.keys(block).filter((key) => key !== 'chars')
+  if (unknown.length > 0) {
+    throw new ConfigError(`turn.impressions names a field it does not read: ${unknown.join(', ')}`, ['turn', 'impressions'], unknown)
+  }
+  const chars = block.chars ?? DEFAULT_IMPRESSION_CHARS
+  if (typeof chars !== 'number' || !Number.isInteger(chars) || chars < 0 || chars > IMPRESSION_CHARS_MAX) {
+    throw new ConfigError(`turn.impressions.chars must be a whole number between 0 and ${IMPRESSION_CHARS_MAX}: ${String(chars)}`, [
+      'turn',
+      'impressions',
+      'chars',
+    ])
+  }
+  return { chars }
 }
 
 function bad(file: string, problem: string): never {
@@ -383,11 +471,15 @@ export class ImpressionStore {
   readonly #bot: string
   readonly #now: () => number
   readonly #warn: (message: string) => void
+  readonly #render: () => Promise<void>
   readonly #index = new Map<string, IndexEntry>()
   readonly #queues = new Map<string, Promise<void>>()
   readonly #warned = new Set<string>()
   #directorySyncWarned = false
   #creationWarned = false
+  #dirty = false
+  #rendering: Promise<void> | undefined
+  #renderWarned = false
 
   constructor(options: ImpressionStoreOptions) {
     if (options.dir.length === 0) throw new ConfigError('impressions.dir must be a non-empty string', ['impressions', 'dir'])
@@ -397,6 +489,7 @@ export class ImpressionStore {
     this.#bot = options.bot
     this.#now = options.now ?? (() => Date.now())
     this.#warn = options.warn ?? (() => undefined)
+    this.#render = options.render ?? (() => this.#renderOnce())
   }
 
   /** Reads every file this bot owns; a damaged file refuses the mount instead of being replaced. */
@@ -446,8 +539,10 @@ export class ImpressionStore {
       return await this.#enqueue(path, async () => {
         const current = await this.#readNow(path)
         const changed = change(current?.records ?? [])
+        if (changed === undefined) return { ok: true as const, records: current?.records ?? [] }
         if (changed.length === 0) {
           await this.#deleteNow(path)
+          this.#markDirty()
           return { ok: true as const, records: [] }
         }
         const records = normalizeRecords(changed)
@@ -467,6 +562,7 @@ export class ImpressionStore {
           touchedAt: file.touchedAt,
           records: file.records.length,
         })
+        this.#markDirty()
         return { ok: true as const, records }
       })
     } catch (error) {
@@ -494,6 +590,72 @@ export class ImpressionStore {
     } catch (error) {
       return { ok: false, code: 'storage_error', reason: describe(error) }
     }
+  }
+
+  /** Renders the read-only view once when the bot directory already exists. */
+  async renderAtMount(): Promise<void> {
+    if ((await this.#stat(this.root)) === undefined) return
+    this.#markDirty()
+    const running = this.#rendering
+    if (running !== undefined) await running
+    if (this.#rendering === undefined && this.#dirty) await this.#scheduleRender()
+  }
+
+  #markDirty(): void {
+    this.#dirty = true
+    void this.#scheduleRender()
+  }
+
+  #scheduleRender(): Promise<void> {
+    const running = this.#rendering
+    if (running !== undefined) return running
+    const run = this.#renderLoop().finally(() => {
+      if (this.#rendering === run) this.#rendering = undefined
+    })
+    this.#rendering = run
+    return run
+  }
+
+  /** A failed pass retries once and then stops; a later write starts a fresh pass. */
+  async #renderLoop(): Promise<void> {
+    let retried = false
+    while (this.#dirty) {
+      this.#dirty = false
+      try {
+        await this.#render()
+      } catch (error) {
+        if (!this.#renderWarned) {
+          this.#renderWarned = true
+          this.#warn(`dsbot-channel: could not render ${join(this.root, IMPRESSION_VIEW_NAME)}: ${describe(error)}`)
+        }
+        this.#dirty = true
+        if (retried) return
+        retried = true
+      }
+    }
+  }
+
+  /** Reads every known subject from disk and writes the view through the same atomic path as notes. */
+  async #renderOnce(): Promise<void> {
+    const subjects = [...this.#index.entries()]
+      .map(([path, entry]) => ({ path, ...entry }))
+      .sort((left, right) =>
+        left.subject === right.subject
+          ? left.subjectKind.localeCompare(right.subjectKind)
+          : left.subject.localeCompare(right.subject),
+      )
+    const sections: string[] = []
+    for (const subject of subjects) {
+      const file = await this.#readAt(subject.path)
+      const records = [...file.records].sort((left, right) => left.id.localeCompare(right.id))
+      if (records.length === 0) continue
+      const lines = records.map(
+        (record) =>
+          `- [${record.kind}] ${record.confidence} ${new Date(record.updatedAt).toISOString()} ${record.text}`,
+      )
+      sections.push(`\n## ${subject.subjectKind}: ${subject.subject}\n${lines.join('\n')}\n`)
+    }
+    await this.#writeAtomic(join(this.root, IMPRESSION_VIEW_NAME), `${IMPRESSION_VIEW_HEADER}${sections.join('')}`)
   }
 
   async #scanKind(dir: string): Promise<void> {
