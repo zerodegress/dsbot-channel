@@ -731,7 +731,8 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
       if (impressionsConfig.import !== undefined) {
         const outcome = await importMemory({ store, bot: botName, config: impressionsConfig.import, now: clock() })
         if (!outcome.ok) {
-          warn(`dsbot-channel: impression import could not import from ${outcome.path}`)
+          const where = outcome.reason === 'unreadable' ? 'read' : 'store notes read from'
+          warn(`dsbot-channel: impression import could not ${where} ${outcome.path}`)
         } else {
           warn(
             `dsbot-channel: imported ${outcome.counts.imported} impressions into bot "${botName}" (${outcome.counts.skipped} lines skipped, ${outcome.counts.overflow} without room, ${outcome.counts.topics} topic files skipped)`,

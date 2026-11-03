@@ -575,10 +575,30 @@ describe('the one-time import at mount', () => {
     expect(mounted.warnings.some((line) => line.includes('20 without room'))).toBe(true)
   })
 
+  test('says when the store could not keep what the file said', async () => {
+    const dir = await tempRoot()
+    const memoryDir = await tempRoot()
+    const path = join(memoryDir, 'MEMORY.md')
+    await writeFile(path, '- alice likes tea\n', { mode: 0o600 })
+    await mkdir(join(dir, botDirectoryName('bot-a'), 'person'), { recursive: true, mode: 0o755 })
+    const mounted = await mount({
+      impressions: { dir, import: { path, as: { personId: 'alice' } } },
+      identity: bound,
+    })
+    const stored = mounted.warnings.filter((line) => line.includes('could not store notes read from'))
+    const read = mounted.warnings.filter((line) => line.includes('could not read'))
+    expect(stored).toHaveLength(1)
+    expect(stored[0]).toContain(path)
+    expect(read).toHaveLength(0)
+  })
+
   test('warns when the source is unreadable and still mounts', async () => {
     const dir = await tempRoot()
     const missing = join(dir, 'nope', 'MEMORY.md')
     const mounted = await mount({ impressions: { dir, import: { path: missing, as: { personId: 'alice' } } }, identity: bound })
-    expect(mounted.warnings.some((line) => line.includes('could not import from'))).toBe(true)
+    const read = mounted.warnings.filter((line) => line.includes('could not read'))
+const stored = mounted.warnings.filter((line) => line.includes('could not store notes read from'))
+expect(read).toHaveLength(1)
+expect(stored).toHaveLength(0)
   })
 })

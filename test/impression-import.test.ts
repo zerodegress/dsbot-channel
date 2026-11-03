@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
@@ -175,5 +175,23 @@ describe('importing into a subject that is already full', () => {
     const again = await importMemory({ store, bot: 'bot-a', config: { path, as: { personId: 'alice' } }, now: AT + 9_000 })
     expect(again).toEqual({ ok: true, counts: { imported: 0, skipped: 0, overflow: 3, topics: 0 } })
     expect(await readFile(file, 'utf8')).toBe(before)
+  })
+})
+
+
+describe('a store that cannot keep the notes', () => {
+  test('reports storage, not an unreadable source', async () => {
+    const dir = await tempRoot()
+    const memory = await tempRoot()
+    const path = join(memory, 'MEMORY.md')
+    await writeFile(path, '- alice likes tea\n', { mode: 0o600 })
+    await mkdir(join(dir, botDirectoryName('bot-a'), 'person'), { recursive: true, mode: 0o755 })
+    const store = new ImpressionStore({ dir, bot: 'bot-a', now: () => AT })
+    await store.load()
+    expect(await importMemory({ store, bot: 'bot-a', config: { path, as: { personId: 'alice' } }, now: AT })).toEqual({
+      ok: false,
+      reason: 'storage',
+      path,
+    })
   })
 })
