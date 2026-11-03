@@ -3,16 +3,38 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import entry from '../src/index.js'
+import { applyWith } from '../src/plugin.js'
 import { defineAdapterPlugin } from '../src/adapter-registry.js'
 import { registryPlugin } from '../src/registry-plugin.js'
 import { NO_MEDIA, buildListenerHealth, buildStatus } from '../src/adapter-status.js'
 import type { AdapterPorts, ChannelAdapter, InboundMessage, SendInput } from '../src/contract.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
-import { ImpressionStore, botDirectoryName, subjectFileName } from '../src/impressions.js'
+import { ImpressionStore, botDirectoryName, impressionId, subjectFileName } from '../src/impressions.js'
+import type { Impression } from '../src/impressions.js'
 
 const REF = '{{SECRET_impressions_mount}}'
 const credentials = staticCredentials({ [REF]: 'shared-value' })
+const AT = 1_700_000_000_000
+const GROUP = 'x:a|group:12345'
+
+function note(overrides: Partial<Impression> = {}): Impression {
+  const base: Omit<Impression, 'id'> = {
+    subject: 'alice',
+    subjectKind: 'person',
+    scope: 'group',
+    groupKey: GROUP,
+    text: 'alice likes tea',
+    kind: 'fact',
+    confidence: 0.6,
+    share: 'local',
+    evidence: [{ eventKey: 'seed:1', sessionKey: 'group:12345', channel: 'x:a', at: AT }],
+    bot: 'bot-a',
+    createdAt: AT,
+    updatedAt: AT,
+  }
+  const merged = { ...base, ...overrides }
+  return { ...merged, id: impressionId(merged) }
+}
 
 let ports: AdapterPorts | undefined
 
@@ -111,6 +133,7 @@ async function tempRoot(): Promise<string> {
 interface Toolbox {
   registered: string[]
   tools: Map<string, { execute: (args: unknown, exec: unknown) => Promise<unknown> }>
+  prompts: string[]
 }
 
 async function mount(
@@ -124,6 +147,7 @@ async function mount(
 ): Promise<Toolbox> {
   const registered: string[] = []
   const tools = new Map<string, { execute: (args: unknown, exec: unknown) => Promise<unknown> }>()
+  const prompts: string[] = []
   const ctx = new Context()
   await ctx.plugin({
     name: 'probe-services',
@@ -133,7 +157,8 @@ async function mount(
       scope.provide('sessionController')
       scope.set('sessionController', {
         create: () => Promise.resolve({ sessionId: 'session-1' }),
-        prompt: async () => {
+        prompt: async (request: { content: readonly { text?: string }[] }) => {
+          prompts.push(request.content.map((part) => part.text ?? '').join(''))
           options.gate?.started()
           if (options.gate !== undefined) await options.gate.done
           return { accepted: true }
@@ -155,13 +180,17 @@ async function mount(
   })
   await ctx.plugin(registryPlugin)
   await ctx.plugin(defineAdapterPlugin({ kind: 'x-group', create: () => new StubAdapter() }))
-  await ctx.plugin(entry, {
+  const probe = {
+    name: 'probe-entry',
+    apply: (scope: Context, config: unknown) => applyWith(scope, config, { now: () => AT }),
+  }
+  await ctx.plugin(probe, {
     ...(options.impressions === undefined ? {} : { impressions: options.impressions }),
     ...(options.identity === undefined ? {} : { identity: options.identity }),
     ...(options.turn === undefined ? {} : { turn: options.turn }),
     adapters: [{ kind: 'x-group', channel: 'x:a', instance: 'inst-a', botName: 'bot-a', policy: {}, transport: {} }],
   })
-  return { registered, tools }
+  return { registered, tools, prompts }
 }
 
 describe('mounting the impression store', () => {
@@ -287,5 +316,72 @@ describe('the import subject and the turn budget at mount', () => {
     await expect(mount({ impressions: { dir }, turn: { impressions: { chars: 2001 } } })).rejects.toThrow(
       /between 0 and 2000/,
     )
+  })
+})
+
+
+describe('the impressions block in a real turn', () => {
+  const bound = {
+    people: [{ id: 'alice', accounts: [{ kind: 'x-group', instance: 'inst-a', accountId: 'u1' }] }],
+  }
+
+  async function seed(dir: string, records: { person?: Impression[]; group?: Impression[] }): Promise<void> {
+    const store = new ImpressionStore({ dir, bot: 'bot-a', now: () => AT })
+    await store.load()
+    if (records.person !== undefined) {
+      await store.transact('person', 'alice', (kept) => [...kept, ...records.person!])
+    }
+    if (records.group !== undefined) {
+      await store.transact('group', GROUP, (kept) => [...kept, ...records.group!])
+    }
+  }
+
+  function gate(): { started: Promise<void>; done: Promise<void>; start: () => void; release: () => void } {
+    let start: () => void = () => undefined
+    let release: () => void = () => undefined
+    const started = new Promise<void>((resolve) => {
+      start = resolve
+    })
+    const done = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    return { started, done, start, release }
+  }
+
+  test('places the block after guidance and before the message', async () => {
+    const dir = await tempRoot()
+    await seed(dir, {
+      person: [note({ text: 'alice likes tea', scope: 'group', groupKey: GROUP })],
+      group: [note({ subject: GROUP, subjectKind: 'group', scope: 'group', groupKey: GROUP, kind: 'topic', text: 'release day is Friday' })],
+    })
+    const held = gate()
+    const mounted = await mount({ impressions: { dir }, identity: bound, gate: { started: held.start, done: held.done } })
+    const turn = ports!.onMessage(message('m-1'))
+    await held.started
+    const text = mounted.prompts[0]!
+    expect(text).toContain('alice likes tea')
+    expect(text).toContain('- [group] release day is Friday')
+    expect(text.indexOf('[x-group]')).toBeLessThan(text.indexOf('[impressions]'))
+    expect(text.indexOf('[impressions]')).toBeLessThan(text.indexOf('hello'))
+    held.release()
+    await turn
+  })
+
+  test('turns the block off at zero while the tools stay registered', async () => {
+    const dir = await tempRoot()
+    await seed(dir, { person: [note({ scope: 'group', groupKey: GROUP })] })
+    const held = gate()
+    const mounted = await mount({
+      impressions: { dir },
+      identity: bound,
+      turn: { impressions: { chars: 0 } },
+      gate: { started: held.start, done: held.done },
+    })
+    const turn = ports!.onMessage(message('m-2'))
+    await held.started
+    expect(mounted.prompts[0]).not.toContain('[impressions]')
+    expect(mounted.registered).toEqual(expect.arrayContaining(['impression_put', 'impression_get', 'impression_forget']))
+    held.release()
+    await turn
   })
 })

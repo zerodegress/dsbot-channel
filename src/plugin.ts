@@ -22,8 +22,9 @@ import { createDeclineTool, createNoReplyTool } from './control-tools.js'
 import type { ControlPorts, TurnRef } from './control-tools.js'
 import { createImpressionForget, createImpressionGet, createImpressionPut } from './impression-tools.js'
 import type { ImpressionPorts } from './impression-tools.js'
+import { pickImpressions, renderImpressionBlock } from './impression-block.js'
 import { ImpressionStore, readImpressionsConfig, readImpressionsTurn } from './impressions.js'
-import type { ImpressionImport, ImpressionsTurn } from './impressions.js'
+import type { Impression, ImpressionImport, ImpressionsTurn } from './impressions.js'
 import { ChainGuard, KeyGuard } from './event-keys.js'
 import { InboundGate } from './inbound-gate.js'
 import type { GroupBotPolicy } from './inbound-gate.js'
@@ -254,6 +255,15 @@ export function checkTurnSettings(
     ])
   }
   return turn
+}
+
+async function impressionRecords(
+  store: ImpressionStore,
+  subjectKind: 'person' | 'group',
+  subject: string,
+): Promise<readonly Impression[]> {
+  const read = await store.read(subjectKind, subject)
+  return read.ok ? read.records : []
 }
 
 /** A one-time import must land on a person the graph declares or a session this profile can carry. */
@@ -730,6 +740,18 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         blocks.push(`[${transport.kind}] ${guidance}`)
       }
       if (injected.claimMode(message.sessionKey, mode)) blocks.push(TOOL_MODE_NOTICE)
+      if (runtime.turn.impressions.chars > 0) {
+        const store = impressionStores.get(adapter.botName)
+        if (store !== undefined) {
+          const groupKey = `${adapter.channel}|${message.sessionKey}`
+          const inGroup = message.source.scope === 'group'
+          const person = message.author.personId === null ? [] : await impressionRecords(store, 'person', message.author.personId)
+          const archive = inGroup ? await impressionRecords(store, 'group', groupKey) : []
+          const seenNotes = pickImpressions(person, archive, { personId: message.author.personId, inGroup, groupKey })
+          const block = renderImpressionBlock(seenNotes, clock(), runtime.turn.impressions.chars)
+          if (block !== '') blocks.push(block)
+        }
+      }
       const mergedKeys = [message.eventKey, ...rest.map((one) => one.eventKey)]
       const seen = context.entries(`${adapter.botName}|${message.sessionKey}`, mergedKeys)
       if (seen.length > 0) blocks.push(renderContext(seen))
