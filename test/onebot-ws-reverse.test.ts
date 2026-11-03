@@ -8,6 +8,7 @@ import { ReverseLink } from '../src/adapters/onebot/ws-reverse.js'
 interface Harness {
   port: number
   link: ReverseLink
+  frames: Record<string, unknown>[]
   warnings: string[]
   failures: { auth: number; unknown: number; mismatch: number }
   close: () => Promise<void>
@@ -61,6 +62,7 @@ async function serve(
 ): Promise<Harness> {
   const failures = { auth: 0, unknown: 0, mismatch: 0 }
   const warnings: string[] = []
+  const frames: Record<string, unknown>[] = []
   const server = createServer()
   servers.push(server)
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
@@ -72,7 +74,7 @@ async function serve(
     timeoutMs,
     ...(liveness === undefined ? {} : { liveness }),
     ...(clock === undefined ? {} : { clock }),
-    onEvent: () => undefined,
+    onEvent: (frame) => frames.push(frame),
     onMismatch: () => (failures.mismatch += 1),
     onAuthFailure: () => (failures.auth += 1),
     onUnknownPath: () => (failures.unknown += 1),
@@ -84,6 +86,7 @@ async function serve(
   return {
     port,
     link,
+    frames,
     warnings,
     failures,
     close: async () => {
@@ -214,14 +217,13 @@ describe('the reverse websocket link', () => {
   test('a client that answers its pings is kept', async () => {
     const { clock, advance } = manualClock()
     const one = await serve('/onebot/ws', undefined, undefined, 500, { intervalMs: 20, timeoutMs: 25 }, clock)
-    let pings = 0
     const client = dial(one.port)
-    client.on('ping', () => (pings += 1))
+    // The pong and this frame travel the same socket in order, so the frame proves the pong landed.
+    client.on('ping', () => client.send(JSON.stringify({ post_type: 'message', message_id: 9002 })))
     await waitFor(() => one.link.connection() !== undefined)
 
     await advance(20)
-    await waitFor(() => pings === 1)
-    await new Promise((resolve) => setImmediate(resolve))
+    await waitFor(() => one.frames.length === 1)
     await advance(25)
     expect(one.link.connection()?.readyState).toBe(WebSocket.OPEN)
   })

@@ -69,7 +69,6 @@ export class ForwardLink {
   #lastConnectedAt: number | null = null
   #lastFrameAt = 0
   #warnedSize = false
-  readonly #pings = new Set<unknown>()
 
   constructor(options: ForwardOptions) {
     this.#options = options
@@ -88,8 +87,6 @@ export class ForwardLink {
     if (this.#retry !== undefined) clearTimeout(this.#retry)
     if (this.#eventRetry !== undefined) clearTimeout(this.#eventRetry)
     if (this.#beat !== undefined) clearInterval(this.#beat)
-    for (const timer of this.#pings) this.#clock().clearTimer(timer)
-    this.#pings.clear()
     this.#retry = undefined
     this.#eventRetry = undefined
     this.#beat = undefined
@@ -227,14 +224,12 @@ export class ForwardLink {
       }, liveness.intervalMs)
     }
     schedule()
-    this.#pings.add(tick)
     socket.on('pong', () => {
       if (waiting !== undefined) clock.clearTimer(waiting)
       waiting = undefined
     })
     socket.on('close', () => {
       if (tick !== undefined) clock.clearTimer(tick)
-      this.#pings.delete(tick)
       tick = undefined
       if (waiting !== undefined) clock.clearTimer(waiting)
       waiting = undefined

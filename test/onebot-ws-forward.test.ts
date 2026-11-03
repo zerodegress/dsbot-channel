@@ -273,15 +273,18 @@ describe('the forward websocket link', () => {
 
   test('a socket that answers its pings is left alone', async () => {
     const { clock, advance } = manualClock()
+    const frames: Record<string, unknown>[] = []
     const harness = await serve()
-    const one = link(harness.url, { liveness: { intervalMs: 20, timeoutMs: 25 }, clock })
+    const one = link(harness.url, { liveness: { intervalMs: 20, timeoutMs: 25 }, clock, onEvent: (f) => frames.push(f) })
     await waitFor(() => one.health().state === 'online')
-    let pings = 0
-    harness.sockets[0]!.on('ping', () => (pings += 1))
+    // The pong and this frame travel the same socket in order, so seeing the frame proves the
+    // pong was handled before the deadline is walked past; no timing luck involved.
+    harness.sockets[0]!.on('ping', () => {
+      harness.sockets[0]!.send(JSON.stringify({ post_type: 'message', message_id: 9001 }))
+    })
 
     await advance(20)
-    await waitFor(() => pings === 1)
-    await new Promise((resolve) => setImmediate(resolve))
+    await waitFor(() => frames.length === 1)
     await advance(25)
     expect(one.health().state).toBe('online')
   })
