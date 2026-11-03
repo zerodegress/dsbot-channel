@@ -30,8 +30,16 @@ export interface OneBotAdapterConfig {
   instance: string
   botName: string
   selfId?: string
-  listen: { host: string; port: number; path: string }
-  api: { url: string; timeoutMs: number }
+  /** How this link carries OneBot; the other fields below are read per protocol. */
+  protocol: 'http' | 'ws-forward' | 'ws-reverse'
+  listen?: { host: string; port: number; path: string } | undefined
+  api?: { url: string; timeoutMs: number } | undefined
+  /** ws-forward only: the event socket; absent means events arrive on the api socket. */
+  event?: { url: string } | undefined
+  /** ws-forward only: how a dropped link comes back; false turns retrying off. */
+  reconnect?: { initialMs: number; maxMs: number; factor: number } | false | undefined
+  /** websocket protocols only: how long silence may last before the link is closed. */
+  heartbeat?: { intervalMs: number; timeoutMs: number } | undefined
   /** Which addresses a profile lets this link page history for; both off unless written out. */
   history?: { group: boolean; private: boolean } | undefined
   /** Whether this implementation takes a file as an http(s) url; most only take a path on its host. */
@@ -436,13 +444,17 @@ export class OneBotAdapter implements ChannelAdapter {
     if (ports === undefined) {
       return { ok: false, code: 'unreachable', reason: 'the onebot adapter is not started' }
     }
+    const api = this.#config.api
+    if (api === undefined) {
+      return { ok: false, code: 'unsupported', reason: 'this protocol has no http action api' }
+    }
     const token = this.#config.accessToken === undefined ? undefined : await ports.resolveSecret(this.#config.accessToken)
     if (this.#config.accessToken !== undefined && token === undefined) {
       return { ok: false, code: 'credential', reason: 'the onebot access token did not resolve' }
     }
     let response: Response
     try {
-      response = await fetch(`${this.#config.api.url}/${action}`, {
+      response = await fetch(`${api.url}/${action}`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -528,13 +540,17 @@ export class OneBotAdapter implements ChannelAdapter {
     if (ports === undefined) {
       return { ok: false, code: 'unreachable', retryable: true, reason: 'the onebot adapter is not started' }
     }
+    const api = this.#config.api
+    if (api === undefined) {
+      return { ok: false, code: 'unsupported', retryable: false, reason: 'this protocol has no http action api' }
+    }
     const token = this.#config.accessToken === undefined ? undefined : await ports.resolveSecret(this.#config.accessToken)
     if (this.#config.accessToken !== undefined && token === undefined) {
       return { ok: false, code: 'credential', retryable: false, reason: 'the onebot access token did not resolve' }
     }
     let response: Response
     try {
-      response = await fetch(`${this.#config.api.url}/${action}`, {
+      response = await fetch(`${api.url}/${action}`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -633,6 +649,13 @@ export class OneBotAdapter implements ChannelAdapter {
   }
 
   async start(ports: AdapterPorts): Promise<AdapterHandle> {
+    const listen = this.#config.listen
+    if (this.#config.protocol !== 'http' || listen === undefined) {
+      throw new ConfigError(
+        `transport.protocol "${this.#config.protocol}" is not wired yet; this build answers over http`,
+        ['adapters', 'transport', 'protocol'],
+      )
+    }
     this.#ports = ports
     if (this.#config.accessToken !== undefined) {
       const token = await ports.resolveSecret(this.#config.accessToken)
@@ -649,7 +672,7 @@ export class OneBotAdapter implements ChannelAdapter {
     })
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject)
-      server.listen(this.#config.listen.port, this.#config.listen.host, () => {
+      server.listen(listen.port, listen.host, () => {
         server.off('error', reject)
         resolve()
       })
@@ -705,13 +728,17 @@ export class OneBotAdapter implements ChannelAdapter {
   ): Promise<{ ok: true; messageId: string; duplicate: false } | { ok: false; code: SendFailure['code']; retryable: boolean; reason: string }> {
     const ports = this.#ports
     if (ports === undefined) return { ok: false, code: 'unreachable', retryable: true, reason: 'the onebot adapter is not started' }
+    const api = this.#config.api
+    if (api === undefined) {
+      return { ok: false, code: 'unsupported', retryable: false, reason: 'this protocol has no http action api' }
+    }
     const token = this.#config.accessToken === undefined ? undefined : await ports.resolveSecret(this.#config.accessToken)
     if (this.#config.accessToken !== undefined && token === undefined) {
       return { ok: false, code: 'credential', retryable: false, reason: 'the onebot access token did not resolve' }
     }
     let response: Response
     try {
-      response = await fetch(`${this.#config.api.url}/${action}`, {
+      response = await fetch(`${api.url}/${action}`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -780,7 +807,7 @@ export class OneBotAdapter implements ChannelAdapter {
       return
     }
     const url = request.url ?? '/'
-    if (request.method !== 'POST' || url !== this.#config.listen.path) {
+    if (request.method !== 'POST' || url !== this.#config.listen?.path) {
       this.#stats.unknownPath()
       response.writeHead(404, { 'content-type': 'application/json' })
       response.end('{"status":"failed","retcode":1404,"message":"not found"}')

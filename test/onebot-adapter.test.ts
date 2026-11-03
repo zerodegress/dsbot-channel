@@ -28,6 +28,7 @@ function config(overrides: Partial<OneBotAdapterConfig> = {}): OneBotAdapterConf
     listen: { host: '127.0.0.1', port: 0, path: '/onebot/event' },
     api: { url: 'http://127.0.0.1:1', timeoutMs: 1000 },
     sendTimeoutMs: 1000,
+    protocol: 'http' as const,
     bots: [],
     ...overrides,
   }

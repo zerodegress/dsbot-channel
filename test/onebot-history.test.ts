@@ -12,6 +12,7 @@ function config(history: { group: boolean; private: boolean }) {
     listen: { host: '127.0.0.1', port: 0, path: '/onebot/event' },
     api: { url: 'http://127.0.0.1:9', timeoutMs: 1000 },
     sendTimeoutMs: 1000,
+    protocol: 'http' as const,
     history,
     bots: [],
   }
