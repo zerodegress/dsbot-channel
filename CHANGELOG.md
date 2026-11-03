@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- An impression library keeps short notes about the person a turn answers, or about its group: `impression_put`, `impression_get` and `impression_forget` act only on that counterpart, a note carries the messages that support it (at least one, at most 16), a repeated note gains evidence instead of a copy, confidence halves every 90 days and a record below 0.2 is no longer read, a note may cross platforms only as address, language, taboo or manner, and forgetting a record takes its evidence with it. Notes live under `impressions.dir`, one JSON file per subject, `0600` under `0700` and replaced by an atomic rename; without that field the library is off, a damaged file refuses the mount instead of being rebuilt, and the directory is created only on the first write.
+
 ### Changed
 
 - OneBot can carry events and actions over a WebSocket as well as over HTTP: `transport.protocol` picks `http` (unchanged), `ws-forward` or `ws-reverse`, and one adapter speaks exactly one of them. A forward link dials and retries with jittered backoff, reporting `reconnecting` while it waits and staying `offline` only when retrying is off; when an `event.url` is named, both sockets must be open before it says `online`. A reverse link hosts one connection per adapter, refusing a wrong token or another account, replacing its own account's connection with a single warning. Both directions ping every 30 seconds and close a socket that leaves a ping unanswered for 10 seconds, so a half-open connection behind a NAT does not read as healthy; that is separate from `heartbeat`, which only says whether the implementation still sends events. `ws` is the package's first real runtime dependency — the harness does not provide it — so the production tree is no longer empty; it still never carries a `@deepseek-ai/*` package.
