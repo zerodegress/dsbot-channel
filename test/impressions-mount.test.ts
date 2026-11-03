@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
@@ -147,6 +147,7 @@ interface Toolbox {
   registered: string[]
   tools: Map<string, { execute: (args: unknown, exec: unknown) => Promise<unknown> }>
   prompts: string[]
+  warnings: string[]
 }
 
 async function mount(
@@ -162,7 +163,14 @@ async function mount(
   const registered: string[] = []
   const tools = new Map<string, { execute: (args: unknown, exec: unknown) => Promise<unknown> }>()
   const prompts: string[] = []
+  const warnings: string[] = []
   const ctx = new Context()
+  ctx.logger.exporter({
+    levels: { default: 3 },
+    export(message: { args: unknown[] }) {
+      warnings.push(message.args.map((arg) => String(arg)).join(' '))
+    },
+  })
   await ctx.plugin({
     name: 'probe-services',
     apply(scope: Context) {
@@ -171,10 +179,16 @@ async function mount(
       scope.provide('sessionController')
       scope.set('sessionController', {
         create: () => Promise.resolve({ sessionId: 'session-1' }),
-        prompt: async (request: { content: readonly { text?: string }[] }) => {
+        prompt: async (request: { sessionId: string; content: readonly { text?: string }[] }) => {
           prompts.push(request.content.map((part) => part.text ?? '').join(''))
           options.gate?.started()
           if (options.gate !== undefined) await options.gate.done
+          const emit = (event: unknown): void => {
+            ctx.emit('session/event', { id: request.sessionId } as never, event as never)
+          }
+          emit({ type: 'turn/start' })
+          emit({ type: 'assistant/message', data: { message: { content: [] } } })
+          emit({ type: 'turn/end' })
           return { accepted: true }
         },
       })
@@ -206,7 +220,7 @@ async function mount(
     ...(options.turn === undefined ? {} : { turn: options.turn }),
     adapters: [{ kind: 'x-group', channel: 'x:a', instance: 'inst-a', botName: 'bot-a', policy: {}, transport: {} }],
   })
-  return { registered, tools, prompts }
+  return { registered, tools, prompts, warnings }
 }
 
 describe('mounting the impression store', () => {
@@ -426,5 +440,68 @@ describe('the session scope an import may target', () => {
     await expect(
       mount({ impressions: { dir, import: importOf('x:a|whatever:1') }, scopelessAdapter: true }),
     ).resolves.toBeDefined()
+  })
+})
+
+
+describe('reading the store for a turn', () => {
+  const bound = {
+    people: [{ id: 'alice', accounts: [{ kind: 'x-group', instance: 'inst-a', accountId: 'u1' }] }],
+  }
+
+  async function waitFor(condition: () => boolean): Promise<void> {
+    const started = Date.now()
+    while (!condition()) {
+      if (Date.now() - started > 2000) throw new Error('timed out waiting for the turn')
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+  }
+
+  async function seed(dir: string): Promise<string> {
+    const store = new ImpressionStore({ dir, bot: 'bot-a', now: () => AT })
+    await store.load()
+    await store.transact('person', 'alice', () => [note()])
+    return join(dir, botDirectoryName('bot-a'), 'person', `${subjectFileName('alice')}.json`)
+  }
+
+  test('a peer turn does not read the store at all', async () => {
+    const dir = await tempRoot()
+    const path = await seed(dir)
+    await chmod(path, 0o644)
+    const mounted = await mount({ impressions: { dir }, identity: bound })
+    const peer = message('m-peer')
+    peer.source.scope = 'p2p'
+    peer.sessionKey = 'p2p:peer-a'
+    await ports!.onMessage(peer)
+    await waitFor(() => mounted.prompts.length === 1)
+    expect(mounted.prompts[0]).not.toContain('[impressions]')
+    expect(mounted.warnings.filter((line) => line.includes('could not read'))).toHaveLength(0)
+  })
+
+  test('a read failure warns once per path and reason, clears on success, and warns again later', async () => {
+    const dir = await tempRoot()
+    const path = await seed(dir)
+    await chmod(path, 0o644)
+    const mounted = await mount({ impressions: { dir }, identity: bound })
+    await ports!.onMessage(message('m-1'))
+    await waitFor(() => mounted.prompts.length === 1)
+    expect(mounted.prompts[0]).not.toContain('[impressions]')
+    const failures = () => mounted.warnings.filter((line) => line.includes('could not read'))
+    expect(failures()).toHaveLength(1)
+    expect(failures()[0]).toContain(path)
+
+    await ports!.onMessage(message('m-2'))
+    await waitFor(() => mounted.prompts.length === 2)
+    expect(failures()).toHaveLength(1)
+
+    await chmod(path, 0o600)
+    await ports!.onMessage(message('m-3'))
+    await waitFor(() => mounted.prompts.length === 3)
+    expect(mounted.prompts[2]).toContain('[impressions]')
+
+    await chmod(path, 0o644)
+    await ports!.onMessage(message('m-4'))
+    await waitFor(() => mounted.prompts.length === 4)
+    expect(failures()).toHaveLength(2)
   })
 })

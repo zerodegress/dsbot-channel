@@ -111,6 +111,9 @@ export const DEFAULT_TURN: TurnSettings = {
   impressions: { chars: DEFAULT_IMPRESSION_CHARS },
 }
 
+/** How many distinct read failures one mount remembers before it forgets the oldest. */
+export const IMPRESSION_READ_WARNINGS_MAX = 256
+
 const nodeSpecSchema = Schema.object({
   id: Schema.string().required(),
   type: Schema.string().required(),
@@ -255,15 +258,6 @@ export function checkTurnSettings(
     ])
   }
   return turn
-}
-
-async function impressionRecords(
-  store: ImpressionStore,
-  subjectKind: 'person' | 'group',
-  subject: string,
-): Promise<readonly Impression[]> {
-  const read = await store.read(subjectKind, subject)
-  return read.ok ? read.records : []
 }
 
 /** A one-time import must land on a person the graph declares or a session this profile can carry. */
@@ -703,6 +697,31 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   const eventKeys = new KeyGuard()
   const chainKeys = new ChainGuard()
   const turns = new TurnStats()
+  const impressionReadWarnings = new Map<string, true>()
+  const readImpressions = async (
+    store: ImpressionStore,
+    subjectKind: 'person' | 'group',
+    subject: string,
+  ): Promise<readonly Impression[]> => {
+    const path = store.fileFor(subjectKind, subject)
+    const read = await store.read(subjectKind, subject)
+    if (read.ok) {
+      for (const key of impressionReadWarnings.keys()) {
+        if (key.startsWith(`${path}\u0000`)) impressionReadWarnings.delete(key)
+      }
+      return read.records
+    }
+    const key = `${path}\u0000${read.reason}`
+    if (!impressionReadWarnings.has(key)) {
+      if (impressionReadWarnings.size >= IMPRESSION_READ_WARNINGS_MAX) {
+        const oldest = impressionReadWarnings.keys().next().value
+        if (oldest !== undefined) impressionReadWarnings.delete(oldest)
+      }
+      impressionReadWarnings.set(key, true)
+      warn(`dsbot-channel: could not read ${path}: ${read.reason}`)
+    }
+    return []
+  }
   const impressionStores = new Map<string, ImpressionStore>()
   if (impressionsConfig !== undefined) {
     for (const botName of new Set(channels.map((channel) => channel.config.botName))) {
@@ -767,13 +786,16 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         blocks.push(`[${transport.kind}] ${guidance}`)
       }
       if (injected.claimMode(message.sessionKey, mode)) blocks.push(TOOL_MODE_NOTICE)
-      if (runtime.turn.impressions.chars > 0) {
+      if (runtime.turn.impressions.chars > 0 && message.source.scope !== 'p2p') {
         const store = impressionStores.get(adapter.botName)
         if (store !== undefined) {
           const groupKey = `${adapter.channel}|${message.sessionKey}`
           const inGroup = message.source.scope === 'group'
-          const person = message.author.personId === null ? [] : await impressionRecords(store, 'person', message.author.personId)
-          const archive = inGroup ? await impressionRecords(store, 'group', groupKey) : []
+          const person =
+            message.author.personId === null
+              ? []
+              : await readImpressions(store, 'person', message.author.personId)
+          const archive = inGroup ? await readImpressions(store, 'group', groupKey) : []
           const seenNotes = pickImpressions(person, archive, { personId: message.author.personId, inGroup, groupKey })
           const block = renderImpressionBlock(seenNotes, clock(), runtime.turn.impressions.chars)
           if (block !== '') blocks.push(block)
