@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The package declares `@deepseek-ai/dsh-tools` and `@deepseek-ai/schemastery` as optional peers instead of dependencies: the bundle leaves both external, so a dependency entry only made every install fetch a second copy of the harness tree. The production tree now declares nothing, publishing runs `pnpm audit --prod` before it packs, and `packageManager` pins the pnpm that wrote the lockfile.
+
 ## [0.2.0] - 2026-11-03
 
 ### Added
