@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import { registryPlugin } from '../src/registry-plugin.js'
-import { createServer } from 'node:http'
-import type { AddressInfo } from 'node:net'
+import { boundPort } from './ports.js'
 import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
@@ -9,17 +8,6 @@ import { sendToPeer } from '../src/adapters/p2p/p2p-send.js'
 
 const REF = '{{SECRET_9m2xr7qd}}'
 const credentials = staticCredentials({ [REF]: 'shared-value' })
-
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer()
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const port = (server.address() as AddressInfo).port
-      server.close(() => resolve(port))
-    })
-  })
-}
 
 const forks: { dispose(): Promise<void> }[] = []
 const warnings: string[] = []
@@ -76,7 +64,6 @@ interface Mounted {
 }
 
 async function mountReceiver(): Promise<Mounted> {
-  const port = await freePort()
   const ctx = new Context()
   ctx.logger.exporter({
     levels: { default: 3 },
@@ -103,7 +90,7 @@ instance: 'inst-b',
 botName: 'bot-b',
 transport: {
   peers: [{ instance: 'inst-a', secret: REF }],
-  listen: { host: '127.0.0.1', port }
+  listen: { host: '127.0.0.1', port: 0 }
 },
 policy: { deny: { words: ['spam'] }, allow: { peers: ['inst-a'] } }
 },
@@ -111,7 +98,7 @@ policy: { deny: { words: ['spam'] }, allow: { peers: ['inst-a'] } }
   })
   forks.push(fork)
   return {
-    port,
+    port: boundPort(ctx, 'p2p:b'),
     prompts,
     api: ctx.get('dsbot-channel.pipeline') as Mounted['api'],
   }

@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
+import { freePortPair, withPortRetry } from './ports.js'
 import { sendToPeer } from '../src/adapters/p2p/p2p-send.js'
 import { PEER_GUIDANCE } from '../src/adapters/p2p/guidance.js'
 
@@ -449,7 +450,7 @@ async function pair(
     turn?: { coalesceMs: number; maxBatch?: number; maxChars?: number }
   } = {},
 ) {
-  const [portA, portB] = [await freePort(), await freePort()]
+  return withPortRetry(freePortPair, async ([portA, portB]) => {
   const ctx = new Context()
   captureWarnings(ctx)
   const sessions = new StubSessions(ctx, 99)
@@ -481,16 +482,22 @@ policy: {
     }
 })
   await ctx.plugin(registryPlugin)
-  const fork = await ctx.plugin(entry, {
-    ...(options.global === undefined ? {} : { pipeline: { global: options.global } }),
-    ...(options.turn === undefined ? {} : { turn: options.turn }),
-    adapters: [
-      adapter('p2p:a', 'inst-a', 'bot-a', 'inst-b', portA, portB),
-      adapter('p2p:b', 'inst-b', 'bot-b', 'inst-a', portB, portA),
-    ],
+  try {
+    const fork = await ctx.plugin(entry, {
+      ...(options.global === undefined ? {} : { pipeline: { global: options.global } }),
+      ...(options.turn === undefined ? {} : { turn: options.turn }),
+      adapters: [
+        adapter('p2p:a', 'inst-a', 'bot-a', 'inst-b', portA, portB),
+        adapter('p2p:b', 'inst-b', 'bot-b', 'inst-a', portB, portA),
+      ],
+    })
+    forks.push(fork)
+    return { sessions, portB, ctx }
+  } catch (error) {
+    await (ctx as unknown as { dispose?: () => Promise<void> }).dispose?.()
+    throw error
+  }
   })
-  forks.push(fork)
-  return { sessions, portB, ctx }
 }
 
 function send(port: number, eventId: string, body: string, sender = 'bot-a', chainId?: string) {
@@ -577,8 +584,8 @@ describe('the send_text tool', () => {
     execute: (args: unknown, exec: unknown) => Promise<string>
   }
 
-  async function mountPair(): Promise<{ tools: Registered[]; sessions: StubSessions; portA: number; portB: number }> {
-    const [portA, portB] = [await freePort(), await freePort()]
+  async function mountPair(): Promise<{ tools: Registered[]; sessions: StubSessions; portA: number; portB: number; ctx: Context }> {
+    return withPortRetry(freePortPair, async ([portA, portB]) => {
     const ctx = new Context()
     captureWarnings(ctx)
     const sessions = new StubSessions(ctx, 99)
@@ -616,15 +623,21 @@ transport: {
   listen: { host: '127.0.0.1', port }
 }
 })
-    await ctx.plugin(registryPlugin)
-    const fork = await ctx.plugin(entry, {
-      adapters: [
-        adapter('p2p:a', 'inst-a', 'bot-a', 'inst-b', 'bot-b', portA, portB),
-        adapter('p2p:b', 'inst-b', 'bot-b', 'inst-a', 'bot-a', portB, portA),
-      ],
+    try {
+      await ctx.plugin(registryPlugin)
+      const fork = await ctx.plugin(entry, {
+        adapters: [
+          adapter('p2p:a', 'inst-a', 'bot-a', 'inst-b', 'bot-b', portA, portB),
+          adapter('p2p:b', 'inst-b', 'bot-b', 'inst-a', 'bot-a', portB, portA),
+        ],
+      })
+      forks.push(fork)
+      return { tools, sessions, portA, portB, ctx }
+    } catch (error) {
+      await (ctx as unknown as { dispose?: () => Promise<void> }).dispose?.()
+      throw error
+    }
     })
-    forks.push(fork)
-    return { tools, sessions, portA, portB }
   }
 
   test('a peer link registers the text tool and the two ways to close a chain', async () => {

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'vitest'
 import { registryPlugin } from '../src/registry-plugin.js'
+import { boundPort } from './ports.js'
 import { createServer, request as httpRequest } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
@@ -9,17 +10,6 @@ import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
 const REF = '{{SECRET_onebot_e2e}}'
 const TOKEN = 'e2e-token'
 const credentials = staticCredentials({ [REF]: TOKEN })
-
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const probe = createServer()
-    probe.once('error', reject)
-    probe.listen(0, '127.0.0.1', () => {
-      const port = (probe.address() as AddressInfo).port
-      probe.close(() => resolve(port))
-    })
-  })
-}
 
 function post(port: number, body: unknown): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -78,7 +68,6 @@ async function mount(
   await new Promise<void>((resolve) => api.listen(0, '127.0.0.1', resolve))
   disposers.push(() => new Promise<void>((resolve) => api.close(() => resolve())))
   const apiPort = (api.address() as AddressInfo).port
-  const port = await freePort()
 
   await ctx.plugin({
     name: 'probe-services',
@@ -119,7 +108,7 @@ async function mount(
         policy,
         transport: {
           selfId: '10001',
-          listen: { host: '127.0.0.1', port },
+          listen: { host: '127.0.0.1', port: 0 },
           api: { url: `http://127.0.0.1:${apiPort}` },
           accessToken: REF,
           bots,
@@ -129,7 +118,7 @@ async function mount(
     ],
   })
   disposers.push(() => fork.dispose())
-  return { ctx, port, apiPort, prompted, calls, tools }
+  return { ctx, port: boundPort(ctx, 'onebot:a'), apiPort, prompted, calls, tools }
 }
 
 const event = (overrides: Record<string, unknown> = {}) => ({

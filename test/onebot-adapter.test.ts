@@ -1,23 +1,13 @@
 import { afterEach, describe, expect, test } from 'vitest'
 import { createServer, request as httpRequest } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { instancePort } from './ports.js'
 import { OneBotAdapter } from '../src/adapters/onebot/adapter.js'
 import type { OneBotAdapterConfig, OneBotEvent } from '../src/adapters/onebot/adapter.js'
 import type { AdapterPorts, InboundMessage } from '../src/contract.js'
 
 const REF = '{{SECRET_onebot}}'
 const TOKEN = 's3cr3t-token'
-
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const probe = createServer()
-    probe.once('error', reject)
-    probe.listen(0, '127.0.0.1', () => {
-      const port = (probe.address() as AddressInfo).port
-      probe.close(() => resolve(port))
-    })
-  })
-}
 
 function config(overrides: Partial<OneBotAdapterConfig> = {}): OneBotAdapterConfig {
   return {
@@ -101,10 +91,9 @@ async function startAdapter(overrides: Partial<OneBotAdapterConfig> = {}, secret
   seen: InboundMessage[]
   warns: string[]
 }> {
-  const port = await freePort()
   const seen: InboundMessage[] = []
   const warns: string[] = []
-  const adapter = new OneBotAdapter(config({ ...overrides, listen: { host: '127.0.0.1', port, path: '/onebot/event' } }), {
+  const adapter = new OneBotAdapter(config({ ...overrides, listen: { host: '127.0.0.1', port: 0, path: '/onebot/event' } }), {
     warn: (line) => warns.push(line),
   })
   adapter.checkConfig()
@@ -117,7 +106,7 @@ async function startAdapter(overrides: Partial<OneBotAdapterConfig> = {}, secret
   }
   const handle = await adapter.start(ports)
   stops.push(handle.stop)
-  return { adapter, port, seen, warns }
+  return { adapter, port: instancePort(adapter), seen, warns }
 }
 
 describe('the onebot listener', () => {
