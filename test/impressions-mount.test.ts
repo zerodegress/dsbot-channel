@@ -579,6 +579,6 @@ describe('the one-time import at mount', () => {
     const dir = await tempRoot()
     const missing = join(dir, 'nope', 'MEMORY.md')
     const mounted = await mount({ impressions: { dir, import: { path: missing, as: { personId: 'alice' } } }, identity: bound })
-    expect(mounted.warnings.some((line) => line.includes('import could not read'))).toBe(true)
+    expect(mounted.warnings.some((line) => line.includes('could not import from'))).toBe(true)
   })
 })
