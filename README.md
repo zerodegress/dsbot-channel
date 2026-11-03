@@ -9,7 +9,7 @@ A message gateway for ds-bot: events from several external platforms reach one b
 ## Requirements
 
 - Node.js `^20.19.0` or `>=22.12.0`, and pnpm
-- The host services: credentials (adapter secrets), session controller (turns), tools (tool mode and the impression tools)
+- The host services: credentials (adapter secrets), session controller (turns), tools (tool mode)
 
 Tested against DS-Bot 0.2.x (0.2.5 at the time of this release); later releases are not guaranteed.
 
