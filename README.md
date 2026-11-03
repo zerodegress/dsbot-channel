@@ -59,7 +59,7 @@ config:
 
 `channel`, `instance`, `botName` and `transport` are required, and `channel` must be unique. `kind` defaults to `p2p`; `onebot` is the other built-in, and a third-party transport registers as `x-[a-z0-9-]+`, at most 32 characters. `secret` and `accessToken` are reference names in the host credentials service, not the secrets themselves. Paths in a profile are read as POSIX paths; Windows is not supported.
 
-An OneBot adapter speaks one protocol: `transport.protocol` is `http` (the default), `ws-forward` or `ws-reverse`. A field that belongs to another protocol is refused when the profile loads.
+An OneBot adapter speaks one protocol: `transport.protocol` is `http` (the default), `ws-forward` or `ws-reverse`. A field that belongs to another protocol is refused when the profile loads. Each adapter is one link: an implementation reached over one protocol gets one OneBot adapter, not two.
 
 The impression library is off until a top-level `impressions` block names an absolute `dir`. It keeps short notes about the person a turn answers or about its group; `impression_put`, `impression_get` and `impression_forget` read and write them.
 
@@ -80,7 +80,7 @@ The impression library is off until a top-level `impressions` block names an abs
 | `impressions.dir` | off | notes root |
 | `transport.protocol` | `http` | OneBot: how it connects |
 | `transport.heartbeat` | off | OneBot on a socket: liveness |
-| `transport.reconnect` | backoff | OneBot `ws-forward`: retry |
+| `transport.reconnect` | backoff | OneBot `ws-forward`: backoff, `false` to stay offline |
 | `transport.history.group` | `false` | OneBot: group history |
 | `transport.history.private` | `false` | OneBot: private history |
 | `transport.fileFromUrl` | `false` | OneBot: file from a url |

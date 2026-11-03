@@ -59,7 +59,7 @@ config:
 
 `channel`、`instance`、`botName`、`transport` 必填，`channel` 不能重复。`kind` 默认 `p2p`；另一个内置是 `onebot`，第三方传输用 `x-[a-z0-9-]+` 的名字，最长 32 字符。`secret` 与 `accessToken` 填的是宿主任凭服务里的引用名，不是密钥本身。配置里的路径按 POSIX 解释，暂不支持 Windows。
 
-一条 OneBot adapter 只用一种协议：`transport.protocol` 取 `http`（默认）、`ws-forward` 或 `ws-reverse`。属于另一种协议的字段会在加载配置时报错。
+一条 OneBot adapter 只用一种协议：`transport.protocol` 取 `http`（默认）、`ws-forward` 或 `ws-reverse`。属于另一种协议的字段会在加载配置时报错。每个 adapter 是一条链路：同一个实现只走一种协议，就只声明一个 OneBot adapter。
 
 印象库默认关闭，配置顶层的 `impressions` 块给出绝对路径的 `dir` 才启用。它存放关于本回合对端或本群的短笔记，用 `impression_put`、`impression_get`、`impression_forget` 读写。
 
@@ -80,7 +80,7 @@ config:
 | `impressions.dir` | 关闭 | 笔记根目录 |
 | `transport.protocol` | `http` | OneBot：连接方式 |
 | `transport.heartbeat` | 关闭 | OneBot 走 socket：存活检查 |
-| `transport.reconnect` | 退避重试 | OneBot `ws-forward`：重连 |
+| `transport.reconnect` | 退避重试 | OneBot `ws-forward`：退避重试，`false` 表示不重连 |
 | `transport.history.group` | `false` | OneBot：读群历史 |
 | `transport.history.private` | `false` | OneBot：读私聊历史 |
 | `transport.fileFromUrl` | `false` | OneBot：用 url 发文件 |
