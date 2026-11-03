@@ -11,7 +11,7 @@ import type { BudgetConfig } from './budget-config.js'
 import type { Hold } from './budget-ledger.js'
 import { ClosedChains } from './chain-closer.js'
 import { buildIdentity } from './identity.js'
-import type { MountedAccountSpace } from './identity.js'
+import type { IdentityGraph, MountedAccountSpace } from './identity.js'
 import { ContextBuffer, DEFAULT_CONTEXT_CHARS, DEFAULT_CONTEXT_MESSAGES, renderContext } from './context-buffer.js'
 import type { ContextLimits } from './context-buffer.js'
 import { ConfigError, validateConfig } from './config.js'
@@ -22,7 +22,8 @@ import { createDeclineTool, createNoReplyTool } from './control-tools.js'
 import type { ControlPorts, TurnRef } from './control-tools.js'
 import { createImpressionForget, createImpressionGet, createImpressionPut } from './impression-tools.js'
 import type { ImpressionPorts } from './impression-tools.js'
-import { ImpressionStore, readImpressionsConfig } from './impressions.js'
+import { ImpressionStore, readImpressionsConfig, readImpressionsTurn } from './impressions.js'
+import type { ImpressionImport, ImpressionsTurn } from './impressions.js'
 import { ChainGuard, KeyGuard } from './event-keys.js'
 import { InboundGate } from './inbound-gate.js'
 import type { GroupBotPolicy } from './inbound-gate.js'
@@ -97,6 +98,8 @@ export interface TurnSettings {
   maxChars: number
   /** What a turn may read of the messages it did not answer. */
   context: ContextLimits
+  /** How much text the impressions block may spend; zero leaves the block out. */
+  impressions: ImpressionsTurn
 }
 
 export const DEFAULT_TURN: TurnSettings = {
@@ -104,6 +107,7 @@ export const DEFAULT_TURN: TurnSettings = {
   maxBatch: 10,
   maxChars: 8000,
   context: { messages: DEFAULT_CONTEXT_MESSAGES, chars: DEFAULT_CONTEXT_CHARS },
+  impressions: { chars: 400 },
 }
 
 const nodeSpecSchema = Schema.object({
@@ -146,6 +150,7 @@ export const Config: any = Schema.object({
       messages: Schema.number(),
       chars: Schema.number(),
     }),
+    impressions: Schema.any(),
   }),
   adapters: Schema
     .array(
@@ -208,6 +213,7 @@ export function checkTurnSettings(
         maxBatch?: number | undefined
         maxChars?: number | undefined
         context?: { messages?: number | undefined; chars?: number | undefined } | undefined
+        impressions?: unknown
       }
     | undefined,
 ): TurnSettings {
@@ -219,6 +225,7 @@ export function checkTurnSettings(
       messages: raw?.context?.messages ?? DEFAULT_TURN.context.messages,
       chars: raw?.context?.chars ?? DEFAULT_TURN.context.chars,
     },
+    impressions: readImpressionsTurn(raw?.impressions),
   }
   if (!Number.isInteger(turn.coalesceMs) || turn.coalesceMs < 0) {
     throw new ConfigError(`turn.coalesceMs must be a whole number of milliseconds, at least 0: ${turn.coalesceMs}`, [
@@ -247,6 +254,52 @@ export function checkTurnSettings(
     ])
   }
   return turn
+}
+
+/** A one-time import must land on a person the graph declares or a session this profile can carry. */
+function checkImportSubject(block: ImpressionImport, identity: IdentityGraph, channels: readonly MountedChannel[]): void {
+  const target = block.as
+  if ('personId' in target) {
+    const node = identity.nodes.find((entry) => entry.id === target.personId)
+    if (node === undefined || node.kind !== 'person') {
+      throw new ConfigError(`impressions.import.as names an undeclared person: ${target.personId}`, [
+        'impressions',
+        'import',
+        'as',
+        'personId',
+      ])
+    }
+    return
+  }
+  const split = target.groupKey.indexOf('|')
+  if (split <= 0 || split === target.groupKey.length - 1) {
+    throw new ConfigError(`impressions.import.as.groupKey must be "<channel>|<sessionKey>": ${target.groupKey}`, [
+      'impressions',
+      'import',
+      'as',
+      'groupKey',
+    ])
+  }
+  const channelName = target.groupKey.slice(0, split)
+  const sessionKey = target.groupKey.slice(split + 1)
+  const mounted = channels.find((entry) => entry.config.channel === channelName)
+  if (mounted === undefined) {
+    throw new ConfigError(`impressions.import.as names an unmounted channel: ${channelName}`, [
+      'impressions',
+      'import',
+      'as',
+      'groupKey',
+    ])
+  }
+  const problem = mounted.adapter.checkSessionKey(sessionKey)
+  if (problem !== undefined) {
+    throw new ConfigError(`impressions.import.as names a session key this adapter refuses: ${problem}`, [
+      'impressions',
+      'import',
+      'as',
+      'groupKey',
+    ])
+  }
 }
 
 /** Refuses a turn timing no pipeline can run with. */
@@ -550,6 +603,10 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   const channels = mountAdapters(config, settings, warn, registry)
   // Parsed after the adapters so a binding can be checked against instances that really exist.
   const identity = buildIdentity(config.identity, accountSpaces(channels), warn)
+  const impressionsConfig = readImpressionsConfig(config.impressions)
+  if (impressionsConfig?.import !== undefined) {
+    checkImportSubject(impressionsConfig.import, identity, channels)
+  }
   checkGuidance(channels)
   checkPrepareSupport(bots, channels)
   const reply = compileReply(config.reply)
@@ -564,7 +621,6 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     | ReturnType<typeof createImpressionPut>
     | ReturnType<typeof createImpressionGet>
     | ReturnType<typeof createImpressionForget>
-  const impressionsConfig = readImpressionsConfig(config.impressions)
   const tools = ctx.get('tools') as { register: (definition: AnyTool) => () => void } | undefined
   if (reply.possibleTool && (tools === undefined || typeof tools.register !== 'function')) {
     throw new ConfigError('the tools service is required when a profile can choose tool mode', ['reply'])

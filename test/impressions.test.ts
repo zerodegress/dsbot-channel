@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
 import {
+  DEFAULT_IMPRESSION_CHARS,
+  IMPRESSION_CHARS_MAX,
   IMPRESSION_RECORDS_MAX,
   IMPRESSION_SUBJECTS_MAX,
   IMPRESSION_TEXT_MAX,
@@ -12,6 +14,7 @@ import {
   mergeEvidence,
   parseImpressionFile,
   readImpressionsConfig,
+  readImpressionsTurn,
   subjectFileName,
 } from '../src/impressions.js'
 import type {
@@ -122,6 +125,42 @@ describe('the plugin-level block', () => {
   test('refuses a block that is not an object', () => {
     expect(() => readImpressionsConfig([])).toThrow(/object/)
     expect(() => readImpressionsConfig('notes')).toThrow(/object/)
+  })
+
+  test('reads a one-time import of a person or a group', () => {
+    expect(readImpressionsConfig({ dir: '/srv/notes', import: { path: '/srv/notes/MEMORY.md', as: { personId: 'alice' } } })).toEqual({
+      dir: '/srv/notes',
+      import: { path: '/srv/notes/MEMORY.md', as: { personId: 'alice' } },
+    })
+    expect(readImpressionsConfig({ dir: '/srv/notes', import: { path: '/srv/notes/MEMORY.md', as: { groupKey: 'x:a|group:1' } } })).toMatchObject({
+      import: { as: { groupKey: 'x:a|group:1' } },
+    })
+  })
+
+  test('refuses an import that is malformed', () => {
+    expect(() => readImpressionsConfig({ dir: '/srv', import: [] })).toThrow(/import must be an object/)
+    expect(() => readImpressionsConfig({ dir: '/srv', import: { path: 'relative', as: { personId: 'a' } } })).toThrow(/absolute/)
+    expect(() => readImpressionsConfig({ dir: '/srv', import: { path: '/srv/x', as: { personId: 'a' }, extra: 1 } })).toThrow(/does not read/)
+    expect(() => readImpressionsConfig({ dir: '/srv', import: { path: '/srv/x', as: { personId: 'a', groupKey: 'g' } } })).toThrow(/exactly one/)
+    expect(() => readImpressionsConfig({ dir: '/srv', import: { path: '/srv/x', as: {} } })).toThrow(/exactly one/)
+    expect(() => readImpressionsConfig({ dir: '/srv', import: { path: '/srv/x', as: { personId: '' } } })).toThrow(/non-empty/)
+  })
+})
+
+describe('the turn-level block budget', () => {
+  test('defaults to 400 and takes 0..2000', () => {
+    expect(readImpressionsTurn(undefined)).toEqual({ chars: DEFAULT_IMPRESSION_CHARS })
+    expect(readImpressionsTurn({})).toEqual({ chars: DEFAULT_IMPRESSION_CHARS })
+    expect(readImpressionsTurn({ chars: 0 })).toEqual({ chars: 0 })
+    expect(readImpressionsTurn({ chars: 2000 })).toEqual({ chars: 2000 })
+  })
+
+  test('refuses anything outside the range', () => {
+    for (const chars of [-1, IMPRESSION_CHARS_MAX + 1, 1.5, 'wide']) {
+      expect(() => readImpressionsTurn({ chars })).toThrow(/between 0 and 2000/)
+    }
+    expect(() => readImpressionsTurn({ extra: 1 })).toThrow(/does not read/)
+    expect(() => readImpressionsTurn('wide')).toThrow(/object/)
   })
 })
 

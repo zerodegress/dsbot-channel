@@ -114,7 +114,13 @@ interface Toolbox {
 }
 
 async function mount(
-  options: { impressions?: unknown; withTools?: boolean; identity?: unknown; gate?: { started: () => void; done: Promise<void> } } = {},
+  options: {
+    impressions?: unknown
+    withTools?: boolean
+    identity?: unknown
+    turn?: unknown
+    gate?: { started: () => void; done: Promise<void> }
+  } = {},
 ): Promise<Toolbox> {
   const registered: string[] = []
   const tools = new Map<string, { execute: (args: unknown, exec: unknown) => Promise<unknown> }>()
@@ -152,6 +158,7 @@ async function mount(
   await ctx.plugin(entry, {
     ...(options.impressions === undefined ? {} : { impressions: options.impressions }),
     ...(options.identity === undefined ? {} : { identity: options.identity }),
+    ...(options.turn === undefined ? {} : { turn: options.turn }),
     adapters: [{ kind: 'x-group', channel: 'x:a', instance: 'inst-a', botName: 'bot-a', policy: {}, transport: {} }],
   })
   return { registered, tools }
@@ -229,5 +236,56 @@ describe('a real turn writing an impression', () => {
     ])
     expect(read.records[0]!.scope).toBe('group')
     expect(read.records[0]!.groupKey).toBe('x:a|group:12345')
+  })
+})
+
+
+describe('the import subject and the turn budget at mount', () => {
+  const bound = {
+    people: [{ id: 'alice', accounts: [{ kind: 'x-group', instance: 'inst-a', accountId: 'u1' }] }],
+  }
+  const bots = {
+    bots: [{ id: 'bot-x', accounts: [{ kind: 'x-group', instance: 'inst-a', accountId: 'u9' }] }],
+  }
+  const importOf = (as: unknown) => ({ path: '/srv/notes/MEMORY.md', as })
+
+  test('accepts a declared person and a session this profile can carry', async () => {
+    const dir = await tempRoot()
+    await expect(
+      mount({ impressions: { dir, import: importOf({ personId: 'alice' }) }, identity: bound }),
+    ).resolves.toBeDefined()
+    const groupDir = await tempRoot()
+    await expect(
+      mount({ impressions: { dir: groupDir, import: importOf({ groupKey: 'x:a|group:12345' }) } }),
+    ).resolves.toBeDefined()
+  })
+
+  test('refuses an import that names an undeclared person or a bot node', async () => {
+    const dir = await tempRoot()
+    await expect(mount({ impressions: { dir, import: importOf({ personId: 'alice' }) } })).rejects.toThrow(
+      /undeclared person/,
+    )
+    const botDir = await tempRoot()
+    await expect(
+      mount({ impressions: { dir: botDir, import: importOf({ personId: 'bot-x' }) }, identity: bots }),
+    ).rejects.toThrow(/undeclared person/)
+  })
+
+  test('refuses a group key that names no mounted channel or no acceptable session', async () => {
+    const dir = await tempRoot()
+    await expect(
+      mount({ impressions: { dir, import: importOf({ groupKey: 'x:b|group:1' }) } }),
+    ).rejects.toThrow(/unmounted channel/)
+    const malformed = await tempRoot()
+    await expect(
+      mount({ impressions: { dir: malformed, import: importOf({ groupKey: 'group:1' }) } }),
+    ).rejects.toThrow(/<channel>\|<sessionKey>/)
+  })
+
+  test('refuses a turn budget outside 0..2000', async () => {
+    const dir = await tempRoot()
+    await expect(mount({ impressions: { dir }, turn: { impressions: { chars: 2001 } } })).rejects.toThrow(
+      /between 0 and 2000/,
+    )
   })
 })

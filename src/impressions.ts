@@ -85,10 +85,25 @@ export interface ImpressionFile {
 /** What a caller hands the store; the store stamps `touchedAt` itself. */
 export type ImpressionFileInput = Omit<ImpressionFile, 'touchedAt'>
 
+/** One-time import of a file in the host's memory format. */
+export interface ImpressionImport {
+  path: string
+  as: { personId: string } | { groupKey: string }
+}
+
 /** The plugin-level block; without a directory the feature is off. */
 export interface ImpressionsConfig {
   dir: string
+  import?: ImpressionImport | undefined
 }
+
+/** How much of a turn's text one impressions block may spend. */
+export interface ImpressionsTurn {
+  chars: number
+}
+
+export const DEFAULT_IMPRESSION_CHARS = 400
+export const IMPRESSION_CHARS_MAX = 2000
 
 export interface ImpressionStoreOptions {
   dir: string
@@ -177,7 +192,7 @@ export function readImpressionsConfig(raw: unknown): ImpressionsConfig | undefin
     throw new ConfigError('impressions must be an object', ['impressions'])
   }
   const block = raw as Record<string, unknown>
-  const unknown = Object.keys(block).filter((key) => key !== 'dir')
+  const unknown = Object.keys(block).filter((key) => key !== 'dir' && key !== 'import')
   if (unknown.length > 0) {
     throw new ConfigError(`impressions names a field it does not read: ${unknown.join(', ')}`, ['impressions'], unknown)
   }
@@ -191,7 +206,73 @@ export function readImpressionsConfig(raw: unknown): ImpressionsConfig | undefin
   if (dir.includes('\u0000')) {
     throw new ConfigError('impressions.dir must not carry a NUL byte', ['impressions', 'dir'])
   }
-  return { dir }
+  if (block.import === undefined) return { dir }
+  return { dir, import: readImport(block.import) }
+}
+
+function readImport(raw: unknown): ImpressionImport {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new ConfigError('impressions.import must be an object', ['impressions', 'import'])
+  }
+  const block = raw as Record<string, unknown>
+  const unknown = Object.keys(block).filter((key) => key !== 'path' && key !== 'as')
+  if (unknown.length > 0) {
+    throw new ConfigError(`impressions.import names a field it does not read: ${unknown.join(', ')}`, ['impressions', 'import'], unknown)
+  }
+  const path = block.path
+  if (typeof path !== 'string' || path.length === 0) {
+    throw new ConfigError('impressions.import.path must be a non-empty string', ['impressions', 'import', 'path'])
+  }
+  if (!path.startsWith('/')) {
+    throw new ConfigError(`impressions.import.path must be an absolute path: ${path}`, ['impressions', 'import', 'path'])
+  }
+  if (path.includes('\u0000')) {
+    throw new ConfigError('impressions.import.path must not carry a NUL byte', ['impressions', 'import', 'path'])
+  }
+  return { path, as: readImportSubject(block.as) }
+}
+
+function readImportSubject(raw: unknown): ImpressionImport['as'] {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new ConfigError('impressions.import.as must be an object', ['impressions', 'import', 'as'])
+  }
+  const block = raw as Record<string, unknown>
+  const unknown = Object.keys(block).filter((key) => key !== 'personId' && key !== 'groupKey')
+  if (unknown.length > 0) {
+    throw new ConfigError(`impressions.import.as names a field it does not read: ${unknown.join(', ')}`, ['impressions', 'import', 'as'], unknown)
+  }
+  const person = block.personId
+  const group = block.groupKey
+  if ((person === undefined) === (group === undefined)) {
+    throw new ConfigError('impressions.import.as must name exactly one of personId or groupKey', ['impressions', 'import', 'as'])
+  }
+  const value = person ?? group
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new ConfigError('impressions.import.as must name a non-empty string', ['impressions', 'import', 'as'])
+  }
+  return person === undefined ? { groupKey: value } : { personId: value }
+}
+
+/** Reads the turn-level budget; absent means the default, zero turns the block off. */
+export function readImpressionsTurn(raw: unknown): ImpressionsTurn {
+  if (raw === undefined) return { chars: DEFAULT_IMPRESSION_CHARS }
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new ConfigError('turn.impressions must be an object', ['turn', 'impressions'])
+  }
+  const block = raw as Record<string, unknown>
+  const unknown = Object.keys(block).filter((key) => key !== 'chars')
+  if (unknown.length > 0) {
+    throw new ConfigError(`turn.impressions names a field it does not read: ${unknown.join(', ')}`, ['turn', 'impressions'], unknown)
+  }
+  const chars = block.chars ?? DEFAULT_IMPRESSION_CHARS
+  if (typeof chars !== 'number' || !Number.isInteger(chars) || chars < 0 || chars > IMPRESSION_CHARS_MAX) {
+    throw new ConfigError(`turn.impressions.chars must be a whole number between 0 and ${IMPRESSION_CHARS_MAX}: ${String(chars)}`, [
+      'turn',
+      'impressions',
+      'chars',
+    ])
+  }
+  return { chars }
 }
 
 function bad(file: string, problem: string): never {
