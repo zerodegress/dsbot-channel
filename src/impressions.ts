@@ -114,6 +114,8 @@ export interface ImpressionStoreOptions {
   bot: string
   now?: (() => number) | undefined
   warn?: ((message: string) => void) | undefined
+  /** A replaceable render entry; the default writes the read-only view. */
+  render?: (() => Promise<void>) | undefined
 }
 
 export type ImpressionReadResult =
@@ -469,6 +471,7 @@ export class ImpressionStore {
   readonly #bot: string
   readonly #now: () => number
   readonly #warn: (message: string) => void
+  readonly #render: () => Promise<void>
   readonly #index = new Map<string, IndexEntry>()
   readonly #queues = new Map<string, Promise<void>>()
   readonly #warned = new Set<string>()
@@ -477,7 +480,6 @@ export class ImpressionStore {
   #dirty = false
   #rendering: Promise<void> | undefined
   #renderWarned = false
-  #retryAfterFailure = false
 
   constructor(options: ImpressionStoreOptions) {
     if (options.dir.length === 0) throw new ConfigError('impressions.dir must be a non-empty string', ['impressions', 'dir'])
@@ -487,6 +489,7 @@ export class ImpressionStore {
     this.#bot = options.bot
     this.#now = options.now ?? (() => Date.now())
     this.#warn = options.warn ?? (() => undefined)
+    this.#render = options.render ?? (() => this.#renderOnce())
   }
 
   /** Reads every file this bot owns; a damaged file refuses the mount instead of being replaced. */
@@ -607,32 +610,27 @@ export class ImpressionStore {
     const running = this.#rendering
     if (running !== undefined) return running
     const run = this.#renderLoop().finally(() => {
-      if (this.#rendering === run) {
-        this.#rendering = undefined
-        if (this.#retryAfterFailure) {
-          this.#retryAfterFailure = false
-          void this.#scheduleRender()
-        }
-      }
+      if (this.#rendering === run) this.#rendering = undefined
     })
     this.#rendering = run
     return run
   }
 
+  /** A failed pass retries once and then stops; a later write starts a fresh pass. */
   async #renderLoop(): Promise<void> {
+    let retried = false
     while (this.#dirty) {
       this.#dirty = false
       try {
-        await this.#renderOnce()
-        this.#retryAfterFailure = false
+        await this.#render()
       } catch (error) {
         if (!this.#renderWarned) {
           this.#renderWarned = true
           this.#warn(`dsbot-channel: could not render ${join(this.root, IMPRESSION_VIEW_NAME)}: ${describe(error)}`)
         }
-        if (this.#dirty) this.#retryAfterFailure = true
         this.#dirty = true
-        return
+        if (retried) return
+        retried = true
       }
     }
   }
