@@ -478,6 +478,21 @@ describe('reading the store for a turn', () => {
     expect(mounted.warnings.filter((line) => line.includes('could not read'))).toHaveLength(0)
   })
 
+  test('a file that stops parsing warns once across turns', async () => {
+    const dir = await tempRoot()
+    const path = await seed(dir)
+    const mounted = await mount({ impressions: { dir }, identity: bound })
+    await writeFile(path, '{not json', { mode: 0o600 })
+    await ports!.onMessage(message('bad-1'))
+    await waitFor(() => mounted.prompts.length === 1)
+    await ports!.onMessage(message('bad-2'))
+    await waitFor(() => mounted.prompts.length === 2)
+    const failures = mounted.warnings.filter((line) => line.includes('could not read'))
+    expect(failures).toHaveLength(1)
+    expect(failures[0]).toContain('not valid JSON')
+    expect(mounted.prompts.every((text) => !text.includes('[impressions]'))).toBe(true)
+  })
+
   test('a read failure warns once per path and reason, clears on success, and warns again later', async () => {
     const dir = await tempRoot()
     const path = await seed(dir)
