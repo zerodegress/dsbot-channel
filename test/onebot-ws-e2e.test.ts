@@ -4,8 +4,8 @@ import type { AddressInfo } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
 import { registryPlugin } from '../src/registry-plugin.js'
+import { boundPort } from './ports.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
-import { createServer } from 'node:http'
 
 const REF = '{{SECRET_ws_e2e}}'
 const TOKEN = 'shared-value'
@@ -120,17 +120,6 @@ async function waitFor(check: () => boolean, timeoutMs = 4000): Promise<void> {
   }
 }
 
-async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const probe = createServer()
-    probe.once('error', reject)
-    probe.listen(0, '127.0.0.1', () => {
-      const port = (probe.address() as AddressInfo).port
-      probe.close(() => resolve(port))
-    })
-  })
-}
-
 afterEach(async () => {
   while (mounted.length > 0) await mounted.pop()!.close()
 })
@@ -167,7 +156,6 @@ describe('OneBot over a forward websocket', () => {
   })
 
   test('a client that dials us sends an event, runs a turn, and reads the reply as an action', async () => {
-    const port = await freePort()
     const prompted: string[] = []
     const actions: { action: string; params: Record<string, unknown>; echo: string }[] = []
     const ctx = new Context()
@@ -203,7 +191,7 @@ describe('OneBot over a forward websocket', () => {
           policy: {},
           transport: {
             protocol: 'ws-reverse',
-            listen: { host: '127.0.0.1', port },
+            listen: { host: '127.0.0.1', port: 0 },
             accessToken: REF,
             bots: [],
           },
@@ -211,6 +199,7 @@ describe('OneBot over a forward websocket', () => {
       ],
     })
 
+    const port = boundPort(ctx, 'onebot:a')
     const status = await fetch(`http://127.0.0.1:${port}/onebot/status`)
     expect(status.status).toBe(200)
     const report = (await status.json()) as Record<string, unknown>

@@ -3,6 +3,7 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { ConfigError } from '../src/config.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
+import { instancePort } from './ports.js'
 import { P2PAdapter } from '../src/adapters/p2p/adapter.js'
 import type { P2PAdapterConfig } from '../src/adapters/p2p/adapter.js'
 import { sendToPeer } from '../src/adapters/p2p/p2p-send.js'
@@ -13,17 +14,6 @@ import type { InboundMessage } from '../src/contract.js'
 
 const REF = '{{SECRET_7k3mwq8t}}'
 const credentials = staticCredentials({ [REF]: 'shared-value' })
-
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer()
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const port = (server.address() as AddressInfo).port
-      server.close(() => resolve(port))
-    })
-  })
-}
 
 async function waitFor(check: () => boolean, timeoutMs = 3000): Promise<void> {
   const started = Date.now()
@@ -104,8 +94,7 @@ describe('the p2p adapter owns its own keys and addresses', () => {
 
 describe('the p2p adapter carries a message through the contract', () => {
   test('an accepted message arrives with its own key, address and source', async () => {
-    const port = await freePort()
-    const adapter = new P2PAdapter(config(port))
+    const adapter = new P2PAdapter(config(0))
     adapter.checkConfig({ maxTurnMs: 120_000 })
     const seen: InboundMessage[] = []
     const handle = await adapter.start({
@@ -116,6 +105,7 @@ describe('the p2p adapter carries a message through the contract', () => {
       resolveSecret: (ref) => Promise.resolve(credentials.resolve(ref).then((one) => one?.value)),
     })
     stops.push(handle.stop)
+    const port = instancePort(adapter)
 
     const sent = await sendToPeer({
       peer: { instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${port}` },
@@ -139,15 +129,15 @@ describe('the p2p adapter carries a message through the contract', () => {
   })
 
   test('a refusal from core is reported and does not throw', async () => {
-    const port = await freePort()
     const warnings: string[] = []
-    const adapter = new P2PAdapter(config(port), { warn: (line) => warnings.push(line) })
+    const adapter = new P2PAdapter(config(0), { warn: (line) => warnings.push(line) })
     adapter.checkConfig({ maxTurnMs: 120_000 })
     const handle = await adapter.start({
       onMessage: async () => ({ ok: false, code: 'session_key_invalid', reason: 'not for this turn' }),
       resolveSecret: (ref) => Promise.resolve(credentials.resolve(ref).then((one) => one?.value)),
     })
     stops.push(handle.stop)
+    const port = instancePort(adapter)
 
     await sendToPeer({
       peer: { instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${port}` },
@@ -205,7 +195,7 @@ describe('the p2p adapter tells a peer it was refused', () => {
       instance: 'inst-b',
       botName: 'bot-b',
       peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}`, botName: 'bot-a' }],
-      listen: { host: '127.0.0.1', port: await freePort() },
+      listen: { host: '127.0.0.1', port: 0 },
     })
     adapter.checkConfig({ maxTurnMs: 120_000 })
     const handle = await adapter.start({
@@ -265,7 +255,7 @@ describe('the p2p adapter tells a peer it was refused', () => {
           botName: 'bot-a',
         },
       ],
-      listen: { host: '127.0.0.1', port: await freePort() },
+      listen: { host: '127.0.0.1', port: 0 },
     })
     adapter.checkConfig({ maxTurnMs: 120_000 })
     const handle = await adapter.start({
@@ -324,7 +314,7 @@ describe('the p2p adapter sends through its own addressing', () => {
       instance: 'inst-b',
       botName: 'bot-b',
       peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}` }],
-      listen: { host: '127.0.0.1', port: await freePort() },
+      listen: { host: '127.0.0.1', port: 0 },
     })
     adapter.checkConfig({ maxTurnMs: 120_000 })
     const handle = await adapter.start({
@@ -380,7 +370,7 @@ describe('the reason a refusal carries', () => {
       instance: 'inst-b',
       botName: 'bot-b',
       peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}`, botName: 'bot-a' }],
-      listen: { host: '127.0.0.1', port: await freePort() },
+      listen: { host: '127.0.0.1', port: 0 },
     })
     adapter.checkConfig({ maxTurnMs: 120_000 })
     const handle = await adapter.start({
@@ -481,7 +471,7 @@ describe('media a peer could not receive', () => {
         instance: 'inst-b',
         botName: 'bot-b',
         peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}`, botName: 'bot-a' }],
-        listen: { host: '127.0.0.1', port: await freePort() },
+        listen: { host: '127.0.0.1', port: 0 },
       },
       { warn: (line) => warned.push(line) },
     )

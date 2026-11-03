@@ -1,7 +1,5 @@
 import { afterEach, describe, expect, test } from 'vitest'
 import { registryPlugin } from '../src/registry-plugin.js'
-import { createServer } from 'node:http'
-import type { AddressInfo } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
@@ -30,17 +28,6 @@ const credentials = staticCredentials({ [REF]: 'shared-value' })
 afterEach(async () => {
   while (forks.length > 0) await forks.pop()?.dispose()
 })
-
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer()
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const port = (server.address() as AddressInfo).port
-      server.close(() => resolve(port))
-    })
-  })
-}
 
 interface BotInput {
   layer?: PipelineLayer
@@ -73,7 +60,6 @@ function harness(input: Record<string, BotInput> = { orca: { peers: ['seal'] } }
 const bindable = { deny: { words: ['spam'] }, allow: { peers: ['inst-b'] } }
 
 async function mount(options: { policy?: Record<string, unknown> } = {}) {
-  const port = await freePort()
   const ctx = new Context()
   await ctx.plugin({
     name: 'probe-services',
@@ -96,7 +82,7 @@ instance: 'inst-a',
 botName: 'bot-a',
 transport: {
   peers: [{ instance: 'inst-b', secret: REF }],
-  listen: { host: '127.0.0.1', port }
+  listen: { host: '127.0.0.1', port: 0 }
 },
 policy: options.policy ?? bindable
 },
