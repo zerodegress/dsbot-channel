@@ -9,9 +9,9 @@ ds-bot 的消息网关：多个外部平台的事件进到同一个 Bot，回答
 ## 环境要求
 
 - Node.js `^20.19.0` 或 `>=22.12.0`，以及 pnpm
-- 宿主的三个服务：凭据（解析密钥）、会话控制（跑回合）、tools（tool 模式）
+- 宿主的服务：凭据（解析密钥）、会话控制（跑回合）、tools（tool 模式）。宿主提供 session persistence 时，每条回复投递成功后经它 flush 会话日志。
 
-已在 DS-Bot 0.2.x 上测试（本版发布时为 0.2.5）；不保证与后续版本兼容。
+已在 DS-Bot 0.2.x 上测试；不保证与后续版本兼容。
 
 ## 安装
 
@@ -47,9 +47,19 @@ config:
         listen: { host: 127.0.0.1, port: 7331 }
         api: { url: "http://127.0.0.1:3000" }
         accessToken: ONEBOT_TOKEN
+    - kind: onebot
+      channel: onebot:ws
+      instance: onebot-ws
+      botName: self-bot
+      transport:
+        protocol: ws-reverse
+        listen: { host: 127.0.0.1, port: 7332, path: /onebot/ws }
+        accessToken: ONEBOT_TOKEN
 ```
 
 `channel`、`instance`、`botName`、`transport` 必填，`channel` 不能重复。`kind` 默认 `p2p`；另一个内置是 `onebot`，第三方传输用 `x-[a-z0-9-]+` 的名字，最长 32 字符。`secret` 与 `accessToken` 填的是宿主任凭服务里的引用名，不是密钥本身。配置里的路径按 POSIX 解释，暂不支持 Windows。
+
+一条 OneBot adapter 只用一种协议：`transport.protocol` 取 `http`（默认）、`ws-forward` 或 `ws-reverse`。属于另一种协议的字段会在加载配置时报错。每个 adapter 是一条链路：同一个实现只走一种协议，就只声明一个 OneBot adapter。
 
 印象库默认关闭，配置顶层的 `impressions` 块给出绝对路径的 `dir` 才启用。它存放关于本回合对端或本群的短笔记，用 `impression_put`、`impression_get`、`impression_forget` 读写。
 
@@ -68,6 +78,9 @@ config:
 | `turn.context.messages` | `0` | 历史条数 |
 | `turn.context.chars` | `2000` | 上下文预算 |
 | `impressions.dir` | 关闭 | 笔记根目录 |
+| `transport.protocol` | `http` | OneBot：连接方式 |
+| `transport.heartbeat` | 关闭 | OneBot 走 socket：存活检查 |
+| `transport.reconnect` | 退避重试 | OneBot `ws-forward`：退避重试，`false` 表示不重连 |
 | `transport.history.group` | `false` | OneBot：读群历史 |
 | `transport.history.private` | `false` | OneBot：读私聊历史 |
 | `transport.fileFromUrl` | `false` | OneBot：用 url 发文件 |

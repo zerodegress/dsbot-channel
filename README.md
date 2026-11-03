@@ -9,9 +9,9 @@ A message gateway for ds-bot: events from several external platforms reach one b
 ## Requirements
 
 - Node.js `^20.19.0` or `>=22.12.0`, and pnpm
-- The host services: credentials (adapter secrets), session controller (turns), tools (tool mode)
+- The host services: credentials (adapter secrets), session controller (turns), tools (tool mode). Session persistence is used when the host provides it: the log is flushed after each delivered reply.
 
-Tested against DS-Bot 0.2.x (0.2.5 at the time of this release); later releases are not guaranteed.
+Tested against DS-Bot 0.2.x; later releases are not guaranteed.
 
 ## Install
 
@@ -47,9 +47,19 @@ config:
         listen: { host: 127.0.0.1, port: 7331 }
         api: { url: "http://127.0.0.1:3000" }
         accessToken: ONEBOT_TOKEN
+    - kind: onebot
+      channel: onebot:ws
+      instance: onebot-ws
+      botName: self-bot
+      transport:
+        protocol: ws-reverse
+        listen: { host: 127.0.0.1, port: 7332, path: /onebot/ws }
+        accessToken: ONEBOT_TOKEN
 ```
 
 `channel`, `instance`, `botName` and `transport` are required, and `channel` must be unique. `kind` defaults to `p2p`; `onebot` is the other built-in, and a third-party transport registers as `x-[a-z0-9-]+`, at most 32 characters. `secret` and `accessToken` are reference names in the host credentials service, not the secrets themselves. Paths in a profile are read as POSIX paths; Windows is not supported.
+
+An OneBot adapter speaks one protocol: `transport.protocol` is `http` (the default), `ws-forward` or `ws-reverse`. A field that belongs to another protocol is refused when the profile loads. Each adapter is one link: an implementation reached over one protocol gets one OneBot adapter, not two.
 
 The impression library is off until a top-level `impressions` block names an absolute `dir`. It keeps short notes about the person a turn answers or about its group; `impression_put`, `impression_get` and `impression_forget` read and write them.
 
@@ -68,6 +78,9 @@ The impression library is off until a top-level `impressions` block names an abs
 | `turn.context.messages` | `0` | earlier messages |
 | `turn.context.chars` | `2000` | context budget |
 | `impressions.dir` | off | notes root |
+| `transport.protocol` | `http` | OneBot: how it connects |
+| `transport.heartbeat` | off | OneBot on a socket: liveness |
+| `transport.reconnect` | backoff | OneBot `ws-forward`: backoff, `false` to stay offline |
 | `transport.history.group` | `false` | OneBot: group history |
 | `transport.history.private` | `false` | OneBot: private history |
 | `transport.fileFromUrl` | `false` | OneBot: file from a url |
