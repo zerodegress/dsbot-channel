@@ -172,6 +172,7 @@ export class P2PAdapter implements ChannelAdapter {
         listenState: listening ? 'listening' : failed ? 'failed' : 'stopped',
         boundPort: snapshot.boundPort,
         lastAuthenticatedAt: snapshot.lastAuthenticatedAt,
+        lastSkewMs: snapshot.lastSkewMs,
         lastFailure: snapshot.lastFailure,
         queueDepth: snapshot.inFlight,
       }),
@@ -181,6 +182,7 @@ export class P2PAdapter implements ChannelAdapter {
       quota: { softLimit: 0, hardLimit: 0 },
       sampledAt: snapshot.sampledAt,
       queueDepth: snapshot.inFlight,
+      ...(this.#table === undefined ? {} : { dedupe: { epoch: this.#table.epoch } }),
     })
   }
 
@@ -296,6 +298,7 @@ export class P2PAdapter implements ChannelAdapter {
         maxBodyBytes: this.#config.maxBodyBytes ?? MAX_BODY_BYTES,
         ...(this.#config.sentAtWindowMs === undefined ? {} : { sentAtWindowMs: this.#config.sentAtWindowMs }),
         ...(this.#config.waitMs === undefined ? {} : { waitMs: this.#config.waitMs }),
+        ...(this.#options.warn === undefined ? {} : { warn: this.#options.warn }),
         listen: { host: this.#config.listen?.host ?? DEFAULT_HOST, port: this.#config.listen?.port ?? DEFAULT_PORT },
       },
       table,

@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A bot can keep short notes about the person a turn answers, or about its group, through `impression_put`, `impression_get` and `impression_forget`; the tools act only on that counterpart. A note carries the messages that support it (one to sixteen), and writing the same note again adds evidence.
 - Confidence in a note halves every 90 days, and a record below 0.2 is no longer read. Only address, language, taboo and manner may be shared across platforms, and forgetting a record takes its evidence with it.
 - The library is off unless `impressions.dir` names a directory: each subject gets one JSON file, `0600` under `0700` and replaced by an atomic rename. A damaged file refuses the mount. The directory appears only on the first write.
+- A p2p adapter reports `dedupe.epoch` in its status: the moment its replay table started, so a replay accepted under a newer epoch is a replay that crossed a restart. The status also carries `health.lastSkewMs`, the last authenticated message's `sentAt` minus the local clock, and `counters.staleSentAt`, the messages refused as stale by peer instance; such a refusal is logged with both clocks and never its body, once per instance.
 
 ### Changed
 
