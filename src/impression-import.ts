@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { readFile, readdir } from 'node:fs/promises'
 import { basename, dirname } from 'node:path'
-import { IMPRESSION_TEXT_MAX, impressionId } from './impressions.js'
+import { IMPRESSION_RECORDS_MAX, IMPRESSION_TEXT_MAX, impressionId } from './impressions.js'
 import type { Impression, ImpressionImport, ImpressionStore } from './impressions.js'
 
 const BULLET = /^-\s+(.*)$/
@@ -19,10 +19,14 @@ export interface MemoryLines {
 export interface ImportCounts {
   imported: number
   skipped: number
+  /** Lines the subject had no room for; an import never evicts a live note. */
+  overflow: number
   topics: number
 }
 
-export type ImportOutcome = { ok: true; counts: ImportCounts } | { ok: false; reason: 'unreadable'; path: string }
+export type ImportOutcome =
+  | { ok: true; counts: ImportCounts }
+  | { ok: false; reason: 'unreadable' | 'storage'; path: string }
 
 /** Reads the bullet lines of a host memory file; headings, links and long lines are counted out. */
 export function parseMemoryFile(text: string): MemoryLines {
@@ -85,16 +89,21 @@ export async function importMemory(options: {
   const subject = 'personId' in config.as ? config.as.personId : config.as.groupKey
   const scope = subjectKind === 'group' ? ('group' as const) : ('c2c' as const)
   const groupKey = subjectKind === 'group' ? subject : undefined
-  const current = await store.read(subjectKind, subject)
-  if (!current.ok) return { ok: true, counts: { imported: 0, skipped: parsed.skipped, topics } }
-  const known = new Set(current.records.map((record) => record.id))
-  const fresh = parsed.lines
-    .map((text) => ({
-      id: impressionId({ subjectKind, subject, scope, groupKey, kind: 'fact', text }),
-      text,
-    }))
-    .filter((entry) => !known.has(entry.id))
-  if (fresh.length > 0) {
+  let imported = 0
+  let overflow = 0
+  const written = await store.transact(subjectKind, subject, (kept) => {
+    const known = new Set(kept.map((record) => record.id))
+    const mine = parsed.lines
+      .map((text) => ({
+        id: impressionId({ subjectKind, subject, scope, groupKey, kind: 'fact', text }),
+        text,
+      }))
+      .filter((entry) => !known.has(entry.id))
+    const room = Math.max(0, IMPRESSION_RECORDS_MAX - kept.length)
+    const fresh = mine.slice(0, room)
+    imported = fresh.length
+    overflow = mine.length - fresh.length
+    if (fresh.length === 0) return undefined
     const records: Impression[] = fresh.map((entry) => ({
       id: entry.id,
       subject,
@@ -117,7 +126,8 @@ export async function importMemory(options: {
       createdAt: now,
       updatedAt: now,
     }))
-    await store.transact(subjectKind, subject, (kept) => [...kept, ...records])
-  }
-  return { ok: true, counts: { imported: fresh.length, skipped: parsed.skipped, topics } }
+    return [...kept, ...records]
+  })
+  if (!written.ok) return { ok: false, reason: 'storage', path: config.path }
+  return { ok: true, counts: { imported, skipped: parsed.skipped, overflow, topics } }
 }

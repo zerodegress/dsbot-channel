@@ -731,11 +731,18 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
       if (impressionsConfig.import !== undefined) {
         const outcome = await importMemory({ store, bot: botName, config: impressionsConfig.import, now: clock() })
         if (!outcome.ok) {
-          warn(`dsbot-channel: impression import source is unreadable: ${outcome.path}`)
+          warn(`dsbot-channel: impression import could not read ${outcome.path}`)
         } else {
           warn(
-            `dsbot-channel: imported ${outcome.counts.imported} impressions into bot "${botName}" (${outcome.counts.skipped} lines skipped, ${outcome.counts.topics} topic files skipped)`,
+            `dsbot-channel: imported ${outcome.counts.imported} impressions into bot "${botName}" (${outcome.counts.skipped} lines skipped, ${outcome.counts.overflow} without room, ${outcome.counts.topics} topic files skipped)`,
           )
+          if (outcome.counts.overflow > 0) {
+            const subject =
+              'personId' in impressionsConfig.import.as
+                ? impressionsConfig.import.as.personId
+                : impressionsConfig.import.as.groupKey
+            warn(`dsbot-channel: import found no room for ${outcome.counts.overflow} lines about "${subject}"`)
+          }
         }
       }
       await store.renderAtMount()

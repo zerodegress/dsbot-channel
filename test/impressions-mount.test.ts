@@ -556,10 +556,29 @@ describe('the one-time import at mount', () => {
     await turn
   })
 
+  test('reports the lines the subject had no room for', async () => {
+    const dir = await tempRoot()
+    const memoryDir = await tempRoot()
+    const path = join(memoryDir, 'MEMORY.md')
+    await writeFile(path, Array.from({ length: 20 }, (_, index) => `- line ${index}`).join('\n') + '\n', { mode: 0o600 })
+    const store = new ImpressionStore({ dir, bot: 'bot-a', now: () => AT })
+    await store.load()
+    const many = Array.from({ length: 64 }, (_, index) =>
+      note({ text: `note ${index}`, createdAt: AT + index, updatedAt: AT + index }),
+    )
+    await store.transact('person', 'alice', () => many)
+    const mounted = await mount({
+      impressions: { dir, import: { path, as: { personId: 'alice' } } },
+      identity: bound,
+    })
+    expect(mounted.warnings.some((line) => line.includes('no room for 20 lines'))).toBe(true)
+    expect(mounted.warnings.some((line) => line.includes('20 without room'))).toBe(true)
+  })
+
   test('warns when the source is unreadable and still mounts', async () => {
     const dir = await tempRoot()
     const missing = join(dir, 'nope', 'MEMORY.md')
     const mounted = await mount({ impressions: { dir, import: { path: missing, as: { personId: 'alice' } } }, identity: bound })
-    expect(mounted.warnings.some((line) => line.includes('import source is unreadable'))).toBe(true)
+    expect(mounted.warnings.some((line) => line.includes('import could not read'))).toBe(true)
   })
 })

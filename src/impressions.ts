@@ -124,8 +124,9 @@ export type ImpressionWriteResult =
   | { ok: false; code: 'storage_error'; reason: string }
 export type ImpressionSaveResult = { ok: true } | { ok: false; code: 'storage_error'; reason: string }
 
-/** Applies one turn's change to a subject under the file's queue; an empty result deletes the file. */
-export type ImpressionChange = (records: readonly Impression[]) => readonly Impression[]
+/** Applies one turn's change to a subject under the file's queue; an empty result deletes the file,
+ * and `undefined` leaves it untouched. */
+export type ImpressionChange = (records: readonly Impression[]) => readonly Impression[] | undefined
 
 class StoreProblem extends Error {}
 
@@ -534,6 +535,7 @@ export class ImpressionStore {
       return await this.#enqueue(path, async () => {
         const current = await this.#readNow(path)
         const changed = change(current?.records ?? [])
+        if (changed === undefined) return { ok: true as const, records: current?.records ?? [] }
         if (changed.length === 0) {
           await this.#deleteNow(path)
           this.#markDirty()

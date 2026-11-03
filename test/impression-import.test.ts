@@ -1,12 +1,31 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
 import { importMemory, parseMemoryFile } from '../src/impression-import.js'
-import { IMPRESSION_TEXT_MAX, ImpressionStore } from '../src/impressions.js'
+import { IMPRESSION_TEXT_MAX, ImpressionStore, botDirectoryName, impressionId, subjectFileName } from '../src/impressions.js'
+import type { Impression } from '../src/impressions.js'
 
 const AT = 1_700_000_000_000
 const roots: string[] = []
+
+function note(overrides: Partial<Impression> = {}): Impression {
+  const base: Omit<Impression, 'id'> = {
+    subject: 'alice',
+    subjectKind: 'person',
+    scope: 'c2c',
+    text: 'seed',
+    kind: 'fact',
+    confidence: 0.6,
+    share: 'local',
+    evidence: [{ eventKey: 'seed:1', sessionKey: 'seed', channel: 'seed', at: AT }],
+    bot: 'bot-a',
+    createdAt: AT,
+    updatedAt: AT,
+  }
+  const merged = { ...base, ...overrides }
+  return { ...merged, id: impressionId(merged) }
+}
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((dir) => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })))
@@ -48,7 +67,7 @@ describe('importing once', () => {
     const store = new ImpressionStore({ dir, bot: 'bot-a', now: () => AT })
     await store.load()
     const first = await importMemory({ store, bot: 'bot-a', config: { path, as: { personId: 'alice' } }, now: AT })
-    expect(first).toEqual({ ok: true, counts: { imported: 2, skipped: 0, topics: 0 } })
+    expect(first).toEqual({ ok: true, counts: { imported: 2, skipped: 0, overflow: 0, topics: 0 } })
     const read = await store.read('person', 'alice')
     if (!read.ok) throw new Error(read.reason)
     expect(read.records).toHaveLength(2)
@@ -58,7 +77,7 @@ describe('importing once', () => {
     expect(record.evidence[0]!.eventKey).toMatch(/^memory-import:[0-9a-f]{64}$/)
 
     const second = await importMemory({ store, bot: 'bot-a', config: { path, as: { personId: 'alice' } }, now: AT + 5_000 })
-    expect(second).toEqual({ ok: true, counts: { imported: 0, skipped: 0, topics: 0 } })
+    expect(second).toEqual({ ok: true, counts: { imported: 0, skipped: 0, overflow: 0, topics: 0 } })
     const again = await store.read('person', 'alice')
     if (!again.ok) throw new Error(again.reason)
     expect(again.records).toHaveLength(2)
@@ -75,7 +94,7 @@ describe('importing once', () => {
     await importMemory({ store, bot: 'bot-a', config: { path, as: { personId: 'alice' } }, now: AT })
     await writeFile(path, '- one\n- two\n', { mode: 0o600 })
     const second = await importMemory({ store, bot: 'bot-a', config: { path, as: { personId: 'alice' } }, now: AT + 1 })
-    expect(second).toEqual({ ok: true, counts: { imported: 1, skipped: 0, topics: 0 } })
+    expect(second).toEqual({ ok: true, counts: { imported: 1, skipped: 0, overflow: 0, topics: 0 } })
     const read = await store.read('person', 'alice')
     if (!read.ok) throw new Error(read.reason)
     expect(read.records.map((entry) => entry.text).sort()).toEqual(['one', 'two'])
@@ -95,7 +114,7 @@ describe('importing once', () => {
       config: { path, as: { groupKey: 'x:a|group:1' } },
       now: AT,
     })
-    expect(result).toEqual({ ok: true, counts: { imported: 1, skipped: 0, topics: 1 } })
+    expect(result).toEqual({ ok: true, counts: { imported: 1, skipped: 0, overflow: 0, topics: 1 } })
     const read = await store.read('group', 'x:a|group:1')
     if (!read.ok) throw new Error(read.reason)
     expect(read.records[0]).toMatchObject({ subjectKind: 'group', scope: 'group', groupKey: 'x:a|group:1' })
@@ -111,5 +130,50 @@ describe('importing once', () => {
       reason: 'unreadable',
       path: missing,
     })
+  })
+})
+
+
+describe('importing into a subject that is already full', () => {
+  test('never evicts a live note, reports the overflow, and rewrites nothing', async () => {
+    const dir = await tempRoot()
+    const memory = await tempRoot()
+    const path = join(memory, 'MEMORY.md')
+    await writeFile(path, Array.from({ length: 20 }, (_, index) => `- line ${index}`).join('\n') + '\n', { mode: 0o600 })
+    const store = new ImpressionStore({ dir, bot: 'bot-a', now: () => AT })
+    await store.load()
+    const many = Array.from({ length: 64 }, (_, index) =>
+      note({ text: `note ${index}`, createdAt: AT + index, updatedAt: AT + index }),
+    )
+    await store.transact('person', 'alice', () => many)
+    const file = join(dir, botDirectoryName('bot-a'), 'person', `${subjectFileName('alice')}.json`)
+    const before = await readFile(file, 'utf8')
+    const result = await importMemory({ store, bot: 'bot-a', config: { path, as: { personId: 'alice' } }, now: AT + 10_000 })
+    expect(result).toEqual({ ok: true, counts: { imported: 0, skipped: 0, overflow: 20, topics: 0 } })
+    const read = await store.read('person', 'alice')
+    if (!read.ok) throw new Error(read.reason)
+    expect(read.records).toHaveLength(64)
+    expect(read.records.map((record) => record.updatedAt)).toEqual(many.map((record) => record.updatedAt))
+    expect(await readFile(file, 'utf8')).toBe(before)
+  })
+
+  test('fills whatever room is left and leaves the file alone afterwards', async () => {
+    const dir = await tempRoot()
+    const memory = await tempRoot()
+    const path = join(memory, 'MEMORY.md')
+    await writeFile(path, Array.from({ length: 5 }, (_, index) => `- line ${index}`).join('\n') + '\n', { mode: 0o600 })
+    const store = new ImpressionStore({ dir, bot: 'bot-a', now: () => AT })
+    await store.load()
+    const many = Array.from({ length: 62 }, (_, index) =>
+      note({ text: `note ${index}`, createdAt: AT + index, updatedAt: AT + index }),
+    )
+    await store.transact('person', 'alice', () => many)
+    const first = await importMemory({ store, bot: 'bot-a', config: { path, as: { personId: 'alice' } }, now: AT + 1 })
+    expect(first).toEqual({ ok: true, counts: { imported: 2, skipped: 0, overflow: 3, topics: 0 } })
+    const file = join(dir, botDirectoryName('bot-a'), 'person', `${subjectFileName('alice')}.json`)
+    const before = await readFile(file, 'utf8')
+    const again = await importMemory({ store, bot: 'bot-a', config: { path, as: { personId: 'alice' } }, now: AT + 9_000 })
+    expect(again).toEqual({ ok: true, counts: { imported: 0, skipped: 0, overflow: 3, topics: 0 } })
+    expect(await readFile(file, 'utf8')).toBe(before)
   })
 })
