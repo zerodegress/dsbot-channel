@@ -56,7 +56,7 @@ export class ForwardLink {
   #lastConnectedAt: number | null = null
   #lastFrameAt = 0
   #warnedSize = false
-  #pings: ReturnType<typeof setInterval>[] = []
+  readonly #pings = new Set<ReturnType<typeof setInterval>>()
 
   constructor(options: ForwardOptions) {
     this.#options = options
@@ -76,7 +76,7 @@ export class ForwardLink {
     if (this.#eventRetry !== undefined) clearTimeout(this.#eventRetry)
     if (this.#beat !== undefined) clearInterval(this.#beat)
     for (const timer of this.#pings) clearInterval(timer)
-    this.#pings = []
+    this.#pings.clear()
     this.#retry = undefined
     this.#eventRetry = undefined
     this.#beat = undefined
@@ -202,12 +202,15 @@ export class ForwardLink {
         socket.close(1001, 'ping timeout')
       }, liveness.timeoutMs)
     }, liveness.intervalMs)
-    this.#pings.push(timer)
+    this.#pings.add(timer)
     socket.on('pong', () => {
       if (waiting !== undefined) clearTimeout(waiting)
       waiting = undefined
     })
-    socket.on('close', () => clearInterval(timer))
+    socket.on('close', () => {
+      clearInterval(timer)
+      this.#pings.delete(timer)
+    })
   }
 
   #settle(): void {
