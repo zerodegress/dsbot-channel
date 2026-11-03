@@ -580,7 +580,9 @@ describe('the one-time import at mount', () => {
     const memoryDir = await tempRoot()
     const path = join(memoryDir, 'MEMORY.md')
     await writeFile(path, '- alice likes tea\n', { mode: 0o600 })
-    await mkdir(join(dir, botDirectoryName('bot-a'), 'person'), { recursive: true, mode: 0o755 })
+    const leaf = join(dir, botDirectoryName('bot-a'), 'person')
+    await mkdir(leaf, { recursive: true, mode: 0o755 })
+    await chmod(leaf, 0o755)
     const mounted = await mount({
       impressions: { dir, import: { path, as: { personId: 'alice' } } },
       identity: bound,
@@ -597,8 +599,8 @@ describe('the one-time import at mount', () => {
     const missing = join(dir, 'nope', 'MEMORY.md')
     const mounted = await mount({ impressions: { dir, import: { path: missing, as: { personId: 'alice' } } }, identity: bound })
     const read = mounted.warnings.filter((line) => line.includes('could not read'))
-const stored = mounted.warnings.filter((line) => line.includes('could not store notes read from'))
-expect(read).toHaveLength(1)
-expect(stored).toHaveLength(0)
+    const stored = mounted.warnings.filter((line) => line.includes('could not store notes read from'))
+    expect(read).toHaveLength(1)
+    expect(stored).toHaveLength(0)
   })
 })

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
@@ -185,7 +185,9 @@ describe('a store that cannot keep the notes', () => {
     const memory = await tempRoot()
     const path = join(memory, 'MEMORY.md')
     await writeFile(path, '- alice likes tea\n', { mode: 0o600 })
-    await mkdir(join(dir, botDirectoryName('bot-a'), 'person'), { recursive: true, mode: 0o755 })
+    const leaf = join(dir, botDirectoryName('bot-a'), 'person')
+    await mkdir(leaf, { recursive: true, mode: 0o755 })
+    await chmod(leaf, 0o755)
     const store = new ImpressionStore({ dir, bot: 'bot-a', now: () => AT })
     await store.load()
     expect(await importMemory({ store, bot: 'bot-a', config: { path, as: { personId: 'alice' } }, now: AT })).toEqual({
