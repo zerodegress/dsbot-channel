@@ -31,6 +31,8 @@ export interface ChannelSnapshot {
   /** Peers that spoke a protocol version this build does not sign. */
   protocolMismatches: number
   lastProtocolMismatchAt: number | null
+  /** Messages refused as stale, by the peer instance that sent them. */
+  staleSentAt: Record<string, number>
   health: ChannelHealth
   sampledAt: number
 }
@@ -49,6 +51,8 @@ export class ChannelStats {
   #authFailures = 0
   #protocolMismatches = 0
   #lastProtocolMismatchAt: number | null = null
+  readonly #staleSentAt = new Map<string, number>()
+  readonly #staleWarned = new Set<string>()
   #emptyTurns = 0
   readonly #sendFailures = new Map<string, number>()
 
@@ -102,6 +106,14 @@ export class ChannelStats {
     this.#emptyTurns += 1
   }
 
+  /** Counts a message refused as stale; true only the first time this instance is warned about. */
+  stale(instance: string): boolean {
+    this.#staleSentAt.set(instance, (this.#staleSentAt.get(instance) ?? 0) + 1)
+    if (this.#staleWarned.has(instance)) return false
+    this.#staleWarned.add(instance)
+    return true
+  }
+
   sendFailed(code: string): void {
     this.#sendFailures.set(code, (this.#sendFailures.get(code) ?? 0) + 1)
   }
@@ -131,6 +143,7 @@ export class ChannelStats {
       authFailures: this.#authFailures,
       protocolMismatches: this.#protocolMismatches,
       lastProtocolMismatchAt: this.#lastProtocolMismatchAt,
+      staleSentAt: Object.fromEntries(this.#staleSentAt),
       health: { emptyTurns: this.#emptyTurns, sendFailures: Object.fromEntries(this.#sendFailures) },
       sampledAt: this.#now(),
     }
@@ -148,6 +161,7 @@ export function countersOf(snapshot: ChannelSnapshot): AdapterCounters {
     unknownPaths: snapshot.unknownPaths,
     underruns: snapshot.underruns,
     protocolMismatches: snapshot.protocolMismatches,
+    staleSentAt: { ...snapshot.staleSentAt },
     sendFailures: { ...snapshot.health.sendFailures },
     lastFailure:
       snapshot.lastFailure === null ? null : { at: snapshot.lastFailure.at, reason: snapshot.lastFailure.reason },

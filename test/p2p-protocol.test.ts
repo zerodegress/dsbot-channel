@@ -467,6 +467,59 @@ describe('sentAt freshness', () => {
     expect(warnings[0]).not.toContain('the body stays out of the log')
   })
 
+  test('warns once per instance about a skewed clock and keeps counting', async () => {
+    const warnings: string[] = []
+    const stats = new ChannelStats(() => NOW)
+    const table = new DedupeTable({ ttlMs: 60_000, limit: 100 })
+    const send = async (sentAt: number) => {
+      const { signature, payload } = sign('hello', sentAt)
+      return handleMessage({
+        config: { ...config, now: () => NOW, warn: (line) => warnings.push(line) },
+        table,
+        auth: { signature, claimedInstance: 'peer-a' },
+        payload,
+        stats,
+      })
+    }
+
+    await send(NOW - 400_000)
+    await send(NOW - 350_000)
+
+    expect(warnings).toHaveLength(1)
+    expect(stats.snapshot().staleSentAt).toEqual({ 'peer-a': 2 })
+    expect(stats.snapshot().lastSkewMs).toBe(-350_000)
+  })
+
+  test('counts each instance that sends a stale message on its own', async () => {
+    const warnings: string[] = []
+    const stats = new ChannelStats(() => NOW)
+    const twoPeers = {
+      ...config,
+      peers: [
+        { instance: 'peer-a', secret: 'P2P_SECRET_A' },
+        { instance: 'peer-b', secret: 'P2P_SECRET_B' },
+      ],
+      credentials: fakeCredentials({ P2P_SECRET_A: 'secret-a', P2P_SECRET_B: 'secret-b' }),
+    }
+    const send = async (instance: string, secret: string) => {
+      const payload = request({ instance, sentAt: NOW - 400_000 })
+      return handleMessage({
+        config: { ...twoPeers, now: () => NOW, warn: (line) => warnings.push(line) },
+        table: new DedupeTable({ ttlMs: 60_000, limit: 100 }),
+        auth: { signature: signEnvelope(secret, payload as unknown as Envelope), claimedInstance: instance },
+        payload,
+        stats,
+      })
+    }
+
+    await send('peer-a', 'secret-a')
+    await send('peer-b', 'secret-b')
+    await send('peer-a', 'secret-a')
+
+    expect(warnings).toHaveLength(2)
+    expect(stats.snapshot().staleSentAt).toEqual({ 'peer-a': 2, 'peer-b': 1 })
+  })
+
   test('the window can be narrowed', async () => {
     expect((await signed(NOW - 2_000, { window: 1_000 })).ok).toBe(false)
     expect((await signed(NOW - 2_000, { window: 5_000 })).ok).toBe(true)

@@ -75,6 +75,7 @@ class DemoAdapter implements ChannelAdapter {
     unknownPaths: 0,
     underruns: 0,
     protocolMismatches: 0,
+    staleSentAt: {},
     sendFailures: {},
     lastFailure: null,
   },

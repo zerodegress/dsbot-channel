@@ -42,6 +42,7 @@ describe('a channel reports its own state', () => {
       unknownPaths: 0,
       authFailures: 0,
       protocolMismatches: 0,
+      staleSentAt: {},
       lastProtocolMismatchAt: null,
       health: { emptyTurns: 0, sendFailures: {} },
       sampledAt: 1_000,

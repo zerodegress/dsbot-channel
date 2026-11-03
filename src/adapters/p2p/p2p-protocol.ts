@@ -238,10 +238,14 @@ export async function handleMessage(input: HandleInput): Promise<HandleResult> {
   const skewMs = request.sentAt - at
   input.stats?.skew(skewMs)
   if (Math.abs(skewMs) > window) {
-    config.warn?.(
-      `dsbot-channel: refused a message from ${verified.instance} for ${config.botName}: ` +
-        `sentAt is ${skewMs}ms from the local clock, outside the ${window}ms window`,
-    )
+    const sender = verified.instance ?? request.instance
+    const firstForInstance = input.stats === undefined || input.stats.stale(sender)
+    if (firstForInstance) {
+      config.warn?.(
+        `dsbot-channel: refused a message from ${sender} for ${config.botName}: ` +
+          `sentAt is ${skewMs}ms from the local clock, outside the ${window}ms window`,
+      )
+    }
     return {
       ok: false,
       status: 403,

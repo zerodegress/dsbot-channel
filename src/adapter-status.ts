@@ -76,6 +76,8 @@ export interface AdapterCounters {
   underruns: number
   /** Peers that spoke a protocol version this build does not accept. */
   protocolMismatches: number
+  /** Messages refused as stale, by the peer instance that sent them. */
+  staleSentAt: Record<string, number>
   /** Outbound failures by the code the send path reported. */
   sendFailures: Record<string, number>
   /** The last failure this transport saw, or null when it has none. */
@@ -155,6 +157,7 @@ export function buildStatus(input: StatusInput): AdapterStatus {
       unknownPaths: input.counters.unknownPaths,
       underruns: input.counters.underruns,
       protocolMismatches: input.counters.protocolMismatches,
+      staleSentAt: { ...input.counters.staleSentAt },
       sendFailures: { ...input.counters.sendFailures },
       lastFailure:
         input.counters.lastFailure === null

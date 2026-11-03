@@ -200,6 +200,37 @@ describe('the replay window a restart reopens', () => {
     expect(typeof epochB).toBe('number')
     expect(epochB).not.toBe(epochA)
   })
+
+  test('a stale message leaves a count in the status, once per instance', async () => {
+    const warnings: string[] = []
+    const adapter = new P2PAdapter(config(0), { warn: (line) => warnings.push(line) })
+    adapter.checkConfig({ maxTurnMs: 120_000 })
+    const handle = await adapter.start({
+      onMessage: async () => ({ ok: true }),
+      resolveSecret: (ref) => Promise.resolve(credentials.resolve(ref).then((one) => one?.value)),
+    })
+    stops.push(handle.stop)
+    const port = instancePort(adapter)
+    const stale = Date.now() - 400_000
+    const staleTo = (eventId: string) =>
+      sendToPeer({
+        peer: { instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${port}` },
+        credentials,
+        to: 'bot-b',
+        body: 'hello',
+        eventId,
+        sender: 'bot-a',
+        instance: 'inst-a',
+        sentAt: stale,
+      })
+
+    expect(await staleTo('evt-stale-1')).toMatchObject({ ok: false })
+    expect(await staleTo('evt-stale-2')).toMatchObject({ ok: false })
+
+    expect(warnings).toHaveLength(1)
+    expect(adapter.status().counters.staleSentAt).toEqual({ 'inst-a': 2 })
+    expect(adapter.status().health).toMatchObject({ lastSkewMs: expect.any(Number) })
+  })
 })
 
 describe('the event key the adapter builds', () => {
