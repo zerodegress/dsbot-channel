@@ -210,7 +210,7 @@ export function mapOneBotEvent(
       isReply: replyTo !== undefined,
       signature: null,
     },
-    declared: { nickname, avatar: '', claimedIdentity: null },
+    declared: { nickname, avatar: '' },
     ...(oversized ? {} : { adapter: payload }),
   })
   return {

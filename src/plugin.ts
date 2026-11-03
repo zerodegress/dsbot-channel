@@ -10,6 +10,8 @@ import { createLedger } from './budget-config.js'
 import type { BudgetConfig } from './budget-config.js'
 import type { Hold } from './budget-ledger.js'
 import { ClosedChains } from './chain-closer.js'
+import { buildIdentity } from './identity.js'
+import type { MountedAccountSpace } from './identity.js'
 import { ContextBuffer, DEFAULT_CONTEXT_CHARS, DEFAULT_CONTEXT_MESSAGES, renderContext } from './context-buffer.js'
 import type { ContextLimits } from './context-buffer.js'
 import { ConfigError, validateConfig } from './config.js'
@@ -79,6 +81,8 @@ export interface ChannelConfig {
   reply?: unknown
   /** How messages arrive at a turn: one by one, or a short window merged into one. */
   turn?: TurnSettings | undefined
+  /** Who an account belongs to: declared bindings, validated at mount. */
+  identity?: unknown
 }
 
 export interface TurnSettings {
@@ -127,6 +131,7 @@ export const Config: any = Schema.object({
   }).default({}),
   /** Nested shape, enum and regex checks live in reply-config; this schema only claims the key. */
   reply: Schema.any(),
+  identity: Schema.any(),
   turn: Schema.object({
     coalesceMs: Schema.number(),
     maxBatch: Schema.number(),
@@ -537,6 +542,8 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   const bots = botScopes(config)
   const pipelines = new SessionPipelines({ bots })
   const channels = mountAdapters(config, settings, warn, registry)
+  // Parsed after the adapters so a binding can be checked against instances that really exist.
+  const identity = buildIdentity(config.identity, accountSpaces(channels), warn)
   checkGuidance(channels)
   checkPrepareSupport(bots, channels)
   const reply = compileReply(config.reply)
@@ -769,6 +776,16 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         mentionFallback: { pending: declaredGroupBots === undefined && !mentionCapable, warned: false },
       }
       const onMessage = async (message: InboundMessage): Promise<InboundVerdict> => {
+        // Identity is a property of the message, so it is stamped before anything may refuse it,
+        // including a malformed source.kind: the account is named by the adapter kind, not by that field.
+        message.author = {
+          ...message.author,
+          personId: identity.resolve({
+            kind: transport.kind,
+            instance: message.source.instance,
+            accountId: message.author.senderId,
+          }),
+        }
         const kindProblem = tokenProblem('source.kind', message.source.kind, SOURCE_KIND_MAX)
         if (kindProblem !== undefined) return { ok: false, code: 'source_kind_invalid', reason: kindProblem }
         if (message.source.kind !== transport.kind) {
@@ -986,6 +1003,19 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
 }
 
 /** Creates every adapter the profile declares, before any of them opens a socket. */
+/** What each mounted adapter says about the instances its accounts can name. */
+function accountSpaces(channels: readonly MountedChannel[]): MountedAccountSpace[] {
+  return channels.map(({ config }) => {
+    const peers = config.transport?.peers
+    const names = Array.isArray(peers)
+      ? peers
+          .map((peer) => (peer !== null && typeof peer === 'object' ? (peer as Record<string, unknown>).instance : undefined))
+          .filter((name): name is string => typeof name === 'string' && name.length > 0)
+      : []
+    return { kind: config.kind ?? 'p2p', instance: config.instance, peers: names }
+  })
+}
+
 function mountAdapters(
   config: ChannelConfig,
   settings: AdapterCheckSettings,

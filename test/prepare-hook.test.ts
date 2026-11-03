@@ -44,7 +44,7 @@ function inbound(one: Queued, kind: string): InboundMessage {
       isReply: false,
       signature: null,
     },
-    declared: { nickname: '', avatar: '', claimedIdentity: null },
+    declared: { nickname: '', avatar: '' },
     adapter: {},
     receivedAt: 1,
   }

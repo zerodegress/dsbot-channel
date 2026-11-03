@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- An `identity` block declares who an account belongs to: `people[]` and `bots[]` name `(kind, instance, accountId)` accounts, and the gateway stamps `author.personId` after the adapters and before admission, overwriting whatever an adapter put there — a rejected message carries it too. A `p2p` or `onebot` binding that names an instance which cannot exist fails the mount; a third-party kind's namespace is unknowable and only warns. The graph is configuration, rebuilt at mount, and `personId` never enters `eventKey`, `contentHash` or `sessionKey`.
 - `send_file` sends on OneBot now: `upload_group_file` or `upload_private_file` with the receiver's `name`, a url only when `transport.fileFromUrl: true` says the implementation takes one (most accept a path on their own host), and no download on our side. The receipt is `file_id`, then `message_id`, then a `local:` id when the platform gives neither. The built-in p2p link carries a url only, so `send_file` answers `unsupported_capability` there; a link travels in the text instead.
 - `read_history` reads earlier messages where the transport can page them: OneBot answers from `get_group_msg_history` and `get_friend_msg_history` when `transport.history` opens that address kind, one page per call, with `next` carrying the cursor for the page before it, and a message that the list ended answering as an empty success rather than a failure.
 - A turn can read the messages it did not answer: `turn.context.messages` keeps that many earlier messages per conversation and puts them in front of the turn as a `[context]` block, while `turn.context.chars` drops the oldest whole message once the text no longer fits. The buffer records every inbound group message after admission, including the ones a policy refused, and leaves out the messages the turn already carries; it is off by default (`messages: 0`) and never holds this bot's own replies.
@@ -39,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- `DeclaredMeta.claimedIdentity` is gone. It was a leftover slot that every adapter filled with `null` and nothing ever read; with identity now declared in the profile, a per-event field that looks like a claim would only invite an adapter to think it can name its sender. It never took part in any decision.
 - `registerAdapter`, `adapterFactory` and `knownAdapterKinds` are gone from the entry. A third-party transport ships as a plugin built with `defineAdapterPlugin({ kind, create })`, which registers with the context's registry when it mounts; the old module-level call would register into one copy's map and leave the gateway's copy empty.
 - `judge` and `push` are gone from `CHARGE_KINDS` and from the point table: nothing charged either kind, the `judge` node cannot be bound in this version, and the push tool never touched the ledger. `points` holds `accepted` and `rejected` only, a turn is always charged as a bot call, and `TurnBilling` no longer takes a `chargeKind`.
 

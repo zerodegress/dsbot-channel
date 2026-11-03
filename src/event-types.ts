@@ -107,7 +107,6 @@ export interface DerivedMeta {
 export interface DeclaredMeta {
   nickname: string
   avatar: string
-  claimedIdentity: string | null
 }
 
 /**
