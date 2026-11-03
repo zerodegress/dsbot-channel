@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, test } from 'vitest'
-import { WebSocketServer } from 'ws'
-import type { WebSocket } from 'ws'
+import { WebSocketServer, WebSocket } from 'ws'
 import type { AddressInfo } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
 import { registryPlugin } from '../src/registry-plugin.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
+import { createServer } from 'node:http'
 
 const REF = '{{SECRET_ws_e2e}}'
 const TOKEN = 'shared-value'
@@ -120,6 +120,17 @@ async function waitFor(check: () => boolean, timeoutMs = 4000): Promise<void> {
   }
 }
 
+async function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const probe = createServer()
+    probe.once('error', reject)
+    probe.listen(0, '127.0.0.1', () => {
+      const port = (probe.address() as AddressInfo).port
+      probe.close(() => resolve(port))
+    })
+  })
+}
+
 afterEach(async () => {
   while (mounted.length > 0) await mounted.pop()!.close()
 })
@@ -155,11 +166,86 @@ describe('OneBot over a forward websocket', () => {
     await waitFor(() => one.sockets[0] !== undefined)
   })
 
-  test('the status route is not listening, and health reports the socket', async () => {
-    const one = await mountForward()
-    await waitFor(() => one.sockets.length === 1)
-    const status = (one.ctx as unknown as { get: (name: string) => unknown }).get('dsbot-channel.status')
-    void status
-    expect(one.actions).toEqual([])
+  test('a client that dials us sends an event, runs a turn, and reads the reply as an action', async () => {
+    const port = await freePort()
+    const prompted: string[] = []
+    const actions: { action: string; params: Record<string, unknown>; echo: string }[] = []
+    const ctx = new Context()
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', {
+          create: () => Promise.resolve({ sessionId: 'session-1' }),
+          prompt: (request: { sessionId: string; content: readonly { text?: string }[] }) => {
+            prompted.push(request.content.map((part) => part.text ?? '').join(''))
+            const emit = (event: unknown): void => {
+              ctx.emit('session/event', { id: request.sessionId } as never, event as never)
+            }
+            emit({ type: 'turn/start' })
+            emit({ type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'a reply' }] } } })
+            emit({ type: 'turn/end' })
+            return Promise.resolve({ accepted: true })
+          },
+        })
+      },
+    })
+    await ctx.plugin(registryPlugin)
+    const fork = await ctx.plugin(entry, {
+      adapters: [
+        {
+          kind: 'onebot',
+          channel: 'onebot:a',
+          instance: 'inst-a',
+          botName: 'bot-a',
+          policy: {},
+          transport: {
+            protocol: 'ws-reverse',
+            listen: { host: '127.0.0.1', port },
+            accessToken: REF,
+            bots: [],
+          },
+        },
+      ],
+    })
+
+    const client = new WebSocket(`ws://127.0.0.1:${port}/onebot/ws`, {
+      headers: { authorization: `Bearer ${TOKEN}`, 'x-self-id': '10001' },
+    })
+    client.on('message', (raw: Buffer) => {
+      const frame = JSON.parse(raw.toString()) as { action?: string; params?: Record<string, unknown>; echo?: string }
+      if (frame.action === undefined || frame.echo === undefined) return
+      actions.push({ action: frame.action, params: frame.params ?? {}, echo: frame.echo })
+      client.send(JSON.stringify({ status: 'ok', retcode: 0, data: { message_id: 77 }, echo: frame.echo }))
+    })
+    await new Promise<void>((resolve, reject) => {
+      client.once('open', () => resolve())
+      client.once('error', reject)
+    })
+
+    client.send(
+      JSON.stringify({
+        post_type: 'message',
+        message_type: 'group',
+        sub_type: 'normal',
+        self_id: 10001,
+        message_id: 502,
+        user_id: 20002,
+        group_id: 30003,
+        time: 1_700_000_000,
+        sender: { nickname: 'peer' },
+        message: [{ type: 'text', data: { text: 'ping to us' } }],
+      }),
+    )
+
+    await waitFor(() => prompted.length === 1)
+    expect(prompted[0]).toContain('ping to us')
+    await waitFor(() => actions.length >= 1)
+    expect(actions[0]).toMatchObject({ action: 'send_group_msg', params: { group_id: '30003' } })
+
+    client.terminate()
+    await fork.dispose()
   })
 })

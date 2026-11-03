@@ -167,4 +167,49 @@ describe('the forward websocket link', () => {
     await waitFor(() => warnings.length === 1)
     expect(warnings[0]).toContain('size limit')
   })
+
+  test('a backoff window is reported as reconnecting, not as offline', async () => {
+    const harness = await serve((socket, index) => {
+      if (index === 0) setTimeout(() => socket.terminate(), 20)
+    })
+    const one = link(harness.url, { reconnect: { initialMs: 200, maxMs: 200, factor: 1 } })
+
+    await waitFor(() => one.health().state === 'reconnecting', 3000)
+    expect(one.health().lastFailure).not.toBeNull()
+  })
+
+  test('online needs the event socket too when one is named', async () => {
+    const api = await serve()
+    const dead = await serve()
+    const deadPort = dead.url.split(':').pop()
+    await dead.close()
+    servers.splice(servers.indexOf(dead), 1)
+
+    const one = link(api.url, { eventUrl: `ws://127.0.0.1:${deadPort}/onebot/event` })
+    await waitFor(() => api.sockets.length === 1)
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(one.health().state).not.toBe('online')
+  })
+
+  test('the event socket does not outlive the api socket', async () => {
+    const api = await serve((socket) => setTimeout(() => socket.terminate(), 30))
+    const events = await serve()
+    const one = link(api.url, { eventUrl: events.url, reconnect: false })
+    await waitFor(() => events.sockets.length >= 1)
+    await waitFor(() => one.health().state === 'offline', 3000)
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(events.sockets.length).toBe(1)
+  })
+
+  test('a frame above the limit closes the socket it arrived on, not the other one', async () => {
+    const api = await serve()
+    const events = await serve()
+    const one = link(api.url, { eventUrl: events.url, maxFrameBytes: 32 })
+    await waitFor(() => one.health().state === 'online', 3000)
+    expect(one.health().state).toBe('online')
+
+    events.sockets[0]!.send(JSON.stringify({ post_type: 'message', padding: 'x'.repeat(128) }))
+    await waitFor(() => events.sockets[0]?.readyState !== 1, 3000)
+    await waitFor(() => api.sockets[0]?.readyState === 1)
+  })
 })

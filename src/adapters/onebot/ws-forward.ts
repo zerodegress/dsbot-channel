@@ -31,8 +31,11 @@ export class ForwardLink {
   readonly #pending = new Map<string, { resolve: (answer: ActionAnswer) => void; timer: ReturnType<typeof setTimeout> }>()
   #api: WebSocket | undefined
   #events: WebSocket | undefined
+  #apiOpen = false
+  #eventsOpen = false
   #closed = false
   #retry: ReturnType<typeof setTimeout> | undefined
+  #eventRetry: ReturnType<typeof setTimeout> | undefined
   #beat: ReturnType<typeof setInterval> | undefined
   #attempt = 0
   #reconnects = 0
@@ -58,8 +61,10 @@ export class ForwardLink {
   close(): void {
     this.#closed = true
     if (this.#retry !== undefined) clearTimeout(this.#retry)
+    if (this.#eventRetry !== undefined) clearTimeout(this.#eventRetry)
     if (this.#beat !== undefined) clearInterval(this.#beat)
     this.#retry = undefined
+    this.#eventRetry = undefined
     this.#beat = undefined
     for (const [, pending] of this.#pending) {
       clearTimeout(pending.timer)
@@ -70,6 +75,8 @@ export class ForwardLink {
     this.#events?.close()
     this.#api = undefined
     this.#events = undefined
+    this.#apiOpen = false
+    this.#eventsOpen = false
     this.#state = 'offline'
   }
 
@@ -119,10 +126,11 @@ export class ForwardLink {
       if (this.#lastConnectedAt !== null) this.#reconnects += 1
       this.#lastConnectedAt = this.#now()
       this.#lastFrameAt = this.#now()
-      this.#state = 'online'
-      this.#openEvents()
+      this.#apiOpen = true
+      if (this.#options.eventUrl !== undefined) this.#openEvents()
+      this.#settle()
     })
-    socket.on('message', (raw: WebSocket.RawData) => this.#onFrame(raw))
+    socket.on('message', (raw: WebSocket.RawData) => this.#onFrame(socket, raw))
     socket.on('close', (code: number) => this.#dropped(`the forward socket closed with ${code}`))
     socket.on('error', (error: Error) => {
       this.#lastFailure = error.message
@@ -130,17 +138,29 @@ export class ForwardLink {
     })
   }
 
+  /** Opens the event socket only while the api socket is up; it has no life of its own. */
   #openEvents(): void {
     const url = this.#options.eventUrl
-    if (url === undefined || this.#events !== undefined) return
+    if (url === undefined || this.#events !== undefined || this.#eventRetry !== undefined) return
+    if (this.#api === undefined || this.#api.readyState !== WebSocket.OPEN) return
     const socket = new WebSocket(url, {
       ...(this.#options.token === undefined ? {} : { headers: { authorization: `Bearer ${this.#options.token}` } }),
     })
     this.#events = socket
-    socket.on('message', (raw: WebSocket.RawData) => this.#onFrame(raw))
+    socket.on('open', () => {
+      this.#eventsOpen = true
+      this.#settle()
+    })
+    socket.on('message', (raw: WebSocket.RawData) => this.#onFrame(socket, raw))
     socket.on('close', () => {
       this.#events = undefined
-      if (!this.#closed) setTimeout(() => this.#openEvents(), this.#options.reconnect === false ? 0 : 1000)
+      this.#eventsOpen = false
+      this.#settle()
+      if (this.#closed || this.#api === undefined) return
+      this.#eventRetry = setTimeout(() => {
+        this.#eventRetry = undefined
+        this.#openEvents()
+      }, 1000)
     })
     socket.on('error', (error: Error) => {
       this.#lastFailure = error.message
@@ -148,14 +168,28 @@ export class ForwardLink {
     })
   }
 
-  #onFrame(raw: WebSocket.RawData): void {
+  /** Online means every socket this profile needs is open; anything else says why it is not. */
+  #settle(): void {
+    if (this.#closed) {
+      this.#state = 'offline'
+      return
+    }
+    const needsEvents = this.#options.eventUrl !== undefined
+    if (this.#apiOpen && (!needsEvents || this.#eventsOpen)) {
+      this.#state = 'online'
+      return
+    }
+    this.#state = this.#retry !== undefined || this.#eventRetry !== undefined ? 'reconnecting' : 'offline'
+  }
+
+  #onFrame(socket: WebSocket, raw: WebSocket.RawData): void {
     const bytes = Array.isArray(raw)
       ? Buffer.concat(raw)
       : Buffer.isBuffer(raw)
         ? raw
         : Buffer.from(new Uint8Array(raw as ArrayBuffer))
     if (bytes.length > this.#options.maxFrameBytes) {
-      this.#api?.close(1009, 'frame too large')
+      socket.close(1009, 'frame too large')
       if (!this.#warnedSize) {
         this.#warnedSize = true
         this.#options.warn('dsbot-channel: closed the onebot socket: a frame exceeded the size limit')
@@ -202,9 +236,10 @@ export class ForwardLink {
   }
 
   #dropped(reason: string): void {
-    this.#state = 'offline'
     this.#lastFailure = reason
     this.#lastFailureAt = this.#now()
+    this.#apiOpen = false
+    this.#eventsOpen = false
     for (const [, pending] of this.#pending) {
       clearTimeout(pending.timer)
       pending.resolve({ ok: false, code: 'unreachable', reason })
@@ -213,11 +248,17 @@ export class ForwardLink {
     this.#api = undefined
     this.#events?.close()
     this.#events = undefined
+    if (this.#eventRetry !== undefined) clearTimeout(this.#eventRetry)
+    this.#eventRetry = undefined
     const retry = this.#options.reconnect
-    if (this.#closed || retry === false) return
+    if (this.#closed || retry === false) {
+      this.#state = 'offline'
+      return
+    }
     const base = Math.min(retry.initialMs * retry.factor ** this.#attempt, retry.maxMs)
     const jittered = Math.round(base * (0.8 + Math.random() * 0.4))
     this.#attempt += 1
+    this.#state = 'reconnecting'
     this.#retry = setTimeout(() => {
       this.#retry = undefined
       if (!this.#closed) this.#dial()
