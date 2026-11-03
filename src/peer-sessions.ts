@@ -98,7 +98,7 @@ export class PeerSessions {
     this.#agentPreset = options.agentPreset
   }
 
-  /** Stops every turn in flight and drops what the bridge held; safe to call more than once. */
+  /** Stops every turn in flight and rejects the turns asked for afterwards; safe to call more than once. */
   dispose(): void {
     if (this.#disposed) return
     this.#disposed = true
