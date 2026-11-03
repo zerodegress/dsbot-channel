@@ -395,6 +395,108 @@ describe('two adapters in one process', () => {
   })
 })
 
+describe('flushing the session log', () => {
+  class StubPersistence {
+    flushes = 0
+    fail = false
+
+    flush(): Promise<void> {
+      this.flushes += 1
+      return this.fail ? Promise.reject(new Error('the flush failed')) : Promise.resolve()
+    }
+  }
+
+  async function mount(): Promise<{
+    ctx: Context
+    sessions: StubSessions
+    portB: number
+    persistence: StubPersistence
+  }> {
+    const ctx = new Context()
+    captureWarnings(ctx)
+    const persistence = new StubPersistence()
+    const sessions = new StubSessions(ctx)
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', sessions)
+        scope.provide('sessionPersistence')
+        scope.set('sessionPersistence', persistence)
+      },
+    })
+    const adapter = (
+      channel: string,
+      instance: string,
+      botName: string,
+      peerInstance: string,
+      port: number,
+      peerPort: number,
+    ) => ({
+      channel,
+      instance,
+      botName,
+      transport: {
+        peers: [{ instance: peerInstance, secret: REF, url: `http://127.0.0.1:${peerPort}` }],
+        listen: { host: '127.0.0.1', port },
+      },
+    })
+    await ctx.plugin(registryPlugin)
+    const mounted = await mountWithPorts(ctx, ([portA, portB]) => ({
+      adapters: [
+        adapter('p2p:a', 'inst-a', 'bot-a', 'inst-b', portA, portB),
+        adapter('p2p:b', 'inst-b', 'bot-b', 'inst-a', portB, portA),
+      ],
+    }))
+    return { ctx, sessions, portB: mounted.portB, persistence }
+  }
+
+  test('flushes the log once after a reply is delivered', async () => {
+    const mounted = await mount()
+
+    const sent = await sendToPeer({
+      peer: { instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${mounted.portB}` },
+      credentials,
+      to: 'bot-b',
+      body: 'hello',
+      eventId: 'evt-flush-1',
+      sender: 'bot-a',
+      instance: 'inst-a',
+    })
+    expect(sent).toMatchObject({ ok: true })
+
+    await waitFor(() => mounted.sessions.prompted.length >= 2)
+    await waitFor(() => mounted.persistence.flushes >= 1)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(mounted.persistence.flushes).toBe(1)
+  })
+
+  test('warns and counts a failed flush without losing the reply', async () => {
+    const mounted = await mount()
+    mounted.persistence.fail = true
+
+    const sent = await sendToPeer({
+      peer: { instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${mounted.portB}` },
+      credentials,
+      to: 'bot-b',
+      body: 'hello',
+      eventId: 'evt-flush-2',
+      sender: 'bot-a',
+      instance: 'inst-a',
+    })
+    expect(sent).toMatchObject({ ok: true })
+
+    await waitFor(() => mounted.sessions.prompted.length >= 2)
+    await waitFor(() => warnings.some((line) => line.includes('could not be flushed')))
+
+    const status = mounted.ctx.get('dsbot-channel.status') as { snapshot(): { flushFailures?: number } }
+    expect(status.snapshot().flushFailures).toBe(1)
+    expect(mounted.persistence.flushes).toBe(1)
+  })
+})
+
 describe('a mount that loses the port race', () => {
   test('the attempt that hit a taken port leaves no log line behind', async () => {
     const taken = await freePort()

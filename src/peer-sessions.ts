@@ -61,6 +61,11 @@ export class TurnTimeoutError extends Error {
   }
 }
 
+/** One turn the bridge is waiting on; aborting it settles the wait, not just the signal. */
+interface RunningTurn {
+  abort(error: Error): void
+}
+
 function textOf(content: readonly SessionMessagePart[] | undefined): string {
   if (content === undefined) return ''
   let text = ''
@@ -80,6 +85,9 @@ export class PeerSessions {
   readonly #agentPreset: string | undefined
   readonly #sessions = new Map<string, Promise<string>>()
   readonly #tail = new Map<string, Promise<void>>()
+  readonly #running = new Set<RunningTurn>()
+  readonly #detachers = new Set<() => void>()
+  #disposed = false
 
   constructor(options: PeerSessionsOptions) {
     this.#controller = options.controller
@@ -90,8 +98,21 @@ export class PeerSessions {
     this.#agentPreset = options.agentPreset
   }
 
+  /** Stops every turn in flight and drops what the bridge held; safe to call more than once. */
+  dispose(): void {
+    if (this.#disposed) return
+    this.#disposed = true
+    const error = new Error('the peer sessions were disposed')
+    for (const running of [...this.#running]) running.abort(error)
+    this.#running.clear()
+    for (const detach of [...this.#detachers]) detach()
+    this.#sessions.clear()
+    this.#tail.clear()
+  }
+
   /** Creates the peer session once and hands the same identity to every later turn. */
   sessionFor(peer: string): Promise<string> {
+    if (this.#disposed) return Promise.reject(new Error('the peer sessions were disposed'))
     if (this.#session !== undefined) return Promise.resolve(this.#session)
     const cached = this.#sessions.get(peer)
     if (cached !== undefined) return cached
@@ -116,6 +137,7 @@ export class PeerSessions {
 
   /** Queues a turn behind the peer's previous one so replies stay attributable. */
   runTurn(input: PeerTurnInput): Promise<PeerTurn> {
+    if (this.#disposed) return Promise.reject(new Error('the peer sessions were disposed'))
     const previous = this.#tail.get(input.peer) ?? Promise.resolve()
     const run = previous.then(
       () => this.#runTurn(input),
@@ -133,7 +155,9 @@ export class PeerSessions {
   }
 
   async #runTurn(input: PeerTurnInput): Promise<PeerTurn> {
+    if (this.#disposed) throw new Error('the peer sessions were disposed')
     const sessionId = await this.sessionFor(input.peer)
+    if (this.#disposed) throw new Error('the peer sessions were disposed')
     const texts: string[] = []
     let started = false
     let settle = (): void => {}
@@ -162,7 +186,26 @@ export class PeerSessions {
       }
       if (event.type === 'turn/end') settle()
     })
+    let detached = false
+    const detach = (): void => {
+      if (detached) return
+      detached = true
+      this.#detachers.delete(detach)
+      stop()
+    }
+    this.#detachers.add(detach)
     const cancelled = new AbortController()
+    let fail: (error: Error) => void = () => {}
+    const closed = new Promise<never>((_, reject) => {
+      fail = reject
+    })
+    const running: RunningTurn = {
+      abort(error: Error) {
+        cancelled.abort(error)
+        fail(error)
+      },
+    }
+    this.#running.add(running)
     let timer: ReturnType<typeof setTimeout> | undefined
     const expired = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
@@ -180,10 +223,11 @@ export class PeerSessions {
     })()
     void delivered.catch(() => undefined)
     try {
-      await Promise.race([delivered, expired])
+      await Promise.race([delivered, expired, closed])
     } finally {
       if (timer !== undefined) clearTimeout(timer)
-      stop()
+      this.#running.delete(running)
+      detach()
     }
     return { sessionId, requestId: input.requestId, text: texts.join('\n') }
   }

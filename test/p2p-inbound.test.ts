@@ -366,3 +366,75 @@ describe('peer sessions', () => {
     expect(controller.creates).toHaveLength(2)
   })
 })
+
+describe('disposing the bridge', () => {
+  test('cancels the turn it is waiting on', async () => {
+    const { controller, events, bridge } = harness()
+    controller.onPrompt = (request) => events.emit(request.sessionId, { type: 'turn/start' })
+
+    const running = bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })
+    await flush()
+    expect(controller.prompts).toHaveLength(1)
+
+    bridge.dispose()
+
+    await expect(running).rejects.toThrow('the peer sessions were disposed')
+    expect(controller.prompts[0]?.signal.aborted).toBe(true)
+    expect(events.size).toBe(0)
+  })
+
+  test('cancels a queued turn before it prompts', async () => {
+    const { controller, events, bridge } = harness()
+    controller.onPrompt = (request) => events.emit(request.sessionId, { type: 'turn/start' })
+
+    const first = bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'one' })
+    await flush()
+    const second = bridge.runTurn({ peer: 'peer-a', requestId: 'evt-2', text: 'two' })
+    await flush()
+    expect(controller.prompts).toHaveLength(1)
+
+    bridge.dispose()
+
+    await expect(first).rejects.toThrow('the peer sessions were disposed')
+    await expect(second).rejects.toThrow('the peer sessions were disposed')
+    expect(controller.prompts).toHaveLength(1)
+  })
+
+  test('is idempotent and detaches every observer it registered', async () => {
+    const { controller, events, bridge } = harness()
+    controller.onPrompt = (request) => events.emit(request.sessionId, { type: 'turn/start' })
+
+    const running = bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })
+    await flush()
+
+    bridge.dispose()
+    bridge.dispose()
+
+    await expect(running).rejects.toThrow('the peer sessions were disposed')
+    expect(events.size).toBe(0)
+  })
+
+  test('refuses a turn asked for after it was disposed', async () => {
+    const { controller, bridge } = harness()
+
+    bridge.dispose()
+
+    await expect(bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })).rejects.toThrow(
+      'the peer sessions were disposed',
+    )
+    await expect(bridge.sessionFor('peer-a')).rejects.toThrow('the peer sessions were disposed')
+    expect(controller.creates).toHaveLength(0)
+  })
+
+  test('a turn that finishes normally leaves nothing behind', async () => {
+    const { controller, events, bridge } = harness()
+    controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['ok'])
+
+    await expect(bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })).resolves.toMatchObject({
+      text: 'ok',
+    })
+
+    bridge.dispose()
+    expect(events.size).toBe(0)
+  })
+})
