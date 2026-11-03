@@ -1070,6 +1070,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
           }
           setTimer(() => {
             void runTurn(runtime, first, sessionId, batch.slice(1)).catch((error: unknown) => {
+              if (runtime.sessions.disposed) return
               turns.failed()
               turns.close({
                 eventKey: first.eventKey,

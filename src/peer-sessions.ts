@@ -110,6 +110,11 @@ export class PeerSessions {
     this.#tail.clear()
   }
 
+  /** Whether dispose ran; a disposed bridge refuses every later turn. */
+  get disposed(): boolean {
+    return this.#disposed
+  }
+
   /** Creates the peer session once and hands the same identity to every later turn. */
   sessionFor(peer: string): Promise<string> {
     if (this.#disposed) return Promise.reject(new Error('the peer sessions were disposed'))

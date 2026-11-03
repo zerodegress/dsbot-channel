@@ -45,7 +45,7 @@ async function contextWithCredentials(): Promise<Context> {
 async function contextWithSessions(
   controller: {
     create: () => Promise<{ sessionId: string }>
-    prompt: (request: unknown, signal: AbortSignal) => Promise<never>
+    prompt: (request: unknown, signal: AbortSignal) => Promise<unknown>
   },
   persistence?: { flush: () => Promise<void> },
 ): Promise<Context> {
@@ -231,6 +231,13 @@ describe('unloading while a turn is in flight', () => {
         return new Promise<never>(() => undefined)
       },
     })
+    const warnings: string[] = []
+    ctx.logger.exporter({
+      levels: { default: 3 },
+      export(message: { args: unknown[] }) {
+        warnings.push(message.args.map((arg) => String(arg)).join(' '))
+      },
+    })
     await ctx.plugin(registryPlugin)
     const fork = await ctx.plugin(entry.default, config())
     const port = (ctx.get('dsbot-channel.peers') as Listener[])[0]!.address().port
@@ -243,6 +250,30 @@ describe('unloading while a turn is in flight', () => {
     expect(signals[0]?.aborted).toBe(true)
     await new Promise((resolve) => setTimeout(resolve, 30))
     expect(prompts).toHaveLength(1)
+    expect(warnings.filter((line) => line.includes('the peer sessions were disposed'))).toEqual([])
+  })
+
+  test('still warns about a turn that fails for its own reason', async () => {
+    const ctx = await contextWithSessions({
+      create: () => Promise.resolve({ sessionId: 'session-1' }),
+      prompt: () => Promise.reject(new Error('the session could not run this turn')),
+    })
+    const warnings: string[] = []
+    ctx.logger.exporter({
+      levels: { default: 3 },
+      export(message: { args: unknown[] }) {
+        warnings.push(message.args.map((arg) => String(arg)).join(' '))
+      },
+    })
+    await ctx.plugin(registryPlugin)
+    const fork = await ctx.plugin(entry.default, config())
+    const port = (ctx.get('dsbot-channel.peers') as Listener[])[0]!.address().port
+
+    expect(await post(port, message)).toBe(200)
+    await waitFor(() => warnings.some((line) => line.includes('peer turn for')))
+
+    expect(warnings.some((line) => line.includes('the session could not run this turn'))).toBe(true)
+    await fork.dispose()
   })
 })
 
