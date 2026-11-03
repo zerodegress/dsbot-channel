@@ -9,7 +9,7 @@ A message gateway for ds-bot: events from several external platforms reach one b
 ## Requirements
 
 - Node.js `^20.19.0` or `>=22.12.0`, and pnpm
-- The host services: credentials (adapter secrets), session controller (turns), tools (tool mode)
+- The host services: credentials (adapter secrets), session controller (turns), tools (tool mode and the impression tools)
 
 Tested against DS-Bot 0.2.x (0.2.5 at the time of this release); later releases are not guaranteed.
 
@@ -51,7 +51,7 @@ config:
 
 `channel`, `instance`, `botName` and `transport` are required, and `channel` must be unique. `kind` defaults to `p2p`; `onebot` is the other built-in, and a third-party transport registers as `x-[a-z0-9-]+`, at most 32 characters. `secret` and `accessToken` are reference names in the host credentials service, not the secrets themselves.
 
-The impression library is off until `impressions.dir` names an absolute directory outside the repository. Each bot then keeps one JSON file per subject under `<dir>/<sha256(botName)>/`, `0600` under `0700`, replaced by an atomic rename. `impression_put`, `impression_get` and `impression_forget` only act on the person this turn answers or, with `about: "group"`, on the group; every note carries the messages that support it, and `impression_get` reports the confidence left after its 90-day half-life.
+The impression library is off until `impressions.dir` names an absolute directory; point it outside this repository, because it holds notes, not sources. Each bot then keeps one JSON file per subject under `<dir>/<sha256(botName)>/`, `0600` under `0700`, replaced by an atomic rename. `impression_put`, `impression_get` and `impression_forget` only act on the person this turn answers or, with `about: "group"`, on the group; every note carries the messages that support it, and `impression_get` reports the confidence left after its 90-day half-life.
 
 | Field | Default | Meaning |
 | --- | --- | --- |
