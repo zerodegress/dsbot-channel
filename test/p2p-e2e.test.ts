@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
-import { adapterPorts, boundPort, freePortPair, withPortRetry } from './ports.js'
+import { adapterPorts, boundPort, freePort, freePortPair, withPortRetry } from './ports.js'
 import { sendToPeer } from '../src/adapters/p2p/p2p-send.js'
 import { PEER_GUIDANCE } from '../src/adapters/p2p/guidance.js'
 
@@ -41,6 +41,22 @@ function captureWarnings(ctx: Context): void {
       warnings.push(message.args.map((arg) => String(arg)).join(' '))
     },
   })
+}
+
+/** Drops the lines a mount attempt logged once it loses the port race, before the next attempt runs. */
+function discardWarningsFrom(mark: number): () => void {
+  return () => {
+    warnings.length = mark
+  }
+}
+
+/** Runs a mount on a free port pair; an attempt that lost the race leaves no log lines behind. */
+function withFreePorts<T>(
+  run: (pair: [number, number]) => Promise<T>,
+  ports: () => Promise<[number, number]> = freePortPair,
+): Promise<T> {
+  const mark = warnings.length
+  return withPortRetry(ports, run, discardWarningsFrom(mark))
 }
 
 class StubSessions {
@@ -110,7 +126,7 @@ afterEach(async () => {
 
 describe('two adapters in one process', () => {
   test('a message runs a turn and the reply comes back to the sender', async () => {
-    const mounted = await withPortRetry(freePortPair, async ([portA, portB]) => {
+    const mounted = await withFreePorts(async ([portA, portB]) => {
       const ctx = new Context()
       captureWarnings(ctx)
       const sessions = new StubSessions(ctx)
@@ -252,7 +268,7 @@ describe('two adapters in one process', () => {
   })
 
   test('a peer without a url comes back as no_url instead of silence', async () => {
-    const mounted = await withPortRetry(freePortPair, async ([portA, portB]) => {
+    const mounted = await withFreePorts(async ([portA, portB]) => {
       const ctx = new Context()
       captureWarnings(ctx)
       const sessions = new StubSessions(ctx, 2)
@@ -379,6 +395,68 @@ describe('two adapters in one process', () => {
   })
 })
 
+describe('a mount that loses the port race', () => {
+  test('the attempt that hit a taken port leaves no log line behind', async () => {
+    const taken = await freePort()
+    const blocker = createServer()
+    await new Promise<void>((resolve) => blocker.listen(taken, '127.0.0.1', resolve))
+    try {
+      const ctx = new Context()
+      captureWarnings(ctx)
+      const sessions = new StubSessions(ctx)
+      await ctx.plugin({
+        name: 'probe-services',
+        apply(scope: Context) {
+          scope.provide('credentials')
+          scope.set('credentials', credentials)
+          scope.provide('sessionController')
+          scope.set('sessionController', sessions)
+        },
+      })
+      await ctx.plugin(registryPlugin)
+      ctx.logger.warn('logged before the mount')
+      let round = 0
+      const ports = async (): Promise<[number, number]> => {
+        round += 1
+        return round === 1 ? [taken, await freePort()] : freePortPair()
+      }
+      const mounted = await withFreePorts(async ([portA, portB]) => {
+        ctx.logger.warn(`attempt on ${portA}`)
+        const fork = await ctx.plugin(entry, {
+          adapters: [
+            {
+              channel: 'p2p:a',
+              instance: 'inst-a',
+              botName: 'bot-a',
+              transport: {
+                peers: [{ instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${portB}` }],
+                listen: { host: '127.0.0.1', port: portA },
+              },
+            },
+            {
+              channel: 'p2p:b',
+              instance: 'inst-b',
+              botName: 'bot-b',
+              transport: {
+                peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${portA}` }],
+                listen: { host: '127.0.0.1', port: portB },
+              },
+            },
+          ],
+        })
+        forks.push(fork)
+        return { fork, portA, portB }
+      }, ports)
+
+      expect(mounted.portA).not.toBe(taken)
+      expect(warnings).toContain('logged before the mount')
+      expect(warnings.filter((line) => line.startsWith('attempt on '))).toEqual([`attempt on ${mounted.portA}`])
+    } finally {
+      await new Promise<void>((resolve) => blocker.close(() => resolve()))
+    }
+  })
+})
+
 describe('reporting failures', () => {
   test('a log sink that throws does not break the round trip', async () => {
     const ctx = new Context()
@@ -453,7 +531,7 @@ async function pair(
     turn?: { coalesceMs: number; maxBatch?: number; maxChars?: number }
   } = {},
 ) {
-  return withPortRetry(freePortPair, async ([portA, portB]) => {
+  return withFreePorts(async ([portA, portB]) => {
     const ctx = new Context()
     captureWarnings(ctx)
     const sessions = new StubSessions(ctx, 99)
@@ -518,7 +596,7 @@ async function mountWithPorts(
   ctx: Context,
   build: (pair: [number, number]) => unknown,
 ): Promise<{ fork: { dispose(): Promise<void> }; portA: number; portB: number }> {
-  return withPortRetry(freePortPair, async ([portA, portB]) => {
+  return withFreePorts(async ([portA, portB]) => {
     const fork = await ctx.plugin(entry, build([portA, portB]) as never)
     forks.push(fork)
     const failurePorts = adapterPorts(ctx)
@@ -620,7 +698,7 @@ describe('the send_text tool', () => {
     portB: number
     ctx: Context
   }> {
-    return withPortRetry(freePortPair, async ([portA, portB]) => {
+    return withFreePorts(async ([portA, portB]) => {
       const ctx = new Context()
       captureWarnings(ctx)
       const sessions = new StubSessions(ctx, 99)

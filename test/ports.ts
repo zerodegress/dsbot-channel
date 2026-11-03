@@ -41,10 +41,12 @@ function report(error: unknown): string {
 /**
  * Re-tries a test mount when the probe port was taken between close and bind.
  * Only EADDRINUSE is caught; this compensates that window, it does not retry assertions.
+ * `discard` runs on every lost attempt before the next one starts.
  */
 export async function withPortRetry<T>(
   ports: () => Promise<[number, number]>,
   run: (pair: [number, number]) => Promise<T>,
+  discard?: () => void,
 ): Promise<T> {
   const attempts: { ports: [number, number]; error: string }[] = []
   for (let attempt = 0; attempt < 4; attempt += 1) {
@@ -54,6 +56,7 @@ export async function withPortRetry<T>(
     } catch (error) {
       attempts.push({ ports: pair, error: report(error) })
       if (codeOf(error) !== 'EADDRINUSE') throw error
+      discard?.()
     }
   }
   throw new Error(`mount kept hitting a busy port: ${JSON.stringify(attempts)}`)
