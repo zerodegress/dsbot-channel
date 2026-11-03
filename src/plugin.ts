@@ -543,8 +543,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   const pipelines = new SessionPipelines({ bots })
   const channels = mountAdapters(config, settings, warn, registry)
   // Parsed after the adapters so a binding can be checked against instances that really exist.
-  // The graph is built (and therefore validated) here; stamping it on messages comes next.
-  buildIdentity(config.identity, accountSpaces(channels), warn)
+  const identity = buildIdentity(config.identity, accountSpaces(channels), warn)
   checkGuidance(channels)
   checkPrepareSupport(bots, channels)
   const reply = compileReply(config.reply)
@@ -779,6 +778,12 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
       const onMessage = async (message: InboundMessage): Promise<InboundVerdict> => {
         const kindProblem = tokenProblem('source.kind', message.source.kind, SOURCE_KIND_MAX)
         if (kindProblem !== undefined) return { ok: false, code: 'source_kind_invalid', reason: kindProblem }
+        // Identity is a property of the message, so it is stamped before anything may refuse it.
+        message.author.personId = identity.resolve({
+          kind: transport.kind,
+          instance: message.source.instance,
+          accountId: message.author.senderId,
+        })
         if (message.source.kind !== transport.kind) {
           return {
             ok: false,
