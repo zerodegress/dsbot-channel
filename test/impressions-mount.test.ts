@@ -64,6 +64,19 @@ function message(eventKey: string): InboundMessage {
 
 class StubAdapter implements ChannelAdapter {
   readonly kind = 'x-group'
+  /** A third-party transport that cannot name the scope of its session keys. */
+  sessionScope?: (key: string) => 'group' | 'c2c' | 'p2p' | undefined
+
+  constructor(scopeless = false) {
+    if (!scopeless) {
+      this.sessionScope = (key) => {
+        if (key.startsWith('group:')) return 'group'
+        if (key.startsWith('peer:')) return 'c2c'
+        if (key.startsWith('p2p:')) return 'p2p'
+        return undefined
+      }
+    }
+  }
   readonly guidance = { peer: 'peer guidance', group: 'group guidance' }
   readonly capabilities = {
     text: true,
@@ -142,6 +155,7 @@ async function mount(
     withTools?: boolean
     identity?: unknown
     turn?: unknown
+    scopelessAdapter?: boolean
     gate?: { started: () => void; done: Promise<void> }
   } = {},
 ): Promise<Toolbox> {
@@ -179,7 +193,9 @@ async function mount(
     },
   })
   await ctx.plugin(registryPlugin)
-  await ctx.plugin(defineAdapterPlugin({ kind: 'x-group', create: () => new StubAdapter() }))
+  await ctx.plugin(
+    defineAdapterPlugin({ kind: 'x-group', create: () => new StubAdapter(options.scopelessAdapter === true) }),
+  )
   const probe = {
     name: 'probe-entry',
     apply: (scope: Context, config: unknown) => applyWith(scope, config, { now: () => AT }),
@@ -297,7 +313,7 @@ describe('the import subject and the turn budget at mount', () => {
     const botDir = await tempRoot()
     await expect(
       mount({ impressions: { dir: botDir, import: importOf({ personId: 'bot-x' }) }, identity: bots }),
-    ).rejects.toThrow(/undeclared person/)
+    ).rejects.toThrow(/bot node, not a person/)
   })
 
   test('refuses a group key that names no mounted channel or no acceptable session', async () => {
@@ -383,5 +399,32 @@ describe('the impressions block in a real turn', () => {
     expect(mounted.registered).toEqual(expect.arrayContaining(['impression_put', 'impression_get', 'impression_forget']))
     held.release()
     await turn
+  })
+})
+
+
+describe('the session scope an import may target', () => {
+  const importOf = (groupKey: string) => ({ path: '/srv/notes/MEMORY.md', as: { groupKey } })
+
+  test('refuses a peer-to-peer key and a private key, and takes a group key', async () => {
+    const p2p = await tempRoot()
+    await expect(
+      mount({ impressions: { dir: p2p, import: importOf('x:a|p2p:peer-a') } }),
+    ).rejects.toThrow(/names a p2p session, not a group/)
+    const priv = await tempRoot()
+    await expect(
+      mount({ impressions: { dir: priv, import: importOf('x:a|peer:123') } }),
+    ).rejects.toThrow(/names a c2c session, not a group/)
+    const group = await tempRoot()
+    await expect(
+      mount({ impressions: { dir: group, import: importOf('x:a|group:12345') } }),
+    ).resolves.toBeDefined()
+  })
+
+  test('lets a transport that cannot name a scope through with a warning', async () => {
+    const dir = await tempRoot()
+    await expect(
+      mount({ impressions: { dir, import: importOf('x:a|whatever:1') }, scopelessAdapter: true }),
+    ).resolves.toBeDefined()
   })
 })

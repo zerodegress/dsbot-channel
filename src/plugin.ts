@@ -23,7 +23,7 @@ import type { ControlPorts, TurnRef } from './control-tools.js'
 import { createImpressionForget, createImpressionGet, createImpressionPut } from './impression-tools.js'
 import type { ImpressionPorts } from './impression-tools.js'
 import { pickImpressions, renderImpressionBlock } from './impression-block.js'
-import { ImpressionStore, readImpressionsConfig, readImpressionsTurn } from './impressions.js'
+import { DEFAULT_IMPRESSION_CHARS, ImpressionStore, readImpressionsConfig, readImpressionsTurn } from './impressions.js'
 import type { Impression, ImpressionImport, ImpressionsTurn } from './impressions.js'
 import { ChainGuard, KeyGuard } from './event-keys.js'
 import { InboundGate } from './inbound-gate.js'
@@ -108,7 +108,7 @@ export const DEFAULT_TURN: TurnSettings = {
   maxBatch: 10,
   maxChars: 8000,
   context: { messages: DEFAULT_CONTEXT_MESSAGES, chars: DEFAULT_CONTEXT_CHARS },
-  impressions: { chars: 400 },
+  impressions: { chars: DEFAULT_IMPRESSION_CHARS },
 }
 
 const nodeSpecSchema = Schema.object({
@@ -267,12 +267,25 @@ async function impressionRecords(
 }
 
 /** A one-time import must land on a person the graph declares or a session this profile can carry. */
-function checkImportSubject(block: ImpressionImport, identity: IdentityGraph, channels: readonly MountedChannel[]): void {
+function checkImportSubject(
+  block: ImpressionImport,
+  identity: IdentityGraph,
+  channels: readonly MountedChannel[],
+  warn: (message: string) => void,
+): void {
   const target = block.as
   if ('personId' in target) {
     const node = identity.nodes.find((entry) => entry.id === target.personId)
-    if (node === undefined || node.kind !== 'person') {
+    if (node === undefined) {
       throw new ConfigError(`impressions.import.as names an undeclared person: ${target.personId}`, [
+        'impressions',
+        'import',
+        'as',
+        'personId',
+      ])
+    }
+    if (node.kind !== 'person') {
+      throw new ConfigError(`impressions.import.as names a bot node, not a person: ${target.personId}`, [
         'impressions',
         'import',
         'as',
@@ -309,6 +322,19 @@ function checkImportSubject(block: ImpressionImport, identity: IdentityGraph, ch
       'as',
       'groupKey',
     ])
+  }
+  if (mounted.adapter.sessionScope === undefined) {
+    warn(
+      `dsbot-channel: adapter "${channelName}" cannot name the scope of its session keys; the imported notes may never be injected`,
+    )
+    return
+  }
+  const scope = mounted.adapter.sessionScope(sessionKey)
+  if (scope !== 'group') {
+    throw new ConfigError(
+      `impressions.import.as.groupKey names a ${scope ?? 'unknown'} session, not a group: ${target.groupKey}`,
+      ['impressions', 'import', 'as', 'groupKey'],
+    )
   }
 }
 
@@ -615,7 +641,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   const identity = buildIdentity(config.identity, accountSpaces(channels), warn)
   const impressionsConfig = readImpressionsConfig(config.impressions)
   if (impressionsConfig?.import !== undefined) {
-    checkImportSubject(impressionsConfig.import, identity, channels)
+    checkImportSubject(impressionsConfig.import, identity, channels, warn)
   }
   checkGuidance(channels)
   checkPrepareSupport(bots, channels)

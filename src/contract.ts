@@ -1,5 +1,5 @@
 import type { AdapterStatus, CapabilitySet } from './adapter-status.js'
-import type { Author, Body, DeclaredMeta, Source, TransportMeta } from './event-types.js'
+import type { Author, Body, DeclaredMeta, Scope, Source, TransportMeta } from './event-types.js'
 import type { MediaOwner, MediaType } from './event-types.js'
 import type { PipelineEvent } from './pipeline.js'
 
@@ -191,6 +191,8 @@ export interface ChannelAdapter {
   checkConfig(settings: AdapterCheckSettings): void
   /** Returns why a session key is unusable, or undefined when it is; core never parses the key. */
   checkSessionKey(key: string): string | undefined
+  /** Names the scope a session key belongs to, when the adapter can tell; core never parses the key. */
+  sessionScope?(key: string): Scope | undefined
   /** Returns why an explicitly named target is unusable, or undefined when it is. */
   checkTarget(target: string): string | undefined
   /** One line naming the addresses this adapter accepts, for an error message. */

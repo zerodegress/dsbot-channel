@@ -407,3 +407,13 @@ describe('the onebot status route', () => {
     expect(adapter.snapshot.unknownPaths).toBe(1)
   })
 })
+
+
+describe('the onebot adapter names the scope of a session key', () => {
+  test('group and private keys carry their scope, anything else none', () => {
+    const adapter = new OneBotAdapter(config())
+    expect(adapter.sessionScope('group:123')).toBe('group')
+    expect(adapter.sessionScope('peer:123')).toBe('c2c')
+    expect(adapter.sessionScope('p2p:peer-a')).toBeUndefined()
+  })
+})
