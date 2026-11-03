@@ -33,7 +33,7 @@ async function harness(turn: Partial<TurnRef> = {}) {
     kind: 'onebot',
     scope: 'group',
     personId: 'alice',
-    sideEffect: false,
+    toolRan: false,
     suppressed: false,
     pushed: false,
     ...turn,
@@ -72,7 +72,6 @@ describe('impression_put', () => {
     expect(record.groupKey).toBe('chan-a|group:100')
     expect(record.evidence.map((entry) => entry.eventKey)).toEqual(['inst:1', 'inst:2'])
     expect(record.evidence[0]!.channel).toBe('chan-a')
-    expect(h.ref.sideEffect).toBe(true)
   })
 
   test('writes a repeat as the same record with more evidence', async () => {

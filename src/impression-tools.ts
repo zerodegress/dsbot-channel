@@ -194,7 +194,6 @@ export function createImpressionPut(ports: ImpressionPorts) {
         return [...records, record]
       })
       if (!written.ok) return JSON.stringify(written)
-      turn.sideEffect = true
       return JSON.stringify({ ok: true, id, records: written.records.length })
     },
   })
@@ -297,7 +296,6 @@ export function createImpressionForget(ports: ImpressionPorts) {
       })
       if (!written.ok) return JSON.stringify(written)
       if (removed === 0) return JSON.stringify(fail('not_found', 'no impression with that id under this subject'))
-      turn.sideEffect = true
       return JSON.stringify({ ok: true, removed })
     },
   })
