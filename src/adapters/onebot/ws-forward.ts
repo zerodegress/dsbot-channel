@@ -155,12 +155,13 @@ export class ForwardLink {
     socket.on('close', () => {
       this.#events = undefined
       this.#eventsOpen = false
+      if (!this.#closed && this.#api !== undefined) {
+        this.#eventRetry = setTimeout(() => {
+          this.#eventRetry = undefined
+          this.#openEvents()
+        }, 1000)
+      }
       this.#settle()
-      if (this.#closed || this.#api === undefined) return
-      this.#eventRetry = setTimeout(() => {
-        this.#eventRetry = undefined
-        this.#openEvents()
-      }, 1000)
     })
     socket.on('error', (error: Error) => {
       this.#lastFailure = error.message

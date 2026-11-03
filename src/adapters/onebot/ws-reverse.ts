@@ -9,6 +9,8 @@ export interface ReverseOptions {
   token?: string | undefined
   selfId?: string | undefined
   maxFrameBytes: number
+  /** How long an action waits for its answer; the profile's `sendTimeoutMs`. */
+  timeoutMs: number
   heartbeat?: { intervalMs: number; timeoutMs: number } | undefined
   onEvent: (frame: Record<string, unknown>) => void
   onMismatch: () => void
@@ -44,7 +46,6 @@ export class ReverseLink {
     server.on('upgrade', (request: IncomingMessage, socket: Duplex, head: Buffer) => {
       void this.#upgrade(request, socket, head)
     })
-    this.#server.on('connection', () => undefined)
     if (this.#options.heartbeat !== undefined && this.#options.heartbeat.intervalMs > 0) {
       this.#startBeat()
     }
@@ -81,7 +82,7 @@ export class ReverseLink {
       const timer = setTimeout(() => {
         this.#pending.delete(echo)
         resolve({ ok: false, code: 'timeout', reason: 'the api did not answer in time' })
-      }, timeoutMs ?? 1000)
+      }, timeoutMs ?? this.#options.timeoutMs)
       this.#pending.set(echo, { resolve, timer })
       socket.send(JSON.stringify({ action, params, echo }), (error?: Error | null) => {
         if (error === null || error === undefined) return

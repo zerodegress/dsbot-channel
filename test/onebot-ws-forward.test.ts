@@ -212,4 +212,15 @@ describe('the forward websocket link', () => {
     await waitFor(() => events.sockets[0]?.readyState !== 1, 3000)
     await waitFor(() => api.sockets[0]?.readyState === 1)
   })
+
+  test('an event socket waiting to come back reports reconnecting too', async () => {
+    const api = await serve()
+    const events = await serve()
+    const one = link(api.url, { eventUrl: events.url })
+    await waitFor(() => one.health().state === 'online', 3000)
+
+    events.sockets[0]!.terminate()
+    await waitFor(() => one.health().state === 'reconnecting', 500)
+    await waitFor(() => one.health().state === 'online', 3000)
+  })
 })

@@ -211,6 +211,13 @@ describe('OneBot over a forward websocket', () => {
       ],
     })
 
+    const status = await fetch(`http://127.0.0.1:${port}/onebot/status`)
+    expect(status.status).toBe(200)
+    const report = (await status.json()) as Record<string, unknown>
+    expect(report).toMatchObject({ channel: 'onebot:a' })
+    const missing = await fetch(`http://127.0.0.1:${port}/onebot/nope`)
+    expect(missing.status).toBe(404)
+
     const client = new WebSocket(`ws://127.0.0.1:${port}/onebot/ws`, {
       headers: { authorization: `Bearer ${TOKEN}`, 'x-self-id': '10001' },
     })

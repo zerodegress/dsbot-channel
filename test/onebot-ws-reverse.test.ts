@@ -17,7 +17,7 @@ const servers: Server[] = []
 const links: ReverseLink[] = []
 const clients: WebSocket[] = []
 
-async function serve(path = '/onebot/ws', token?: string, selfId?: string): Promise<Harness> {
+async function serve(path = '/onebot/ws', token?: string, selfId?: string, timeoutMs = 500): Promise<Harness> {
   const failures = { auth: 0, unknown: 0, mismatch: 0 }
   const warnings: string[] = []
   const server = createServer()
@@ -28,6 +28,7 @@ async function serve(path = '/onebot/ws', token?: string, selfId?: string): Prom
     ...(token === undefined ? {} : { token }),
     ...(selfId === undefined ? {} : { selfId }),
     maxFrameBytes: 1024 * 1024,
+    timeoutMs,
     onEvent: () => undefined,
     onMismatch: () => (failures.mismatch += 1),
     onAuthFailure: () => (failures.auth += 1),
@@ -138,5 +139,15 @@ describe('the reverse websocket link', () => {
   test('an action with nobody connected is unreachable', async () => {
     const one = await serve()
     expect(await one.link.request('send_group_msg', {}, 100)).toMatchObject({ ok: false, code: 'unreachable' })
+  })
+
+  test('an action without its own timeout uses the profile timeout', async () => {
+    const one = await serve('/onebot/ws', undefined, undefined, 40)
+    dial(one.port)
+    await waitFor(() => one.link.connection() !== undefined)
+    const started = Date.now()
+    const answer = await one.link.request('get_status', {}, undefined)
+    expect(answer).toMatchObject({ ok: false, code: 'timeout' })
+    expect(Date.now() - started).toBeLessThan(400)
   })
 })

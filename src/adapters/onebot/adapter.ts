@@ -944,6 +944,7 @@ export class OneBotAdapter implements ChannelAdapter {
       token,
       ...(this.#config.selfId === undefined ? {} : { selfId: this.#config.selfId }),
       maxFrameBytes: ONEBOT_MAX_BODY_BYTES,
+      timeoutMs: this.#config.sendTimeoutMs,
       ...(this.#config.heartbeat === undefined ? {} : { heartbeat: this.#config.heartbeat }),
       onEvent: (frame) => {
         void this.#acceptEvent(frame as OneBotEvent)
@@ -954,7 +955,17 @@ export class OneBotAdapter implements ChannelAdapter {
       warn: (message) => this.#warn?.(message),
     })
     this.#reverse = link
-    const server = createServer((_request, response) => {
+    const server = createServer((request, response) => {
+      if (
+        this.#config.status !== false &&
+        answerStatus(request, response, {
+          route: ONEBOT_STATUS_ROUTE,
+          report: () => this.status(),
+          onRefused: () => this.#stats.unknownPath(),
+        })
+      ) {
+        return
+      }
       this.#stats.unknownPath()
       response.writeHead(404, { 'content-type': 'application/json' })
       response.end('{"status":"failed","retcode":1404,"message":"not found"}')
