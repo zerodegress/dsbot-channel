@@ -14,10 +14,10 @@ interface Harness {
 const links: ForwardLink[] = []
 const servers: Harness[] = []
 
-async function serve(onConnection?: (socket: WebSocket, index: number) => void): Promise<Harness> {
+async function serve(onConnection?: (socket: WebSocket, index: number) => void, autoPong = true): Promise<Harness> {
   const sockets: WebSocket[] = []
   const headers: (string | null)[] = []
-  const server = new WebSocketServer({ host: '127.0.0.1', port: 0 })
+  const server = new WebSocketServer({ host: '127.0.0.1', port: 0, autoPong })
   await new Promise<void>((resolve) => server.once('listening', () => resolve()))
   server.on('connection', (socket, request) => {
     sockets.push(socket)
@@ -222,5 +222,22 @@ describe('the forward websocket link', () => {
     events.sockets[0]!.terminate()
     await waitFor(() => one.health().state === 'reconnecting', 500)
     await waitFor(() => one.health().state === 'online', 3000)
+  })
+
+  test('a socket that never answers a ping is closed', async () => {
+    const warnings: string[] = []
+    const harness = await serve(undefined, false)
+    const one = link(harness.url, { liveness: { intervalMs: 20, timeoutMs: 25 }, warn: (m) => warnings.push(m) })
+    await waitFor(() => one.health().state === 'online')
+    await waitFor(() => one.health().state === 'offline', 3000)
+    expect(warnings.some((line) => line.includes('ping'))).toBe(true)
+  })
+
+  test('a socket that answers its pings is left alone', async () => {
+    const harness = await serve()
+    const one = link(harness.url, { liveness: { intervalMs: 20, timeoutMs: 25 } })
+    await waitFor(() => one.health().state === 'online')
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(one.health().state).toBe('online')
   })
 })

@@ -2,6 +2,15 @@ import { randomUUID } from 'node:crypto'
 import WebSocket from 'ws'
 import type { ConnectionHealth, ConnectionState } from '../../adapter-status.js'
 
+/** Kept always on: a half-open socket is the failure that leaves no line in a log. */
+export const ONEBOT_PING_INTERVAL_MS = 30_000
+export const ONEBOT_PONG_TIMEOUT_MS = 10_000
+
+export interface LivenessOptions {
+  intervalMs: number
+  timeoutMs: number
+}
+
 /** What an action call answers: the payload of a `status: ok` reply, or why none came. */
 export type ActionAnswer =
   | { ok: true; frame: Record<string, unknown> }
@@ -15,6 +24,8 @@ export interface ForwardOptions {
   reconnect: { initialMs: number; maxMs: number; factor: number } | false
   heartbeat?: { intervalMs: number; timeoutMs: number } | undefined
   timeoutMs: number
+  /** Protocol-level ping/pong; always on in production, shortened in tests. */
+  liveness?: LivenessOptions | undefined
   maxFrameBytes: number
   onEvent: (frame: Record<string, unknown>) => void
   onMismatch: () => void
@@ -45,6 +56,7 @@ export class ForwardLink {
   #lastConnectedAt: number | null = null
   #lastFrameAt = 0
   #warnedSize = false
+  #pings: ReturnType<typeof setInterval>[] = []
 
   constructor(options: ForwardOptions) {
     this.#options = options
@@ -63,6 +75,8 @@ export class ForwardLink {
     if (this.#retry !== undefined) clearTimeout(this.#retry)
     if (this.#eventRetry !== undefined) clearTimeout(this.#eventRetry)
     if (this.#beat !== undefined) clearInterval(this.#beat)
+    for (const timer of this.#pings) clearInterval(timer)
+    this.#pings = []
     this.#retry = undefined
     this.#eventRetry = undefined
     this.#beat = undefined
@@ -131,6 +145,7 @@ export class ForwardLink {
       this.#settle()
     })
     socket.on('message', (raw: WebSocket.RawData) => this.#onFrame(socket, raw))
+    this.#watch(socket)
     socket.on('close', (code: number) => this.#dropped(`the forward socket closed with ${code}`))
     socket.on('error', (error: Error) => {
       this.#lastFailure = error.message
@@ -151,6 +166,7 @@ export class ForwardLink {
       this.#eventsOpen = true
       this.#settle()
     })
+    this.#watch(socket)
     socket.on('message', (raw: WebSocket.RawData) => this.#onFrame(socket, raw))
     socket.on('close', () => {
       this.#events = undefined
@@ -170,6 +186,30 @@ export class ForwardLink {
   }
 
   /** Online means every socket this profile needs is open; anything else says why it is not. */
+  /** Pings this socket on a fixed beat and closes it when a pong does not come back. */
+  #watch(socket: WebSocket): void {
+    const liveness = this.#options.liveness ?? {
+      intervalMs: ONEBOT_PING_INTERVAL_MS,
+      timeoutMs: ONEBOT_PONG_TIMEOUT_MS,
+    }
+    let waiting: ReturnType<typeof setTimeout> | undefined
+    const timer = setInterval(() => {
+      if (socket.readyState !== WebSocket.OPEN || waiting !== undefined) return
+      socket.ping()
+      waiting = setTimeout(() => {
+        waiting = undefined
+        this.#options.warn('dsbot-channel: closed the onebot socket: its ping went unanswered')
+        socket.close(1001, 'ping timeout')
+      }, liveness.timeoutMs)
+    }, liveness.intervalMs)
+    this.#pings.push(timer)
+    socket.on('pong', () => {
+      if (waiting !== undefined) clearTimeout(waiting)
+      waiting = undefined
+    })
+    socket.on('close', () => clearInterval(timer))
+  }
+
   #settle(): void {
     if (this.#closed) {
       this.#state = 'offline'
@@ -184,6 +224,8 @@ export class ForwardLink {
   }
 
   #onFrame(socket: WebSocket, raw: WebSocket.RawData): void {
+    // A replaced or closed socket can still deliver a straggler; it is not ours any more.
+    if (socket !== this.#api && socket !== this.#events) return
     const bytes = Array.isArray(raw)
       ? Buffer.concat(raw)
       : Buffer.isBuffer(raw)

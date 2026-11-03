@@ -2,13 +2,16 @@ import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, Server } from 'node:http'
 import type { Duplex } from 'node:stream'
 import WebSocket, { WebSocketServer } from 'ws'
-import type { ActionAnswer } from './ws-forward.js'
+import type { ActionAnswer, LivenessOptions } from './ws-forward.js'
+import { ONEBOT_PING_INTERVAL_MS, ONEBOT_PONG_TIMEOUT_MS } from './ws-forward.js'
 
 export interface ReverseOptions {
   path: string
   token?: string | undefined
   selfId?: string | undefined
   maxFrameBytes: number
+  /** Protocol-level ping/pong; always on in production, shortened in tests. */
+  liveness?: LivenessOptions | undefined
   /** How long an action waits for its answer; the profile's `sendTimeoutMs`. */
   timeoutMs: number
   heartbeat?: { intervalMs: number; timeoutMs: number } | undefined
@@ -142,7 +145,8 @@ export class ReverseLink {
     this.#lastAuthenticatedAt = this.#now()
     this.#lastFrameAt = this.#now()
     this.#selfId = claimed ?? this.#options.selfId
-    socket.on('message', (raw: WebSocket.RawData) => this.#onFrame(raw))
+    this.#watch(socket)
+    socket.on('message', (raw: WebSocket.RawData) => this.#onFrame(socket, raw))
     socket.on('close', () => {
       if (this.#socket !== socket) return
       this.#socket = undefined
@@ -155,7 +159,9 @@ export class ReverseLink {
     socket.on('error', (error: Error) => this.#options.warn(`dsbot-channel: onebot reverse socket: ${error.message}`))
   }
 
-  #onFrame(raw: WebSocket.RawData): void {
+  #onFrame(socket: WebSocket, raw: WebSocket.RawData): void {
+    // A replaced or closed socket can still deliver a straggler; it is not ours any more.
+    if (socket !== this.#socket) return
     const bytes = Array.isArray(raw)
       ? Buffer.concat(raw)
       : Buffer.isBuffer(raw)
@@ -206,6 +212,29 @@ export class ReverseLink {
     if (typeof header !== 'string') return false
     const match = /^(?:Bearer|Token)\s+(.+)$/i.exec(header.trim())
     return match !== null && match[1] === this.#options.token
+  }
+
+  /** Pings the reverse socket on the same fixed beat as the forward link. */
+  #watch(socket: WebSocket): void {
+    const liveness = this.#options.liveness ?? {
+      intervalMs: ONEBOT_PING_INTERVAL_MS,
+      timeoutMs: ONEBOT_PONG_TIMEOUT_MS,
+    }
+    let waiting: ReturnType<typeof setTimeout> | undefined
+    const timer = setInterval(() => {
+      if (socket.readyState !== WebSocket.OPEN || waiting !== undefined) return
+      socket.ping()
+      waiting = setTimeout(() => {
+        waiting = undefined
+        this.#options.warn('dsbot-channel: closed the onebot socket: its ping went unanswered')
+        socket.close(1001, 'ping timeout')
+      }, liveness.timeoutMs)
+    }, liveness.intervalMs)
+    socket.on('pong', () => {
+      if (waiting !== undefined) clearTimeout(waiting)
+      waiting = undefined
+    })
+    socket.on('close', () => clearInterval(timer))
   }
 
   #startBeat(): void {

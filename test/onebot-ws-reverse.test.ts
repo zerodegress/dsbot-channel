@@ -17,7 +17,13 @@ const servers: Server[] = []
 const links: ReverseLink[] = []
 const clients: WebSocket[] = []
 
-async function serve(path = '/onebot/ws', token?: string, selfId?: string, timeoutMs = 500): Promise<Harness> {
+async function serve(
+  path = '/onebot/ws',
+  token?: string,
+  selfId?: string,
+  timeoutMs = 500,
+  liveness?: { intervalMs: number; timeoutMs: number },
+): Promise<Harness> {
   const failures = { auth: 0, unknown: 0, mismatch: 0 }
   const warnings: string[] = []
   const server = createServer()
@@ -29,6 +35,7 @@ async function serve(path = '/onebot/ws', token?: string, selfId?: string, timeo
     ...(selfId === undefined ? {} : { selfId }),
     maxFrameBytes: 1024 * 1024,
     timeoutMs,
+    ...(liveness === undefined ? {} : { liveness }),
     onEvent: () => undefined,
     onMismatch: () => (failures.mismatch += 1),
     onAuthFailure: () => (failures.auth += 1),
@@ -52,8 +59,13 @@ async function serve(path = '/onebot/ws', token?: string, selfId?: string, timeo
   }
 }
 
-function dial(port: number, path = '/onebot/ws', headers: Record<string, string> = {}): WebSocket {
-  const client = new WebSocket(`ws://127.0.0.1:${port}${path}`, { headers })
+function dial(
+  port: number,
+  path = '/onebot/ws',
+  headers: Record<string, string> = {},
+  options: { autoPong?: boolean } = {},
+): WebSocket {
+  const client = new WebSocket(`ws://127.0.0.1:${port}${path}`, { headers, ...options })
   client.on('error', () => undefined)
   clients.push(client)
   return client
@@ -92,8 +104,8 @@ describe('the reverse websocket link', () => {
     expect(client.readyState).not.toBe(WebSocket.OPEN)
 
     const good = dial(one.port, '/onebot/ws', { authorization: 'Bearer shared-value' })
+    await waitFor(() => good.readyState === WebSocket.OPEN)
     await waitFor(() => one.link.connection() !== undefined)
-    expect(good.readyState).toBe(WebSocket.OPEN)
   })
 
   test('a claimed account that is not ours is refused', async () => {
@@ -149,5 +161,21 @@ describe('the reverse websocket link', () => {
     const answer = await one.link.request('get_status', {}, undefined)
     expect(answer).toMatchObject({ ok: false, code: 'timeout' })
     expect(Date.now() - started).toBeLessThan(400)
+  })
+
+  test('a client that never answers a ping is dropped', async () => {
+    const one = await serve('/onebot/ws', undefined, undefined, 500, { intervalMs: 20, timeoutMs: 25 })
+    dial(one.port, '/onebot/ws', {}, { autoPong: false })
+    await waitFor(() => one.link.connection() !== undefined)
+    await waitFor(() => one.warnings.some((line) => line.includes('ping')), 3000)
+    await waitFor(() => one.link.connection() === undefined, 3000)
+  })
+
+  test('a client that answers its pings is kept', async () => {
+    const one = await serve('/onebot/ws', undefined, undefined, 500, { intervalMs: 20, timeoutMs: 25 })
+    dial(one.port)
+    await waitFor(() => one.link.connection() !== undefined)
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    expect(one.link.connection()?.readyState).toBe(WebSocket.OPEN)
   })
 })
