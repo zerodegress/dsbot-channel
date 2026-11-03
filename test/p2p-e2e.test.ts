@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
-import { adapterPorts, freePortPair, withPortRetry } from './ports.js'
+import { adapterPorts, boundPort, freePortPair, withPortRetry } from './ports.js'
 import { sendToPeer } from '../src/adapters/p2p/p2p-send.js'
 import { PEER_GUIDANCE } from '../src/adapters/p2p/guidance.js'
 
@@ -545,7 +545,6 @@ describe('the session controller call shape', () => {
 
 describe('the configured session', () => {
   async function mountWithSession(session: string): Promise<{ sessions: StubSessions; port: number }> {
-    const port = await freePort()
     const ctx = new Context()
     captureWarnings(ctx)
     const sessions = new StubSessions(ctx, 99)
@@ -568,12 +567,13 @@ describe('the configured session', () => {
           session,
           transport: {
             peers: [{ instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${await freePort()}` }],
-            listen: { host: '127.0.0.1', port },
+            listen: { host: '127.0.0.1', port: 0 },
           },
         },
       ],
     })
     forks.push(fork)
+    const port = boundPort(ctx, 'p2p:a')
     return { sessions, port }
   }
 
@@ -782,7 +782,6 @@ describe('closing a peer conversation', () => {
     await new Promise<void>((resolve) => capture.listen(0, '127.0.0.1', resolve))
     const capturePort = (capture.address() as AddressInfo).port
 
-    const port = await freePort()
     const ctx = new Context()
     captureWarnings(ctx)
     const prompted: string[] = []
@@ -858,12 +857,13 @@ describe('closing a peer conversation', () => {
                 ...(host === undefined ? {} : { host }),
               },
             ],
-            listen: { host: '127.0.0.1', port },
+            listen: { host: '127.0.0.1', port: 0 },
           },
         },
       ],
     })
     forks.push(fork)
+    const port = boundPort(ctx, 'p2p:b')
     return { posts, prompted, port, ctx, close: () => capture.close() }
   }
 
@@ -1038,7 +1038,6 @@ describe('a reply to a peer behind a name router', () => {
     await new Promise<void>((resolve) => capture.listen(0, '127.0.0.1', resolve))
     const capturePort = (capture.address() as AddressInfo).port
 
-    const port = await freePort()
     const ctx = new Context()
     captureWarnings(ctx)
     const sessions = new StubSessions(ctx, 99)
@@ -1060,12 +1059,13 @@ describe('a reply to a peer behind a name router', () => {
           botName: 'bot-b',
           transport: {
             peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}`, host: 'peer.example' }],
-            listen: { host: '127.0.0.1', port },
+            listen: { host: '127.0.0.1', port: 0 },
           },
         },
       ],
     })
     forks.push(fork)
+    const port = boundPort(ctx, 'p2p:b')
     try {
       await send(port, 'evt-1', 'hello')
       await waitFor(() => host !== undefined)
@@ -1090,7 +1090,6 @@ describe('an active push to a peer behind a name router', () => {
     await new Promise<void>((resolve) => capture.listen(0, '127.0.0.1', resolve))
     const capturePort = (capture.address() as AddressInfo).port
 
-    const port = await freePort()
     const ctx = new Context()
     captureWarnings(ctx)
     const sessions = new StubSessions(ctx, 99)
@@ -1128,7 +1127,7 @@ describe('an active push to a peer behind a name router', () => {
                 host: 'peer.example',
               },
             ],
-            listen: { host: '127.0.0.1', port },
+            listen: { host: '127.0.0.1', port: 0 },
           },
         },
       ],
@@ -1176,7 +1175,6 @@ describe('a turn that already pushed with send_text', () => {
     await new Promise<void>((resolve) => capture.listen(0, '127.0.0.1', resolve))
     const capturePort = (capture.address() as AddressInfo).port
 
-    const port = await freePort()
     const ctx = new Context()
     captureWarnings(ctx)
     const tools: { name: string; execute: (args: unknown, exec: unknown) => Promise<string> }[] = []
@@ -1234,12 +1232,13 @@ describe('a turn that already pushed with send_text', () => {
           botName: 'bot-b',
           transport: {
             peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}`, botName: 'bot-a' }],
-            listen: { host: '127.0.0.1', port },
+            listen: { host: '127.0.0.1', port: 0 },
           },
         },
       ],
     })
     forks.push(fork)
+    const port = boundPort(ctx, 'p2p:b')
     return { posted, port, close: () => capture.close() }
   }
 
@@ -1313,7 +1312,6 @@ describe('a turn that answers with nothing', () => {
     await new Promise<void>((resolve) => capture.listen(0, '127.0.0.1', resolve))
     const capturePort = (capture.address() as AddressInfo).port
 
-    const port = await freePort()
     const ctx = new Context()
     captureWarnings(ctx)
     const controller = {
@@ -1347,12 +1345,13 @@ describe('a turn that answers with nothing', () => {
           botName: 'bot-b',
           transport: {
             peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}` }],
-            listen: { host: '127.0.0.1', port },
+            listen: { host: '127.0.0.1', port: 0 },
           },
         },
       ],
     })
     forks.push(fork)
+    const port = boundPort(ctx, 'p2p:b')
     try {
       await send(port, 'evt-1', 'hello')
       await waitFor(() => warnings.some((line) => line.includes('ended without an answer')))
@@ -1386,7 +1385,6 @@ describe('a reply goes back to the sender of the inbound message', () => {
     await new Promise<void>((resolve) => capture.listen(0, '127.0.0.1', resolve))
     const capturePort = (capture.address() as AddressInfo).port
 
-    const port = await freePort()
     const ctx = new Context()
     captureWarnings(ctx)
     const sessions = new StubSessions(ctx, 99)
@@ -1408,12 +1406,13 @@ describe('a reply goes back to the sender of the inbound message', () => {
           botName: 'bot-b',
           transport: {
             peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}` }],
-            listen: { host: '127.0.0.1', port },
+            listen: { host: '127.0.0.1', port: 0 },
           },
         },
       ],
     })
     forks.push(fork)
+    const port = boundPort(ctx, 'p2p:b')
     return {
       captured: () => captured,
       port,
@@ -1537,7 +1536,6 @@ describe('a mounted adapter can report on itself', () => {
   }
 
   test('the route answers without being asked, and reports what health holds', async () => {
-    const port = await freePort()
     const ctx = new Context()
     const sessions = new StubSessions(ctx, 1)
     await ctx.plugin({
@@ -1558,12 +1556,13 @@ describe('a mounted adapter can report on itself', () => {
           botName: 'bot-a',
           transport: {
             peers: [{ instance: 'inst-b', secret: REF }],
-            listen: { host: '127.0.0.1', port },
+            listen: { host: '127.0.0.1', port: 0 },
           },
         },
       ],
     })
     forks.push(fork)
+    const port = boundPort(ctx, 'p2p:a')
 
     const reply = await getStatus(port)
 
@@ -1572,7 +1571,6 @@ describe('a mounted adapter can report on itself', () => {
   })
 
   test('an empty turn is reported in the log', async () => {
-    const port = await freePort()
     const ctx = new Context()
     captureWarnings(ctx)
     const controller = {
@@ -1606,12 +1604,13 @@ describe('a mounted adapter can report on itself', () => {
           botName: 'bot-a',
           transport: {
             peers: [{ instance: 'inst-b', secret: REF, url: 'http://127.0.0.1:1' }],
-            listen: { host: '127.0.0.1', port },
+            listen: { host: '127.0.0.1', port: 0 },
           },
         },
       ],
     })
     forks.push(fork)
+    const port = boundPort(ctx, 'p2p:a')
 
     await sendToPeer({
       peer: { instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${port}` },
@@ -1629,7 +1628,6 @@ describe('a mounted adapter can report on itself', () => {
   })
 
   test('a failed push is counted by the code the send layer reported', async () => {
-    const port = await freePort()
     const ctx = new Context()
     captureWarnings(ctx)
     const tools: { name: string; execute: (args: unknown, exec: unknown) => Promise<string> }[] = []
@@ -1658,12 +1656,13 @@ describe('a mounted adapter can report on itself', () => {
           botName: 'bot-a',
           transport: {
             peers: [{ instance: 'inst-b', secret: REF, url: 'http://127.0.0.1:1', botName: 'bot-b' }],
-            listen: { host: '127.0.0.1', port },
+            listen: { host: '127.0.0.1', port: 0 },
           },
         },
       ],
     })
     forks.push(fork)
+    const port = boundPort(ctx, 'p2p:a')
 
     const push = tools.find((tool) => tool.name === 'send_text')
     const raw = await push?.execute({ text: 'hello', channel: 'p2p:a', target: 'inst-b' }, {})
@@ -1674,7 +1673,6 @@ describe('a mounted adapter can report on itself', () => {
   })
 
   test('a reply that never lands is counted', async () => {
-    const port = await freePort()
     const ctx = new Context()
     captureWarnings(ctx)
     const sessions = new StubSessions(ctx, 1)
@@ -1696,12 +1694,13 @@ describe('a mounted adapter can report on itself', () => {
           botName: 'bot-a',
           transport: {
             peers: [{ instance: 'inst-b', secret: REF, url: 'http://127.0.0.1:1' }],
-            listen: { host: '127.0.0.1', port },
+            listen: { host: '127.0.0.1', port: 0 },
           },
         },
       ],
     })
     forks.push(fork)
+    const port = boundPort(ctx, 'p2p:a')
 
     await sendToPeer({
       peer: { instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${port}` },
@@ -1719,7 +1718,6 @@ describe('a mounted adapter can report on itself', () => {
   })
 
   test('a refusal that never lands is counted', async () => {
-    const port = await freePort()
     const ctx = new Context()
     captureWarnings(ctx)
     const tools: { name: string; execute: (args: unknown, exec: unknown) => Promise<string> }[] = []
@@ -1766,12 +1764,13 @@ describe('a mounted adapter can report on itself', () => {
           botName: 'bot-a',
           transport: {
             peers: [{ instance: 'inst-b', secret: REF, url: 'http://127.0.0.1:1' }],
-            listen: { host: '127.0.0.1', port },
+            listen: { host: '127.0.0.1', port: 0 },
           },
         },
       ],
     })
     forks.push(fork)
+    const port = boundPort(ctx, 'p2p:a')
 
     await sendToPeer({
       peer: { instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${port}` },
@@ -1790,7 +1789,6 @@ describe('a mounted adapter can report on itself', () => {
   })
 
   test('the reply names the channel and the port it is really listening on', async () => {
-    const port = await freePort()
     const ctx = new Context()
     const sessions = new StubSessions(ctx, 1)
     await ctx.plugin({
@@ -1811,13 +1809,14 @@ describe('a mounted adapter can report on itself', () => {
           botName: 'bot-a',
           transport: {
             peers: [{ instance: 'inst-b', secret: REF }],
-            listen: { host: '127.0.0.1', port },
+            listen: { host: '127.0.0.1', port: 0 },
           },
           status: true,
         },
       ],
     })
     forks.push(fork)
+    const port = boundPort(ctx, 'p2p:a')
 
     const reply = await getStatus(port)
 
@@ -1832,7 +1831,6 @@ describe('a mounted adapter can report on itself', () => {
   })
 
   test('an adapter that turned the route off does not answer it', async () => {
-    const port = await freePort()
     const ctx = new Context()
     const sessions = new StubSessions(ctx, 1)
     await ctx.plugin({
@@ -1853,13 +1851,14 @@ describe('a mounted adapter can report on itself', () => {
           botName: 'bot-a',
           transport: {
             peers: [{ instance: 'inst-b', secret: REF }],
-            listen: { host: '127.0.0.1', port },
+            listen: { host: '127.0.0.1', port: 0 },
           },
           status: false,
         },
       ],
     })
     forks.push(fork)
+    const port = boundPort(ctx, 'p2p:a')
 
     expect((await getStatus(port)).status).toBe(404)
   })
@@ -2064,7 +2063,6 @@ describe('policy budget', () => {
   })
 
   test('a turn whose reply cannot be sent costs the refused price, not the reserved one', async () => {
-    const port = await freePort()
     const ctx = new Context()
     captureWarnings(ctx)
     const sessions = new StubSessions(ctx, 99)
@@ -2086,13 +2084,14 @@ describe('policy budget', () => {
           botName: 'bot-b',
           transport: {
             peers: [{ instance: 'inst-a', secret: REF }],
-            listen: { host: '127.0.0.1', port },
+            listen: { host: '127.0.0.1', port: 0 },
           },
           policy: { budget: { capacity: 15 } },
         },
       ],
     })
     forks.push(fork)
+    const port = boundPort(ctx, 'p2p:a')
 
     await send(port, 'evt-1', 'one')
     await waitFor(() => sessions.prompted.length === 1)
@@ -2105,7 +2104,6 @@ describe('policy budget', () => {
   })
 
   test('a replayed event reaches the turn twice but is charged once', async () => {
-    const port = await freePort()
     const ctx = new Context()
     captureWarnings(ctx)
     const sessions = new StubSessions(ctx, 99)
@@ -2127,7 +2125,7 @@ describe('policy budget', () => {
           botName: 'bot-b',
           transport: {
             peers: [{ instance: 'inst-a', secret: REF }],
-            listen: { host: '127.0.0.1', port },
+            listen: { host: '127.0.0.1', port: 0 },
             dedupe: { ttlMs: 0 },
           },
           policy: { budget: { capacity: 20 } },
@@ -2135,6 +2133,7 @@ describe('policy budget', () => {
       ],
     })
     forks.push(fork)
+    const port = boundPort(ctx, 'p2p:a')
     const settled = (): number => warnings.filter((line) => line.includes('was not delivered')).length
 
     await send(port, 'evt-1', 'one')
@@ -2264,7 +2263,6 @@ describe('a message that arrives while the session is busy', () => {
     await new Promise<void>((resolve) => capture.listen(0, '127.0.0.1', resolve))
     const capturePort = (capture.address() as AddressInfo).port
 
-    const port = await freePort()
     const ctx = new Context()
     captureWarnings(ctx)
     const controller = {
@@ -2312,12 +2310,13 @@ describe('a message that arrives while the session is busy', () => {
           botName: 'bot-b',
           transport: {
             peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}` }],
-            listen: { host: '127.0.0.1', port },
+            listen: { host: '127.0.0.1', port: 0 },
           },
         },
       ],
     })
     forks.push(fork)
+    const port = boundPort(ctx, 'p2p:b')
     try {
       await send(port, 'evt-1', 'hello')
       await waitFor(() => posted.length > 0)
