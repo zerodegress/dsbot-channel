@@ -247,45 +247,53 @@ policy: { deny: { words } }
   })
 
   test('a peer without a url comes back as no_url instead of silence', async () => {
-    const [portA, portB] = [await freePort(), await freePort()]
-    const ctx = new Context()
-    captureWarnings(ctx)
-    const sessions = new StubSessions(ctx, 2)
-    await ctx.plugin({
-      name: 'probe-services',
-      apply(scope: Context) {
-        scope.provide('credentials')
-        scope.set('credentials', credentials)
-        scope.provide('sessionController')
-        scope.set('sessionController', sessions)
-      },
-    })
-    await ctx.plugin(registryPlugin)
-    const fork = await ctx.plugin(entry, {
-      adapters: [
-        {
-channel: 'p2p:a',
-instance: 'inst-a',
-botName: 'bot-a',
-transport: {
-  peers: [{ instance: 'inst-b', secret: REF }],
-  listen: { host: '127.0.0.1', port: portA }
-}
-},
-        {
-channel: 'p2p:b',
-instance: 'inst-b',
-botName: 'bot-b',
-transport: {
-  peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${portA}` }],
-  listen: { host: '127.0.0.1', port: portB }
-}
-},
-      ],
+    const mounted = await withPortRetry(freePortPair, async ([portA, portB]) => {
+      const ctx = new Context()
+      captureWarnings(ctx)
+      const sessions = new StubSessions(ctx, 2)
+      await ctx.plugin({
+        name: 'probe-services',
+        apply(scope: Context) {
+          scope.provide('credentials')
+          scope.set('credentials', credentials)
+          scope.provide('sessionController')
+          scope.set('sessionController', sessions)
+        },
+      })
+      await ctx.plugin(registryPlugin)
+      try {
+        const fork = await ctx.plugin(entry, {
+          adapters: [
+            {
+              channel: 'p2p:a',
+              instance: 'inst-a',
+              botName: 'bot-a',
+              transport: {
+                peers: [{ instance: 'inst-b', secret: REF }],
+                listen: { host: '127.0.0.1', port: portA },
+              },
+            },
+            {
+              channel: 'p2p:b',
+              instance: 'inst-b',
+              botName: 'bot-b',
+              transport: {
+                peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${portA}` }],
+                listen: { host: '127.0.0.1', port: portB },
+              },
+            },
+          ],
+        })
+        forks.push(fork)
+        return { sessions, portB }
+      } catch (error) {
+        await (ctx as unknown as { dispose?: () => Promise<void> }).dispose?.()
+        throw error
+      }
     })
 
     await sendToPeer({
-      peer: { instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${portB}` },
+      peer: { instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${mounted.portB}` },
       credentials,
       to: 'bot-b',
       body: 'hello',
@@ -297,12 +305,10 @@ transport: {
     await waitFor(() => warnings.length > 0)
     expect(warnings.some((line) => line.includes('no_url'))).toBe(true)
     expect(warnings.some((line) => line.includes('inst-b'))).toBe(true)
-    expect(bodyOf(sessions.prompted[0]?.text ?? '')).toBe(INCOMING)
-    expect(bodyOf(sessions.prompted[1]?.text ?? '')).toContain(INCOMING)
+    expect(bodyOf(mounted.sessions.prompted[0]?.text ?? '')).toBe(INCOMING)
+    expect(bodyOf(mounted.sessions.prompted[1]?.text ?? '')).toContain(INCOMING)
     await new Promise((resolve) => setTimeout(resolve, 30))
-    expect(sessions.prompted).toHaveLength(2)
-
-    await fork.dispose()
+    expect(mounted.sessions.prompted).toHaveLength(2)
   })
   test('two adapters that answer for one bot with the same rules run a turn on each', async () => {
     const [portA, portB] = [await freePort(), await freePort()]
