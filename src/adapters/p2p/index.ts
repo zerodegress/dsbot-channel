@@ -90,7 +90,7 @@ export function parseP2PConfig(mount: AdapterMount): P2PAdapterConfig {
   if (unknown.length > 0) refuse(`transport names a field this adapter does not read: ${unknown.join(', ')}`)
   return {
     channel: mount.channel,
-    instance: mount.instance,
+    instance: mount.channel,
     botName: mount.botName,
     ...(mount.status === undefined ? {} : { status: mount.status }),
     peers: parsePeers(raw.peers),
