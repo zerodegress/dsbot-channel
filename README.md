@@ -58,6 +58,8 @@ config:
 
 `channel`, `botName` and `transport` are required, and `channel` must be unique. `reply`, `turn` and `policy` may also be written at the top level as defaults; an adapter replaces the keys it writes whole, so an object or an array is taken as written and not merged field by field. The plugin-level status names the level that supplied each key under `config[].layers`. Two adapters that answer for the same bot and session key still share that session, but each keeps its own coalescing window and context buffer. `channel` is the adapter's only name; peers see it on the wire too. `kind` defaults to `p2p`; `onebot` is the other built-in, and a third-party transport registers as `x-[a-z0-9-]+`, at most 32 characters. `secret` and `accessToken` are reference names in the host credentials service, not the secrets themselves. Paths in a profile are read as POSIX paths; Windows is not supported.
 
+Two entries of one peer instance must reference different secrets; the same reference twice is refused at mount.
+
 An OneBot adapter speaks one protocol: `transport.protocol` is `http` (the default), `ws-forward` or `ws-reverse`. A field that belongs to another protocol is refused when the profile loads. Each adapter is one link: an implementation reached over one protocol gets one OneBot adapter, not two.
 
 An adapter may name `session` to run every turn in one existing session, and `cwd`, `agentPreset` and `model` for the sessions it creates; `model` is written `provider/model`. The host's session controller selects that model through `selectModel`; a host without it warns and the session keeps its own model. The adapter status reports the outcome under `modelSelection`, as `requested` and a `state` of `applied`, `unsupported` or `rejected`; the field is absent when no model is named and until the host has decided.
@@ -100,8 +102,6 @@ The impression library is off until a top-level `impressions` block names an abs
 | `status` | `true` | status route |
 
 An answer that is empty, or that holds nothing but whitespace, is not sent: it is counted as an empty turn like any other answer with no text, so no empty message reaches the conversation.
-
-Two entries of one peer instance must reference different secrets; the same reference twice is refused at mount.
 
 ## License
 
