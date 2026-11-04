@@ -8,7 +8,6 @@ import { ADAPTER_META_MAX_BYTES } from '../src/adapter-meta.js'
 
 const config: OneBotAdapterConfig = {
   channel: 'onebot:a',
-  instance: 'inst-a',
   botName: 'bot-a',
   selfId: '10001',
   protocol: 'http',

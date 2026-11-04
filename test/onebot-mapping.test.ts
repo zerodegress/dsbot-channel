@@ -4,7 +4,6 @@ import type { OneBotAdapterConfig, OneBotEvent } from '../src/adapters/onebot/ad
 
 const config: OneBotAdapterConfig = {
   channel: 'onebot:a',
-  instance: 'inst-a',
   botName: 'bot-a',
   selfId: '10001',
   listen: { host: '127.0.0.1', port: 0, path: '/onebot/event' },
@@ -34,7 +33,7 @@ const noChain = (): undefined => undefined
 describe('what an onebot event becomes', () => {
   test('a group message carries its group, its sender and a framed body', () => {
     const message = mapOneBotEvent(event(), config, noChain)!
-    expect(message.source).toEqual({ kind: 'onebot', instance: 'inst-a', peer: '12345', scope: 'group' })
+    expect(message.source).toEqual({ kind: 'onebot', instance: 'onebot:a', peer: '12345', scope: 'group' })
     expect(message.sessionKey).toBe('group:12345')
     expect(message.replyTarget).toBe('group:12345')
     expect(message.requestId).toBe('1')
@@ -118,9 +117,9 @@ describe('what an onebot event becomes', () => {
       (line) => drops.push(line),
     )!
     expect(good.body.media).toEqual([
-      { type: 'image', url: 'https://example.test/a.png', handle: 'ab12.image', owner: { kind: 'onebot', instance: 'inst-a' } },
-      { type: 'image', url: null, handle: 'ab12.image', owner: { kind: 'onebot', instance: 'inst-a' } },
-      { type: 'voice', url: null, handle: 'ab12.amr', owner: { kind: 'onebot', instance: 'inst-a' } },
+      { type: 'image', url: 'https://example.test/a.png', handle: 'ab12.image', owner: { kind: 'onebot', instance: 'onebot:a' } },
+      { type: 'image', url: null, handle: 'ab12.image', owner: { kind: 'onebot', instance: 'onebot:a' } },
+      { type: 'voice', url: null, handle: 'ab12.amr', owner: { kind: 'onebot', instance: 'onebot:a' } },
     ])
     expect(drops).toHaveLength(1)
     expect(drops[0]).toMatch(/dropped 1 onebot media reference\(s\) .* that carried neither a url nor a file name/)

@@ -86,7 +86,6 @@ async function mountReceiver(): Promise<Mounted> {
     adapters: [
       {
 channel: 'p2p:b',
-instance: 'inst-b',
 botName: 'bot-b',
 transport: {
   peers: [{ instance: 'inst-a', secret: REF }],

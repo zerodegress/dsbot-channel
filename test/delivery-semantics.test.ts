@@ -179,8 +179,7 @@ describe('what a 2xx from an onebot listener means', () => {
     })
     const adapter = new OneBotAdapter(
       {
-        channel: 'onebot:a',
-        instance: 'inst-a',
+        channel: 'inst-a',
         botName: 'bot-a',
         selfId: '10001',
         protocol: 'http',

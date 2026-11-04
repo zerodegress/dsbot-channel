@@ -72,7 +72,7 @@ class StubAdapter implements ChannelAdapter {
 const adapterPlugin = defineAdapterPlugin({ kind: 'x-a', create: () => new StubAdapter() })
 
 const profile = {
-  adapters: [{ kind: 'x-a', channel: 'x:a', instance: 'inst-a', botName: 'bot-a', transport: {} }],
+  adapters: [{ kind: 'x-a', channel: 'inst-a', botName: 'bot-a', transport: {} }],
 }
 
 async function services(ctx: Context): Promise<void> {

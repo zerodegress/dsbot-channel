@@ -149,7 +149,6 @@ async function mount(
       {
         kind,
         channel: 'x:a',
-        instance: 'inst-a',
         botName: 'bot-a',
         policy: { ...policy },
         transport: options.transport ?? {},

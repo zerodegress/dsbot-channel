@@ -198,7 +198,6 @@ async function mount(options: MountOptions = {}): Promise<Context> {
     {
       kind: 'x-prepare',
       channel: 'x:a',
-      instance: 'inst-a',
       botName: 'bot-a',
       policy: {
         groupBots: 'answer',
@@ -211,7 +210,7 @@ async function mount(options: MountOptions = {}): Promise<Context> {
       transport: {},
     },
     ...(options.extraAdapter === true
-      ? [{ kind: 'x-noprepare', channel: 'x:b', instance: 'inst-b', botName: 'bot-a', transport: {} }]
+      ? [{ kind: 'x-noprepare', channel: 'x:b', botName: 'bot-a', transport: {} }]
       : []),
   ]
   await ctx.plugin(registryPlugin)
@@ -315,7 +314,6 @@ describe('a prepare node a session layer introduces', () => {
       adapters: [
         {
           channel: 'p2p:self',
-          instance: 'inst-a',
           botName: 'bot-a',
           policy: { allow: { peers: ['inst-b'] } },
           transport: { peers: [{ instance: 'inst-b', secret: REF }], listen: { host: '127.0.0.1', port: 0 } },
@@ -368,7 +366,6 @@ describe('a prepare node the adapters cannot supply', () => {
         adapters: [
           {
             channel: 'p2p:self',
-            instance: 'inst-a',
             botName: 'bot-a',
             transport: { peers: [{ instance: 'inst-b', secret: REF }], listen: { host: '127.0.0.1', port: 0 } },
           },

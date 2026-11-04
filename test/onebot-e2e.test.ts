@@ -103,7 +103,6 @@ async function mount(
       {
         kind: 'onebot',
         channel: 'onebot:a',
-        instance: 'inst-a',
         botName: 'bot-a',
         policy,
         transport: {

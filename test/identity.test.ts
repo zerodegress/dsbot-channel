@@ -196,8 +196,7 @@ describe('the identity block at mount', () => {
       identity,
       adapters: [
         {
-          channel: 'p2p:self',
-          instance: 'inst-a',
+          channel: 'inst-a',
           botName: 'bot-a',
           transport: { peers: [{ instance: 'peer-a', secret: REF }], listen: { host: '127.0.0.1', port: 0 } },
         },

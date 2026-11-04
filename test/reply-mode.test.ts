@@ -139,8 +139,7 @@ async function mount(reply: unknown, options: { withTools?: boolean; answer?: st
     adapters: [
       {
         kind: 'x-demo',
-        channel: 'x:a',
-        instance: 'inst-a',
+        channel: 'inst-a',
         botName: 'bot-a',
         policy: {},
         transport: {},

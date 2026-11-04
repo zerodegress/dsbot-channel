@@ -12,7 +12,6 @@ const TOKEN = 's3cr3t-token'
 function config(overrides: Partial<OneBotAdapterConfig> = {}): OneBotAdapterConfig {
   return {
     channel: 'onebot:a',
-    instance: 'inst-a',
     botName: 'bot-a',
     selfId: '10001',
     listen: { host: '127.0.0.1', port: 0, path: '/onebot/event' },
@@ -193,7 +192,7 @@ describe('the onebot sender', () => {
     })
 
     const { adapter } = await startAdapter({ accessToken: REF, api: { url: `http://127.0.0.1:${apiPort}`, timeoutMs: 1000 } })
-    const sent = await adapter.send({ target: 'group:12345', eventId: 'evt-1', chainId: 'evt-1', body: 'hello', sender: 'bot-a', instance: 'inst-a' })
+    const sent = await adapter.send({ target: 'group:12345', eventId: 'evt-1', chainId: 'evt-1', body: 'hello', sender: 'bot-a', instance: 'onebot:a' })
 
     expect(sent).toEqual({ ok: true, messageId: '77', duplicate: false })
     expect(calls[0]).toMatchObject({
@@ -202,7 +201,7 @@ describe('the onebot sender', () => {
       auth: `Bearer ${TOKEN}`,
     })
 
-    const priv = await adapter.send({ target: 'peer:20002', eventId: 'evt-2', body: 'hi', sender: 'bot-a', instance: 'inst-a' })
+    const priv = await adapter.send({ target: 'peer:20002', eventId: 'evt-2', body: 'hi', sender: 'bot-a', instance: 'onebot:a' })
     expect(priv.ok).toBe(true)
     expect(calls[1]).toMatchObject({ path: '/send_private_msg', body: { user_id: '20002', message: 'hi' } })
   })
@@ -236,7 +235,7 @@ describe('the onebot sender', () => {
       body: 'look',
       media: [{ type: 'image', url: 'https://example.test/a.png', handle: null }],
       sender: 'bot-a',
-      instance: 'inst-a',
+      instance: 'onebot:a',
     })
     expect(sent.ok).toBe(true)
     expect(calls[0]?.body.message).toEqual([
@@ -248,9 +247,9 @@ describe('the onebot sender', () => {
       target: 'group:12345',
       eventId: 'evt-2',
       body: '',
-      media: [{ type: 'image', url: null, handle: 'ab12.image', owner: { kind: 'onebot', instance: 'inst-a' } }],
+      media: [{ type: 'image', url: null, handle: 'ab12.image', owner: { kind: 'onebot', instance: 'onebot:a' } }],
       sender: 'bot-a',
-      instance: 'inst-a',
+      instance: 'onebot:a',
     })
     expect(calls[1]?.body.message).toEqual([{ type: 'image', data: { file: 'ab12.image' } }])
 
@@ -260,7 +259,7 @@ describe('the onebot sender', () => {
       body: 'text',
       media: [{ type: 'image', url: null, handle: 'x.image', owner: { kind: 'onebot', instance: 'other' } }],
       sender: 'bot-a',
-      instance: 'inst-a',
+      instance: 'onebot:a',
     })
     expect(calls[2]?.body.message).toBe('text')
     expect(warns.some((line) => line.includes('another instance'))).toBe(true)
@@ -274,7 +273,7 @@ describe('the onebot sender', () => {
         { type: 'image', url: null, handle: 'two words' },
       ],
       sender: 'bot-a',
-      instance: 'inst-a',
+      instance: 'onebot:a',
     })
     expect(calls[3]?.body.message).toBe('still here')
     expect(warns.some((line) => line.includes('neither a url nor a handle'))).toBe(true)
@@ -286,7 +285,7 @@ describe('the onebot sender', () => {
       body: '',
       media: [],
       sender: 'bot-a',
-      instance: 'inst-a',
+      instance: 'onebot:a',
     })
     expect(nothing).toMatchObject({ ok: false, code: 'rejected' })
   })
@@ -341,7 +340,7 @@ describe('the onebot status', () => {
   test('reports the listener and the capabilities it really has', async () => {
     const { adapter } = await startAdapter()
     const status = adapter.status()
-    expect(status).toMatchObject({ channel: 'onebot:a', account: 'inst-a', bot: 'bot-a' })
+    expect(status).toMatchObject({ channel: 'onebot:a', account: 'onebot:a', bot: 'bot-a' })
     expect(status.health).toMatchObject({ kind: 'listener', listenState: 'listening' })
     expect(status.capabilities).toMatchObject({
       text: true,

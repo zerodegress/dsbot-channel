@@ -33,8 +33,7 @@ describe('scaffold', () => {
     const fork = ctx.plugin(plugin, {
       adapters: [
         {
-channel: 'p2p:self',
-instance: 'inst-a',
+channel: 'inst-a',
 botName: 'bot-a',
 transport: {
   peers: [{ instance: 'inst-b', secret: 'PEER_SHARED_SECRET' }],

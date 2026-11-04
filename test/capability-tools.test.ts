@@ -13,8 +13,8 @@ import { NO_MEDIA } from '../src/adapter-status.js'
 import type { HistoryInput, HistoryResult, SendResult } from '../src/contract.js'
 
 const channels: PushChannel[] = [
-  { channel: 'p2p:a', instance: 'a', botName: 'a' },
-  { channel: 'onebot:main', instance: 'main', botName: 'main' },
+  { channel: 'p2p:a', botName: 'a' },
+  { channel: 'onebot:main', botName: 'main' },
 ]
 
 const addresses: Record<string, string[]> = {

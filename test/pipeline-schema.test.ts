@@ -35,8 +35,7 @@ async function mount(config: Record<string, unknown>): Promise<Context> {
 const adapter = (overrides: Record<string, unknown> = {}) => {
   const { peers, listen, dedupe, inflightTtlMs, sentAtWindowMs, maxBodyBytes, waitMs, ...rest } = overrides
   return {
-    channel: 'p2p:self',
-    instance: 'inst-a',
+    channel: 'inst-a',
     botName: 'bot-a',
     transport: {
       peers: peers ?? [{ instance: 'inst-b', secret: REF }],
