@@ -6,6 +6,8 @@ export interface PipelineNodeSpec {
   type: NodeType
   restrictSkip?: readonly SkipTarget[]
   mayRestrict?: boolean
+  /** A judge at or above this score allows the message, below it denies; absent keeps it a scorer. */
+  allowAtLeast?: number
 }
 
 export interface PipelineSettings {
@@ -45,6 +47,18 @@ export function checkPipeline(nodes: readonly PipelineNodeSpec[]): CheckReport {
     if (node.mayRestrict && node.type !== 'budget') {
       fatal.push(`node "${node.id}": only a budget node may return restrict`)
     }
+    if (node.allowAtLeast !== undefined) {
+      if (node.type !== 'judge') {
+        fatal.push(`node "${node.id}": only a judge node may declare allowAtLeast`)
+      } else if (
+        typeof node.allowAtLeast !== 'number' ||
+        !Number.isFinite(node.allowAtLeast) ||
+        node.allowAtLeast < 0 ||
+        node.allowAtLeast > 1
+      ) {
+        fatal.push(`node "${node.id}": allowAtLeast must be between 0 and 1: ${String(node.allowAtLeast)}`)
+      }
+    }
   }
 
   const budget = index('budget')
@@ -56,7 +70,8 @@ export function checkPipeline(nodes: readonly PipelineNodeSpec[]): CheckReport {
   }
   const deny = index('deny')
   const allow = index('allow')
-  if (nodes.length > 0 && allow < 0) {
+  const judgeAllows = nodes.some((node) => node.type === 'judge' && node.allowAtLeast !== undefined)
+  if (nodes.length > 0 && allow < 0 && !judgeAllows) {
     warnings.push('no "allow" node: every message is denied while this pipeline is attached')
   }
   if (deny >= 0 && allow >= 0 && allow < deny) warnings.push('allow runs before deny')

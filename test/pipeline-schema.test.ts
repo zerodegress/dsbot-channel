@@ -3,6 +3,7 @@ import { registryPlugin } from '../src/registry-plugin.js'
 import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
 import { Config, checkPipelineScopes, checkPipelineSettings } from '../src/plugin.js'
+import { checkPipeline } from '../src/pipeline-config.js'
 import type { ChannelConfig } from '../src/plugin.js'
 import { ConfigError } from '../src/config.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
@@ -55,6 +56,22 @@ const node = (id: string, type: string) => ({ id, type })
 const parsed = (config: unknown): ChannelConfig => (Config as (value: unknown) => ChannelConfig)(config)
 
 describe('the pipeline a profile declares', () => {
+  test('a judge threshold is refused outside a judge node or the 0..1 range', () => {
+    expect(checkPipeline([{ id: 'j', type: 'deny', allowAtLeast: 0.5 }]).fatal.join(' ')).toMatch(
+      /only a judge node may declare allowAtLeast/,
+    )
+    expect(checkPipeline([{ id: 'j', type: 'judge', allowAtLeast: 1.5 }]).fatal.join(' ')).toMatch(
+      /allowAtLeast must be between 0 and 1/,
+    )
+    expect(checkPipeline([{ id: 'j', type: 'judge', allowAtLeast: -0.1 }]).fatal.join(' ')).toMatch(/allowAtLeast/)
+    expect(checkPipeline([{ id: 'j', type: 'judge', allowAtLeast: 0.5 }]).fatal).toEqual([])
+  })
+
+  test('a judge threshold is an allow source, so the missing allow node does not warn', () => {
+    const report = checkPipeline([{ id: 'j', type: 'judge', allowAtLeast: 0.5 }])
+    expect(report.warnings.join(' ')).not.toMatch(/no "allow" node/)
+  })
+
   test('refuses a global pipeline that cannot load, and names the layer', async () => {
     await expect(
       mount({ adapters: [], pipeline: { global: [{ id: 'score', type: 'score' }] } }),

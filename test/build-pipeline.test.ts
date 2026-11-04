@@ -144,6 +144,35 @@ describe('the budget node reports what the ledger says', () => {
   })
 })
 
+describe('a judge threshold', () => {
+  test('at or above it the message is allowed', async () => {
+    const pipeline = buildPipeline([{ id: 'j', type: 'judge', allowAtLeast: 0.5 }], {
+      judge: () => Promise.resolve({ score: 0.9, reason: 'clean' }),
+    })
+    const result = await pipeline.run(event)
+    expect(result.decision).toBe('allow')
+    expect(result.reasons.j).toBe('clean')
+  })
+
+  test('below it the message is denied with the score', async () => {
+    const pipeline = buildPipeline([{ id: 'j', type: 'judge', allowAtLeast: 0.5 }], {
+      judge: () => Promise.resolve({ score: 0.2 }),
+    })
+    const result = await pipeline.run(event)
+    expect(result.decision).toBe('deny')
+    expect(result.reasons.j).toMatch(/judge_below_threshold.*0\.2/)
+  })
+
+  test('without it the judge only scores', async () => {
+    const pipeline = buildPipeline([{ id: 'j', type: 'judge' }], {
+      judge: () => Promise.resolve({ score: 0.9 }),
+    })
+    const result = await pipeline.run(event)
+    expect(result.decision).toBe('deny')
+    expect(result.score).toBe(0.9)
+  })
+})
+
 describe('the options a host passes', () => {
   const hung = (): PipelineDeps => ({ judge: () => new Promise(() => {}) })
 

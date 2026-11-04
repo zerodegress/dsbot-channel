@@ -125,6 +125,7 @@ const nodeSpecSchema = Schema.object({
   type: Schema.string().required(),
   restrictSkip: Schema.any(),
   mayRestrict: Schema.boolean(),
+  allowAtLeast: Schema.number(),
 })
 
 const layerSchema = Schema.object({
@@ -136,6 +137,7 @@ const layerSchema = Schema.object({
       type: Schema.string().required(),
       after: Schema.string(),
       before: Schema.string(),
+      allowAtLeast: Schema.number(),
     }),
   ).default([]),
   override: Schema.dict(Schema.any()).default({}),

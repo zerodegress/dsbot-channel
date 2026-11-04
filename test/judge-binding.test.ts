@@ -211,6 +211,31 @@ describe('a judge node binds the decision service', () => {
     await fork.dispose()
   })
 
+  test('a verdict at the threshold allows the message', async () => {
+    queue = [message('e-judge-threshold-ok')]
+    verdicts = []
+    const ctx = await mount({
+      judge: () => Promise.resolve({ score: 0.9 }),
+      pipeline: { global: [{ id: 'j', type: 'judge', allowAtLeast: 0.5 }] },
+    })
+
+    expect(verdicts).toEqual([{ ok: true }])
+    expect(usageOf(ctx)).toBe(1)
+  })
+
+  test('a verdict below the threshold is refused with the score', async () => {
+    queue = [message('e-judge-threshold-no')]
+    verdicts = []
+    const ctx = await mount({
+      judge: () => Promise.resolve({ score: 0.2 }),
+      pipeline: { global: [{ id: 'j', type: 'judge', allowAtLeast: 0.5 }] },
+    })
+
+    expect(verdicts[0]).toMatchObject({ ok: false, code: 'rejected' })
+    expect(String((verdicts[0] as { reason?: string }).reason)).toMatch(/judge_below_threshold.*0\.2/)
+    expect(usageOf(ctx)).toBe(1)
+  })
+
   test('a returned verdict is charged once at the judge price', async () => {
     queue = [message('e-judge-1')]
     verdicts = []
