@@ -50,19 +50,43 @@ function optionalWhole(value: unknown, field: string): number | undefined {
 }
 
 function parsePeers(value: unknown): P2PPeerConfig[] {
-  if (!Array.isArray(value) || value.length === 0) refuse('transport.peers must list at least one peer', 'peers')
-  return value.map((entry, index) => {
-    const peer = record(entry, `peers[${index}]`)
-    return {
-      instance: requiredText(peer.instance, `peers[${index}].instance`),
-      secret: requiredText(peer.secret, `peers[${index}].secret`),
-      ...(optionalText(peer.url, `peers[${index}].url`) === undefined ? {} : { url: peer.url as string }),
-      ...(optionalText(peer.host, `peers[${index}].host`) === undefined ? {} : { host: peer.host as string }),
-      ...(optionalText(peer.botName, `peers[${index}].botName`) === undefined
-        ? {}
-        : { botName: peer.botName as string }),
+  if (Array.isArray(value)) {
+    if (value.length === 0) refuse('transport.peers must list at least one peer', 'peers')
+    return value.map((entry, index) => {
+      const peer = record(entry, `peers[${index}]`)
+      if (peer.instance === undefined && peer.secret === undefined) {
+        refuse(
+          `transport.peers mixes the list form and the mapping form: peers[${index}] is neither a peer nor a mapping`,
+          'peers',
+        )
+      }
+      return {
+        instance: requiredText(peer.instance, `peers[${index}].instance`),
+        secret: requiredText(peer.secret, `peers[${index}].secret`),
+        ...(optionalText(peer.url, `peers[${index}].url`) === undefined ? {} : { url: peer.url as string }),
+        ...(optionalText(peer.host, `peers[${index}].host`) === undefined ? {} : { host: peer.host as string }),
+        ...(optionalText(peer.botName, `peers[${index}].botName`) === undefined
+          ? {}
+          : { botName: peer.botName as string }),
+      }
+    })
+  }
+  if (value !== null && typeof value === 'object') {
+    const mapping = value as Record<string, unknown>
+    if (Object.hasOwn(mapping, 'instance') && Object.hasOwn(mapping, 'secret')) {
+      refuse(
+        'transport.peers reads as one peer written without the list brackets; the list form is peers: [{ instance, secret }]',
+        'peers',
+      )
     }
-  })
+    const entries = Object.entries(mapping)
+    if (entries.length === 0) refuse('transport.peers must list at least one peer', 'peers')
+    return entries.map(([instance, secret]) => ({
+      instance: requiredText(instance, `peers.${instance}`),
+      secret: requiredText(secret, `peers.${instance}`),
+    }))
+  }
+  refuse('transport.peers must be a list of peers or a mapping of instance to secret reference', 'peers')
 }
 
 function parseListen(value: unknown): { host?: string; port?: number } | undefined {

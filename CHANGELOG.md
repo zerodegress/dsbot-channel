@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `transport.peers` takes a mapping of peer instance to secret reference as well as the list form: `peers: { peer-a: PEER_A_REFERENCE }`. The two forms read as the same peers; mixing them in one block, mapping an instance to anything but a non-empty secret reference, or writing one peer without the list brackets is refused at mount with the correct form named, and an empty mapping is refused like an empty list.
+
 ### Changed
 
 - `reply`, `turn` and `policy` may be written at the top level as defaults, and an adapter replaces the keys it writes whole; an object or an array is taken as written. Each adapter keeps its own coalescing window and context buffer, and the plugin-level status names the level that supplied each key under `config[].layers`; two adapters answering for one bot and session key still share that session, while each keeps its own coalescing window and context buffer.
