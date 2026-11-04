@@ -102,7 +102,15 @@ const demoAdapter = { kind: 'x-demo', create: () => new DemoAdapter() }
 
 const prompted: string[] = []
 
-async function mount(reply: unknown, options: { withTools?: boolean; answer?: string } = {}): Promise<Context> {
+async function mount(
+  reply: unknown,
+  options: {
+    withTools?: boolean
+    answer?: string
+    adapter?: Record<string, unknown>
+    turn?: Record<string, unknown>
+  } = {},
+): Promise<Context> {
   const ctx = new Context()
   const answer = options.answer ?? 'a plain answer'
   await ctx.plugin({
@@ -136,6 +144,7 @@ async function mount(reply: unknown, options: { withTools?: boolean; answer?: st
   await ctx.plugin(registryPlugin)
   await ctx.plugin(entry, {
     reply,
+    ...(options.turn === undefined ? {} : { turn: options.turn }),
     adapters: [
       {
         kind: 'x-demo',
@@ -143,6 +152,7 @@ async function mount(reply: unknown, options: { withTools?: boolean; answer?: st
         botName: 'bot-a',
         policy: {},
         transport: {},
+        ...(options.adapter ?? {}),
       },
     ],
   })
@@ -174,6 +184,83 @@ describe('a rule keyed by the peer name on the wire', () => {
     const turns = ctx.get('dsbot-channel.turns') as { snapshot(): { dropped: number; replied: number } }
     expect(turns.snapshot()).toMatchObject({ dropped: 0, replied: 1 })
     expect(outbound).toHaveLength(1)
+  })
+})
+
+describe('the top level supplies defaults an adapter can replace', () => {
+  test('a top-level default reaches an adapter that writes no reply block', async () => {
+    queue = [message('e-layer-1')]
+    verdicts = []
+    outbound = []
+    await mount({ default: 'auto' })
+
+    expect(verdicts).toEqual([{ ok: true }])
+    await wait()
+    expect(outbound).toHaveLength(1)
+  })
+
+  test('an adapter replaces only the reply keys it writes', async () => {
+    queue = [message('e-layer-2')]
+    verdicts = []
+    outbound = []
+    await mount({ default: 'tool' }, { adapter: { reply: { byScope: { p2p: 'auto' } } } })
+
+    expect(verdicts).toEqual([{ ok: true }])
+    await wait()
+    expect(outbound).toHaveLength(1)
+  })
+
+  test('the status names which level supplied each key, never a value', async () => {
+    queue = [message('e-layer-3')]
+    verdicts = []
+    outbound = []
+    const ctx = await mount(
+      { default: 'auto', rules: [{ when: { source: { kind: 'x-demo' } }, mode: 'tool' }] },
+      { adapter: { reply: { default: 'tool' } } },
+    )
+
+    const status = ctx.get('dsbot-channel.status') as {
+      snapshot(): { config: { channel: string; layers: Record<string, string> }[] }
+    }
+    expect(status.snapshot().config).toEqual([
+      {
+        channel: 'inst-a',
+        layers: { 'reply.default': 'adapter', 'reply.rules': 'global' },
+      },
+    ])
+  })
+})
+
+describe('the turn block follows the same per-key rule', () => {
+  test('an adapter coalesce window replaces the top-level one', async () => {
+    await wait(30)
+    queue = [message('e-turn-1')]
+    verdicts = []
+    outbound = []
+    prompted.length = 0
+    await mount({ default: 'auto' }, { turn: { coalesceMs: 1_000 }, adapter: { turn: { coalesceMs: 0 } } })
+
+    await wait(40)
+    expect(prompted).toHaveLength(1)
+    await wait(30)
+  })
+
+  test('the status names the turn keys by level', async () => {
+    queue = []
+    verdicts = []
+    outbound = []
+    const ctx = await mount(
+      { default: 'auto' },
+      { turn: { coalesceMs: 1_000 }, adapter: { turn: { maxBatch: 1 } } },
+    )
+
+    const status = ctx.get('dsbot-channel.status') as {
+      snapshot(): { config: { channel: string; layers: Record<string, string> }[] }
+    }
+    expect(status.snapshot().config[0]?.layers).toMatchObject({
+      'turn.coalesceMs': 'global',
+      'turn.maxBatch': 'adapter',
+    })
   })
 })
 

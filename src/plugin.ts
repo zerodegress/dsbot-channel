@@ -72,6 +72,10 @@ export interface AdapterConfig {
   botName: string
   /** Runs every turn of this adapter in one existing session instead of one per address. */
   session?: string
+  /** How this adapter answers; the keys it writes replace the top-level block's keys whole. */
+  reply?: unknown
+  /** How this adapter's messages gather; the keys it writes replace the top-level block's keys whole. */
+  turn?: unknown
   policy: PolicySettings
   pipeline?: PipelineLayer | undefined
   status?: boolean
@@ -85,7 +89,9 @@ export interface ChannelConfig {
   /** How a turn answers: auto lets it write, tool requires a tool call. */
   reply?: unknown
   /** How messages arrive at a turn: one by one, or a short window merged into one. */
-  turn?: TurnSettings | undefined
+  turn?: unknown
+  /** The default policy every adapter starts from; an adapter replaces the keys it writes. */
+  policy?: unknown
   /** Who an account belongs to: declared bindings, validated at mount. */
   identity?: unknown
   /** Where this bot's notes live; absent means the feature is off. */
@@ -146,6 +152,7 @@ export const Config: any = Schema.object({
   reply: Schema.any(),
   identity: Schema.any(),
   impressions: Schema.any(),
+  policy: Schema.any(),
   turn: Schema.object({
     coalesceMs: Schema.number(),
     maxBatch: Schema.number(),
@@ -163,6 +170,8 @@ export const Config: any = Schema.object({
         channel: Schema.string().required(),
         botName: Schema.string().required(),
         session: Schema.string(),
+        reply: Schema.any(),
+        turn: Schema.any(),
         policy: Schema.object({
           relayLimit: Schema.number().default(3),
           requireMention: Schema.boolean().default(false),
@@ -351,7 +360,15 @@ export function checkPipelineSettings(settings: PipelineSettings): void {
 }
 
 /** Refuses a pipeline that cannot load, and reports the ones that only look wrong. */
-export function checkPipelineScopes(config: ChannelConfig, warn: (message: string) => void): void {
+export function checkPipelineScopes(
+  config: ChannelConfig,
+  warn: (message: string) => void,
+  written: (adapter: AdapterConfig) => Record<string, unknown> | undefined = (adapter) => ({
+    policy: adapter.policy,
+    reply: adapter.reply,
+  }),
+  globalPolicy: unknown = config.policy,
+): void {
   const layers = new Map<string, PipelineLayer>()
   for (const adapter of config.adapters) {
     const layer = adapter.pipeline
@@ -394,7 +411,7 @@ export function checkPipelineScopes(config: ChannelConfig, warn: (message: strin
           : config.pipeline.global
         : declaredNodes(config, adapter)
     if (nodes === undefined) continue
-    const rules = adapter === undefined ? undefined : compilePolicy(adapter.policy).deps
+    const rules = adapter === undefined ? undefined : compilePolicy(effectivePolicy(globalPolicy, written(adapter)?.policy)).deps
     const whose = adapter?.botName ? `bot "${adapter.botName}": ` : ''
     const bindings = {
       deny: (rules?.denyRules ?? []).length > 0,
@@ -416,11 +433,15 @@ interface BotFacts extends BotScope {
   deps: PipelineDeps
 }
 
-function botScopes(config: ChannelConfig): Map<string, BotFacts> {
+function botScopes(
+  config: ChannelConfig,
+  written: (adapter: AdapterConfig) => Record<string, unknown> | undefined,
+  globalPolicy: unknown,
+): Map<string, BotFacts> {
   const bots = new Map<string, BotFacts>()
   for (const adapter of config.adapters) {
     const seen = bots.get(adapter.botName)
-    const compiled = compilePolicy(adapter.policy)
+    const compiled = compilePolicy(effectivePolicy(globalPolicy, written(adapter)?.policy))
     const deny = (compiled.deps.denyRules ?? []).length > 0
     const allow = (compiled.deps.allowRules ?? []).length > 0
     const base = declaredNodes(config, adapter) ?? compiled.specs
@@ -447,25 +468,30 @@ function botScopes(config: ChannelConfig): Map<string, BotFacts> {
 }
 
 /** Refuses a transport that takes its own policy out of the core block. */
-function checkPolicy(adapter: AdapterConfig, index: number): void {
-  const path = (field: string): string[] => ['adapters', String(index), 'policy', field]
-  const { relayLimit, relayResetMs } = adapter.policy
-  if (!Number.isInteger(relayLimit) || relayLimit < 1) {
+/** The policy checks a block has to pass, wherever that block was written. */
+function checkPolicyValues(
+  policy: Record<string, unknown>,
+  path: (field: string) => string[],
+): void {
+  const relayLimit = policy.relayLimit as number | undefined
+  const relayResetMs = policy.relayResetMs as number | undefined
+  if (relayLimit !== undefined && (!Number.isInteger(relayLimit) || relayLimit < 1)) {
     throw new ConfigError(`relayLimit must be a whole number of rounds, at least 1: ${relayLimit}`, path('relayLimit'))
   }
-  if (!Number.isInteger(relayResetMs) || relayResetMs < 1) {
+  if (relayResetMs !== undefined && (!Number.isInteger(relayResetMs) || relayResetMs < 1)) {
     throw new ConfigError(
       `relayResetMs must be a whole number of milliseconds, at least 1: ${relayResetMs}`,
       path('relayResetMs'),
     )
   }
-  if (adapter.policy.groupBots !== undefined && !GROUP_BOT_POLICIES.includes(adapter.policy.groupBots)) {
+  const groupBots = policy.groupBots as string | undefined
+  if (groupBots !== undefined && !GROUP_BOT_POLICIES.includes(groupBots as (typeof GROUP_BOT_POLICIES)[number])) {
     throw new ConfigError(
-      `policy.groupBots must be one of ${GROUP_BOT_POLICIES.join(', ')}: ${String(adapter.policy.groupBots)}`,
+      `policy.groupBots must be one of ${GROUP_BOT_POLICIES.join(', ')}: ${String(groupBots)}`,
       path('groupBots'),
     )
   }
-  const budget = adapter.policy.budget
+  const budget = policy.budget as { capacity?: number; hardLimit?: number } | undefined
   if (budget !== undefined && budget.capacity === undefined) {
     throw new ConfigError('policy.budget.capacity is required', path('budget.capacity'))
   }
@@ -573,9 +599,43 @@ interface ChannelRuntime {
   gate: InboundGate
   billing: TurnBilling
   deps: PipelineDeps
+  reply: ReturnType<typeof compileReply>
   turn: TurnSettings
+  context: ContextBuffer
   /** Set when the default bot rule had to fall back: warn once, then stay quiet. */
   mentionFallback: { pending: boolean; warned: boolean }
+}
+
+function asRecord(raw: unknown): Record<string, unknown> {
+  return raw !== null && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
+}
+
+/** One block merged from the top level and the adapter: a written key replaces that key whole. */
+function mergeLayer(
+  globalRaw: unknown,
+  adapterRaw: unknown,
+  prefix: 'reply' | 'turn' | 'policy',
+): { merged: Record<string, unknown>; layers: Record<string, 'global' | 'adapter'> } {
+  const merged: Record<string, unknown> = {}
+  const layers: Record<string, 'global' | 'adapter'> = {}
+  const take = (raw: unknown, from: 'global' | 'adapter'): void => {
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+      if (value === undefined) continue
+      merged[key] = value
+      layers[`${prefix}.${key}`] = from
+    }
+  }
+  take(globalRaw, 'global')
+  take(adapterRaw, 'adapter')
+  return { merged, layers }
+}
+
+function effectivePolicy(
+  globalPolicy: unknown,
+  writtenPolicy: unknown,
+): Parameters<typeof compilePolicy>[0] {
+  return mergeLayer(globalPolicy, writtenPolicy, 'policy').merged as Parameters<typeof compilePolicy>[0]
 }
 
 /** Refuses an adapter that still names itself twice: `instance` became `channel`. */
@@ -632,6 +692,12 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     )
   }
   const config = readConfig(raw)
+  const writtenAdapters = Array.isArray((raw as { adapters?: unknown } | null)?.adapters)
+    ? ((raw as { adapters: Record<string, unknown>[] }).adapters ?? [])
+    : []
+  const written = (adapter: AdapterConfig): Record<string, unknown> | undefined =>
+    writtenAdapters[config.adapters.indexOf(adapter)]
+  const rawProfile = (raw ?? {}) as { reply?: unknown; turn?: unknown; policy?: unknown }
   const warn = createWarn(ctx)
   const flushFailures = { count: 0 }
   const flushSessions = async (when: 'reply' | 'shutdown'): Promise<void> => {
@@ -649,12 +715,11 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     judgeTimeoutMs: config.pipeline.judgeTimeoutMs,
   }
   checkPipelineSettings(settings)
-  const turn = checkTurnSettings(config.turn)
-  const context = new ContextBuffer(turn.context)
-  checkPipelineScopes(config, warn)
-  const bots = botScopes(config)
+  checkTurnSettings(config.turn as Parameters<typeof checkTurnSettings>[0])
+  checkPipelineScopes(config, warn, written, rawProfile.policy)
+  const bots = botScopes(config, written, rawProfile.policy)
   const pipelines = new SessionPipelines({ bots })
-  const channels = mountAdapters(config, settings, warn, registry)
+  const channels = mountAdapters(config, settings, warn, registry, (index) => writtenAdapters[index], rawProfile.policy)
   // Parsed after the adapters so a binding can be checked against instances that really exist.
   const identity = buildIdentity(config.identity, accountSpaces(channels), warn)
   const impressionsConfig = readImpressionsConfig(config.impressions)
@@ -663,7 +728,8 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   }
   checkGuidance(channels)
   checkPrepareSupport(bots, channels)
-  const reply = compileReply(config.reply)
+  const replyOf = (adapter: AdapterConfig): ReturnType<typeof compileReply> =>
+    compileReply(mergeLayer(rawProfile.reply, written(adapter)?.reply, 'reply').merged)
   // A guard against a future edit to the notice text, not profile validation: the block is core-owned.
   if (TOOL_MODE_NOTICE.length > TOOL_MODE_NOTICE_MAX) {
     throw new ConfigError(`the tool-mode block is longer than ${TOOL_MODE_NOTICE_MAX} characters`, ['reply'])
@@ -676,7 +742,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     | ReturnType<typeof createImpressionGet>
     | ReturnType<typeof createImpressionForget>
   const tools = ctx.get('tools') as { register: (definition: AnyTool) => () => void } | undefined
-  if (reply.possibleTool && (tools === undefined || typeof tools.register !== 'function')) {
+  if (config.adapters.some((adapter) => replyOf(adapter).possibleTool) && (tools === undefined || typeof tools.register !== 'function')) {
     throw new ConfigError('the tools service is required when a profile can choose tool mode', ['reply'])
   }
   if (impressionsConfig !== undefined && (tools === undefined || typeof tools.register !== 'function')) {
@@ -714,10 +780,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   const chains = new ClosedChains()
   const injected = new InjectionLedger()
   const activeTurns = new Map<string, TurnRef>()
-  const windows = new TurnWindows<InboundMessage>(
-    { now: clock, setTimer, clearTimer },
-    { limits: { maxBatch: turn.maxBatch, maxChars: turn.maxChars }, windowMs: turn.coalesceMs },
-  )
+  const windowBuffers: TurnWindows<InboundMessage>[] = []
   const eventKeys = new KeyGuard()
   const chainKeys = new ChainGuard()
   const turns = new TurnStats()
@@ -820,7 +883,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     let hold: Hold | undefined
     try {
       hold = runtime.billing.begin(adapter.botName, message.sessionKey, message.eventKey)
-      const mode = reply.modeFor(replyFactsOf(last))
+      const mode = runtime.reply.modeFor(replyFactsOf(last))
       const blocks: string[] = []
       if (injected.claim(message.sessionKey)) {
         const guidance = transport.guidance[message.source.scope === 'group' ? 'group' : 'peer']
@@ -843,7 +906,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         }
       }
       const mergedKeys = [message.eventKey, ...rest.map((one) => one.eventKey)]
-      const seen = context.entries(`${adapter.botName}|${message.sessionKey}`, mergedKeys)
+      const seen = runtime.context.entries(`${adapter.botName}|${message.sessionKey}`, mergedKeys)
       if (seen.length > 0) blocks.push(renderContext(seen))
       const turn = await runtime.sessions.runTurn({
         peer: message.sessionKey,
@@ -940,8 +1003,9 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   const reporting = new Set(channels.map((channel) => channel.adapter))
   const started: AdapterHandle[] = []
   const runtimes: PeerSessions[] = []
+  const configLayers: { channel: string; layers: Record<string, 'global' | 'adapter'> }[] = []
   ctx.effect(() => async () => {
-    windows.clear()
+    for (const buffer of windowBuffers.splice(0)) buffer.clear()
     await Promise.allSettled(started.map((handle) => handle.stop()))
     for (const sessions of runtimes.splice(0)) sessions.dispose()
     await flushSessions('shutdown')
@@ -957,12 +1021,29 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         ...(adapter.session === undefined ? {} : { session: adapter.session }),
       })
       runtimes.push(sessions)
-      const compiled = compilePolicy(adapter.policy)
-      const budget = adapter.policy.budget
+      const writtenBlock = written(adapter)
+      const turnLayer = mergeLayer(rawProfile.turn, writtenBlock?.turn, 'turn')
+      const turnSettings = checkTurnSettings(turnLayer.merged as Parameters<typeof checkTurnSettings>[0])
+      const context = new ContextBuffer(turnSettings.context)
+      const windows = new TurnWindows<InboundMessage>(
+        { now: clock, setTimer, clearTimer },
+        { limits: { maxBatch: turnSettings.maxBatch, maxChars: turnSettings.maxChars }, windowMs: turnSettings.coalesceMs },
+      )
+      windowBuffers.push(windows)
+      const mergedPolicy = effectivePolicy(rawProfile.policy, writtenBlock?.policy)
+      const compiled = compilePolicy(mergedPolicy)
+      const policyBlock = mergedPolicy as PolicySettings
+      const replyBlock = mergeLayer(rawProfile.reply, writtenBlock?.reply, 'reply')
+      const policyLayer = mergeLayer(rawProfile.policy, writtenBlock?.policy, 'policy')
+      configLayers.push({
+        channel: adapter.channel,
+        layers: { ...replyBlock.layers, ...turnLayer.layers, ...policyLayer.layers },
+      })
+      const budget = policyBlock.budget
       const ledger = budget === undefined ? undefined : createLedger(budget)
       if (!ledgers.some((one) => one.bot === adapter.botName)) ledgers.push({ bot: adapter.botName, ledger })
       const mentionCapable = transport.capabilities.mention === true
-      const declaredGroupBots = adapter.policy.groupBots
+      const declaredGroupBots = policyBlock.groupBots
       const wantedGroupBots: GroupBotPolicy = declaredGroupBots ?? 'whenMentioned'
       const groupBots: GroupBotPolicy =
         wantedGroupBots === 'whenMentioned' && !mentionCapable ? 'silent' : wantedGroupBots
@@ -970,14 +1051,16 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         channel,
         sessions,
         gate: new InboundGate({
-          loop: { relayLimit: adapter.policy.relayLimit, relayResetMs: adapter.policy.relayResetMs },
-          requireMention: adapter.policy.requireMention === true,
+          loop: { relayLimit: policyBlock.relayLimit, relayResetMs: policyBlock.relayResetMs },
+          requireMention: policyBlock.requireMention === true,
           groupBots,
           ledger,
         }),
         billing: new TurnBilling({ ledger }),
         deps: bots.get(adapter.botName)?.deps ?? compiled.deps,
-        turn,
+        reply: replyOf(adapter),
+        turn: turnSettings,
+        context,
         mentionFallback: { pending: declaredGroupBots === undefined && !mentionCapable, warned: false },
       }
       const onMessage = async (message: InboundMessage): Promise<InboundVerdict> => {
@@ -1047,7 +1130,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
           ...(pipeline === undefined ? {} : { pipeline }),
         })
         if (message.source.scope === 'group') {
-          context.record(`${adapter.botName}|${message.sessionKey}`, {
+          runtime.context.record(`${adapter.botName}|${message.sessionKey}`, {
             eventKey: message.eventKey,
             senderId: message.author.senderId,
             nickname: message.declared.nickname,
@@ -1115,6 +1198,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     snapshot: () => ({
       sampledAt: Date.now(),
       adapters: [...reporting].map((adapter) => adapter.status()),
+      config: configLayers.map((entry) => ({ channel: entry.channel, layers: { ...entry.layers } })),
       flushFailures: flushFailures.count,
     }),
   })
@@ -1241,6 +1325,8 @@ function mountAdapters(
   settings: AdapterCheckSettings,
   warn: (message: string) => void,
   registry: AdapterRegistry,
+  written: (index: number) => Record<string, unknown> | undefined,
+  globalPolicy: unknown,
 ): MountedChannel[] {
   const seen = new Set<string>()
   return config.adapters.map((adapter, index) => {
@@ -1249,7 +1335,18 @@ function mountAdapters(
       throw new ConfigError(`duplicate adapter channel: ${adapter.channel}`, ['adapters', String(index), 'channel'])
     }
     seen.add(adapter.channel)
-    checkPolicy(adapter, index)
+    const adapterPath = (field: string): string[] => ['adapters', String(index), 'policy', field]
+    checkPolicyValues(adapter.policy as unknown as Record<string, unknown>, adapterPath)
+    const writtenPolicy = asRecord(written(index)?.policy)
+    const defaults: Record<string, unknown> = { ...(adapter.policy as unknown as Record<string, unknown>) }
+    for (const key of Object.keys(writtenPolicy)) delete defaults[key]
+    const effective = { ...defaults, ...asRecord(globalPolicy), ...writtenPolicy }
+    const layers = mergeLayer(globalPolicy, writtenPolicy, 'policy').layers
+    checkPolicyValues(effective, (field) =>
+      layers[`policy.${field.split('.')[0]}`] === 'global'
+        ? ['policy', field]
+        : ['adapters', String(index), 'policy', field],
+    )
     const kind = adapter.kind ?? 'p2p'
     checkAdapterKind(kind)
     const mount: AdapterMount = {
