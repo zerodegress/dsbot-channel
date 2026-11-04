@@ -41,6 +41,7 @@ describe('a channel reports its own state', () => {
       underruns: 0,
       unknownPaths: 0,
       authFailures: 0,
+      unknownInstance: 0,
       protocolMismatches: 0,
       staleSentAt: {},
       lastProtocolMismatchAt: null,
@@ -150,5 +151,25 @@ describe('a snapshot is a copy', () => {
     snapshot.lastFailure!.reason = 'tampered'
     snapshot.state = 'listening'
     expect(channel.snapshot()).toMatchObject({ state: 'failed', lastFailure: { reason: 'EADDRINUSE' } })
+  })
+})
+
+describe('an instance the roster does not name', () => {
+  test('is counted every time and remembered once', () => {
+    const { stats: channel } = stats()
+    expect(channel.unknownInstance('ghost')).toBe(true)
+    expect(channel.unknownInstance('ghost')).toBe(false)
+    expect(channel.unknownInstance('other')).toBe(true)
+    expect(channel.snapshot()).toMatchObject({ unknownInstance: 3, authFailures: 0 })
+  })
+})
+
+describe('the warn memory a hostile roster fills', () => {
+  test('keeps at most 256 names and forgets the oldest', () => {
+    const { stats: channel } = stats()
+    for (let index = 0; index < 257; index += 1) expect(channel.unknownInstance(`ghost-${index}`)).toBe(true)
+    expect(channel.unknownInstance('ghost-0')).toBe(true)
+    expect(channel.unknownInstance('ghost-256')).toBe(false)
+    expect(channel.snapshot().unknownInstance).toBe(259)
   })
 })

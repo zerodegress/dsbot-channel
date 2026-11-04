@@ -52,7 +52,7 @@ function optionalWhole(value: unknown, field: string): number | undefined {
 function parsePeers(value: unknown): P2PPeerConfig[] {
   if (Array.isArray(value)) {
     if (value.length === 0) refuse('transport.peers must list at least one peer', 'peers')
-    return value.map((entry, index) => {
+    const peers = value.map((entry, index) => {
       const peer = record(entry, `peers[${index}]`)
       if (peer.instance === undefined && peer.secret === undefined) {
         refuse(
@@ -70,6 +70,20 @@ function parsePeers(value: unknown): P2PPeerConfig[] {
           : { botName: peer.botName as string }),
       }
     })
+    const references = new Map<string, Set<string>>()
+    for (const [index, peer] of peers.entries()) {
+      const seen = references.get(peer.instance) ?? new Set<string>()
+      if (seen.has(peer.secret)) {
+        refuse(
+          `transport.peers lists instance "${peer.instance}" twice with the same secret reference; ` +
+            'entries for one instance must reference different secrets',
+          `peers[${index}].secret`,
+        )
+      }
+      seen.add(peer.secret)
+      references.set(peer.instance, seen)
+    }
+    return peers
   }
   if (value !== null && typeof value === 'object') {
     const mapping = value as Record<string, unknown>

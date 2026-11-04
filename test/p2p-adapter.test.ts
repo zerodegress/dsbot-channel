@@ -8,11 +8,14 @@ import { P2PAdapter } from '../src/adapters/p2p/adapter.js'
 import type { P2PAdapterConfig } from '../src/adapters/p2p/adapter.js'
 import { sendToPeer } from '../src/adapters/p2p/p2p-send.js'
 import { DedupeTable } from '../src/adapters/p2p/p2p-dedupe.js'
+import { signEnvelope } from '../src/adapters/p2p/p2p-auth.js'
+import type { Envelope } from '../src/adapters/p2p/p2p-auth.js'
 import { startListener } from '../src/adapters/p2p/p2p-listener.js'
 import type { InboundRequest } from '../src/adapters/p2p/p2p-wire.js'
 import type { AdapterPorts, InboundMessage } from '../src/contract.js'
 import type { AdapterMount } from '../src/adapter-registry.js'
 import { parseP2PConfig } from '../src/adapters/p2p/index.js'
+import { logName } from '../src/adapters/p2p/p2p-mapping.js'
 
 const REF = '{{SECRET_7k3mwq8t}}'
 const credentials = staticCredentials({ [REF]: 'shared-value' })
@@ -634,5 +637,233 @@ describe('media a peer could not receive', () => {
     })
     expect(result).toMatchObject({ ok: false, code: 'no_url' })
     expect(posted).toHaveLength(0)
+  })
+})
+
+describe('the peers a rotation adds', () => {
+  const mount = (peers: unknown): AdapterMount => ({
+    kind: 'p2p',
+    channel: 'p2p:a',
+    botName: 'bot-a',
+    transport: { peers },
+  })
+
+  test('one instance listed twice with the same secret reference is refused', () => {
+    expect(() =>
+      parseP2PConfig(
+        mount([
+          { instance: 'peer-a', secret: REF },
+          { instance: 'peer-a', secret: REF },
+        ]),
+      ),
+    ).toThrow(/same secret reference/)
+  })
+
+  test('one instance listed twice under two references mounts', () => {
+    const parsed = parseP2PConfig(
+      mount([
+        { instance: 'peer-a', secret: REF },
+        { instance: 'peer-a', secret: `${REF}-next` },
+      ]),
+    )
+    expect(parsed.peers.map((peer) => peer.secret)).toEqual([REF, `${REF}-next`])
+  })
+})
+
+describe('an instance the roster does not name', () => {
+  test('is logged once and counted on every message', async () => {
+    const warnings: string[] = []
+    const adapter = new P2PAdapter(config(0), { warn: (line) => warnings.push(line) })
+    adapter.checkConfig({ maxTurnMs: 120_000 })
+    const handle = await adapter.start({
+      onMessage: async () => ({ ok: true }),
+      resolveSecret: (ref) => Promise.resolve(credentials.resolve(ref).then((one) => one?.value)),
+    })
+    stops.push(handle.stop)
+    const port = instancePort(adapter)
+    const from = (instance: string, eventId: string) =>
+      sendToPeer({
+        peer: { instance, secret: REF, url: `http://127.0.0.1:${port}` },
+        credentials,
+        to: 'bot-b',
+        body: 'hello',
+        eventId,
+        sender: `bot-${instance}`,
+        instance,
+      })
+
+    expect(await from('inst-z', 'evt-unknown-1')).toMatchObject({ ok: false })
+    expect(await from('inst-z', 'evt-unknown-2')).toMatchObject({ ok: false })
+    expect(await from('inst-y', 'evt-unknown-3')).toMatchObject({ ok: false })
+
+    expect(warnings).toHaveLength(2)
+    expect(warnings[0]).toContain('inst-z')
+    expect(warnings[0]).toContain('inst-a')
+    expect(warnings[1]).toContain('inst-y')
+    expect(adapter.status().counters.unknownInstance).toBe(3)
+  })
+})
+
+describe('the link the adapter reports', () => {
+  test('timestamps a landed send and keeps the peer and code of a failed one', async () => {
+    let clock = 1_000
+    const capture = createServer((request, response) => {
+      request.resume()
+      request.on('end', () => {
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({ duplicate: false, messageId: 'p2p-x' }))
+      })
+    })
+    await new Promise<void>((resolve) => capture.listen(0, '127.0.0.1', resolve))
+    const capturePort = (capture.address() as AddressInfo).port
+    const adapter = new P2PAdapter(
+      {
+        channel: 'p2p:b',
+        botName: 'bot-b',
+        peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}` }],
+        listen: { host: '127.0.0.1', port: 0 },
+      },
+      { now: () => clock },
+    )
+    adapter.checkConfig({ maxTurnMs: 120_000 })
+    const handle = await adapter.start({
+      onMessage: async () => ({ ok: true }),
+      resolveSecret: (ref) => Promise.resolve(credentials.resolve(ref).then((one) => one?.value)),
+    })
+    stops.push(handle.stop)
+    stops.push(async () => {
+      capture.close()
+    })
+
+    expect(adapter.status()).toMatchObject({ lastSuccessAt: null, lastSendFailure: null })
+
+    clock = 2_000
+    const landed = await adapter.send({
+      target: 'inst-a',
+      to: 'bot-a',
+      eventId: 'evt-link-1',
+      body: 'hello',
+      sender: 'bot-b',
+      instance: 'inst-b',
+    })
+    expect(landed.ok).toBe(true)
+    expect(adapter.status()).toMatchObject({ lastSuccessAt: 2_000, lastSendFailure: null })
+
+    await new Promise<void>((resolve) => {
+      capture.close(() => resolve())
+    })
+    clock = 3_000
+    const failed = await adapter.send({
+      target: 'inst-a',
+      to: 'bot-a',
+      eventId: 'evt-link-2',
+      body: 'hello',
+      sender: 'bot-b',
+      instance: 'inst-b',
+    })
+    expect(failed).toMatchObject({ ok: false, code: 'unreachable' })
+    expect(adapter.status()).toMatchObject({
+      lastSuccessAt: 2_000,
+      lastSendFailure: { at: 3_000, instance: 'inst-a', reason: 'unreachable' },
+    })
+    expect(adapter.status().counters.sendFailures).toEqual({ unreachable: 1 })
+  })
+})
+
+describe('a rotation that keeps both keys', () => {
+  test('takes a signature from either entry and sends with the first', async () => {
+    const pair = staticCredentials({ old: 'old-value', new: 'new-value' })
+    const capture = createServer((request, response) => {
+      let raw = ''
+      request.on('data', (chunk: string) => {
+        raw += chunk
+      })
+      request.on('end', () => {
+        const signature = signEnvelope('new-value', JSON.parse(raw) as Envelope)
+        const accepted = signature === request.headers['x-p2p-signature']
+        response.writeHead(accepted ? 200 : 401, { 'content-type': 'application/json' })
+        response.end(JSON.stringify(accepted ? { duplicate: false, messageId: 'p2p-x' } : { error: 'bad signature' }))
+      })
+    })
+    await new Promise<void>((resolve) => capture.listen(0, '127.0.0.1', resolve))
+    const capturePort = (capture.address() as AddressInfo).port
+
+    const adapter = new P2PAdapter({
+      channel: 'p2p:b',
+      botName: 'bot-b',
+      peers: [
+        { instance: 'inst-a', secret: 'new', url: `http://127.0.0.1:${capturePort}` },
+        { instance: 'inst-a', secret: 'old' },
+      ],
+      listen: { host: '127.0.0.1', port: 0 },
+    })
+    adapter.checkConfig({ maxTurnMs: 120_000 })
+    const handle = await adapter.start({
+      onMessage: async () => ({ ok: true }),
+      resolveSecret: (ref) => Promise.resolve(pair.resolve(ref).then((one) => one?.value)),
+    })
+    stops.push(handle.stop)
+    stops.push(async () => {
+      capture.close()
+    })
+    const port = instancePort(adapter)
+    const from = (alias: string, eventId: string) =>
+      sendToPeer({
+        peer: { instance: 'inst-a', secret: alias, url: `http://127.0.0.1:${port}` },
+        credentials: pair,
+        to: 'bot-b',
+        body: 'hello',
+        eventId,
+        sender: 'bot-a',
+        instance: 'inst-a',
+      })
+
+    expect(await from('old', 'evt-rotate-old')).toMatchObject({ ok: true })
+    expect(await from('new', 'evt-rotate-new')).toMatchObject({ ok: true })
+
+    const sent = await adapter.send({
+      target: 'inst-a',
+      to: 'bot-a',
+      eventId: 'evt-rotate-out',
+      body: 'reply',
+      sender: 'bot-b',
+      instance: 'inst-b',
+    })
+    expect(sent.ok).toBe(true)
+  })
+})
+
+describe('an unknown name the log carries', () => {
+  test('stays one escaped line, however the sender spells it', async () => {
+    const warnings: string[] = []
+    const adapter = new P2PAdapter(config(0), { warn: (line) => warnings.push(line) })
+    adapter.checkConfig({ maxTurnMs: 120_000 })
+    const handle = await adapter.start({
+      onMessage: async () => ({ ok: true }),
+      resolveSecret: (ref) => Promise.resolve(credentials.resolve(ref).then((one) => one?.value)),
+    })
+    stops.push(handle.stop)
+    const port = instancePort(adapter)
+    const name = 'inst-z\nFAKE LOG LINE'
+    const stranger = staticCredentials({ [REF]: 'a-different-value' })
+    const sent = await sendToPeer({
+      peer: { instance: name, secret: REF, url: `http://127.0.0.1:${port}` },
+      credentials: stranger,
+      to: 'bot-b',
+      body: 'hello',
+      eventId: 'evt-line-1',
+      sender: 'bot-a',
+      instance: name,
+    })
+    expect(sent).toMatchObject({ ok: false, code: 'unauthorized' })
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).not.toContain('\n')
+    expect(warnings[0]).toContain('inst-z\\u000aFAKE LOG LINE')
+  })
+
+  test('a long name is cut to a bound', () => {
+    expect(logName('x'.repeat(200))).toHaveLength(64)
+    expect(logName('x'.repeat(200)).endsWith('…')).toBe(true)
+    expect(logName('a\tb')).toBe('a\\u0009b')
   })
 })

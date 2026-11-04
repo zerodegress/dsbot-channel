@@ -1,4 +1,4 @@
-import type { AdapterStatus } from '../../adapter-status.js'
+import type { AdapterStatus, SendFailureView } from '../../adapter-status.js'
 import { NO_HISTORY, buildListenerHealth, buildStatus } from '../../adapter-status.js'
 import type { ChannelSnapshot } from '../../channel-stats.js'
 import { countersOf } from '../../channel-stats.js'
@@ -90,6 +90,8 @@ export class P2PAdapter implements ChannelAdapter {
   readonly #now: () => number
   #table: DedupeTable | undefined
   #ports: AdapterPorts | undefined
+  #lastSuccessAt: number | null = null
+  #lastSendFailure: SendFailureView | null = null
 
   constructor(config: P2PAdapterConfig, options: P2PAdapterOptions = {}) {
     this.#config = config
@@ -100,6 +102,18 @@ export class P2PAdapter implements ChannelAdapter {
 
   get snapshot(): ChannelSnapshot {
     return this.#stats.snapshot()
+  }
+
+  /** Records how one send ended: a success timestamps the link, a failure keeps the peer and the code. */
+  #settleSend(instance: string, result: SendResult): SendResult {
+    const at = this.#now()
+    if (result.ok) {
+      this.#lastSuccessAt = at
+      return result
+    }
+    this.#stats.sendFailed(result.code)
+    this.#lastSendFailure = { at, instance, reason: result.code }
+    return result
   }
 
   checkConfig(settings: AdapterCheckSettings): void {
@@ -182,6 +196,8 @@ export class P2PAdapter implements ChannelAdapter {
       sampledAt: snapshot.sampledAt,
       queueDepth: snapshot.inFlight,
       ...(this.#table === undefined ? {} : { dedupe: { epoch: this.#table.epoch } }),
+      lastSuccessAt: this.#lastSuccessAt,
+      lastSendFailure: this.#lastSendFailure === null ? null : { ...this.#lastSendFailure },
     })
   }
 
@@ -244,8 +260,7 @@ export class P2PAdapter implements ChannelAdapter {
       ...(input.inReplyTo === undefined ? {} : { inReplyTo: input.inReplyTo }),
       ...(input.inReplyToText === undefined ? {} : { inReplyToExcerpt: cleanExcerpt(input.inReplyToText) }),
     })
-    if (!result.ok) this.#stats.sendFailed(result.code)
-    return result
+    return this.#settleSend(peer.instance, result)
   }
 
   async refuse(input: RefuseInput): Promise<RefuseResult> {
@@ -280,7 +295,7 @@ export class P2PAdapter implements ChannelAdapter {
       reason: input.reason,
       final: true,
     })
-    if (!result.ok) this.#stats.sendFailed(result.code)
+    this.#settleSend(peer.instance, result)
     return result.ok ? { ok: true } : { ok: false, code: result.code, reason: result.reason }
   }
 
