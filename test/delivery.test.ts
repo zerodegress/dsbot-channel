@@ -112,8 +112,10 @@ class DemoAdapter implements ChannelAdapter {
 }
 
 const demoAdapter = { kind: 'x-demo', create: () => new DemoAdapter() }
+const toolDefs: { name: string; execute: (args: unknown, exec: unknown) => Promise<unknown> }[] = []
 
-async function mount(delivery: unknown): Promise<Context> {
+async function mount(delivery: unknown, adapterDelivery?: unknown): Promise<Context> {
+  toolDefs.length = 0
   const ctx = new Context()
   await ctx.plugin({
     name: 'probe-services',
@@ -134,7 +136,12 @@ async function mount(delivery: unknown): Promise<Context> {
         },
       })
       scope.provide('tools')
-      scope.set('tools', { register: () => () => undefined })
+      scope.set('tools', {
+        register: (definition: { name: string; execute: (args: unknown, exec: unknown) => Promise<unknown> }) => {
+          toolDefs.push(definition)
+          return () => undefined
+        },
+      })
     },
   })
   await ctx.plugin(registryPlugin)
@@ -143,7 +150,16 @@ async function mount(delivery: unknown): Promise<Context> {
   await ctx.plugin(registryPlugin)
   await ctx.plugin(entry, {
     ...(delivery === undefined ? {} : { delivery }),
-    adapters: [{ kind: 'x-demo', channel: 'inst-a', botName: 'bot-a', policy: {}, transport: {} }],
+    adapters: [
+      {
+        kind: 'x-demo',
+        channel: 'inst-a',
+        botName: 'bot-a',
+        policy: {},
+        transport: {},
+        ...(adapterDelivery === undefined ? {} : { delivery: adapterDelivery }),
+      },
+    ],
   })
   return ctx
 }
@@ -187,6 +203,42 @@ describe('a reply that is sent in parts', () => {
     expect(warnings.some((line) => line.includes('rejected') && line.includes('after 1 part(s)'))).toBe(true)
     const turns = ctx.get('dsbot-channel.turns') as { snapshot(): { sendFailures: Record<string, number> } }
     expect(turns.snapshot().sendFailures).toMatchObject({ rejected: 1 })
+  })
+
+  test('hard cut pieces merged past maxParts gain no blank line', () => {
+    const delivery = compileDelivery({ split: { byBlankLine: false, maxChars: 2, maxParts: 2 } }, (key) => [
+      'delivery',
+      key,
+    ])!
+    expect(delivery.parts('abcdef')).toEqual(['ab', 'cdef'])
+  })
+
+  test('send_text is not split', async () => {
+    queue = []
+    sentInputs.length = 0
+    failOnSend = 0
+    reply = ''
+    await mount({ split: { byBlankLine: true, maxParts: 2 }, pacing: { charsPerSecond: 100, minMs: 0, maxMs: 0 } })
+    const sendText = toolDefs.find((definition) => definition.name === 'send_text')!
+    await sendText.execute({ text: 'one\n\ntwo', channel: 'inst-a', target: 'chat-1' }, {})
+
+    expect(sentInputs).toHaveLength(1)
+    expect(sentInputs[0]?.body).toBe('one\n\ntwo')
+  })
+
+  test('an empty adapter block keeps the top-level splitting', async () => {
+    queue = [message('e-part-4')]
+    verdicts = []
+    sentInputs.length = 0
+    failOnSend = 0
+    reply = 'one\n\ntwo'
+    await mount(
+      { split: { byBlankLine: true, maxParts: 2 }, pacing: { charsPerSecond: 100, minMs: 0, maxMs: 0 } },
+      {},
+    )
+    await wait(40)
+
+    expect(sentInputs.map((input) => input.body)).toEqual(['one', 'two'])
   })
 
   test('no delivery block keeps one send', async () => {

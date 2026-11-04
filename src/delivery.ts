@@ -56,26 +56,34 @@ export class Delivery {
   /** The parts a reply is sent as, merged into the last part when there are too many. */
   parts(text: string): string[] {
     const split = this.settings.split
-    const cut: string[] = []
+    const pieces: { text: string; cut: boolean }[] = []
     const paragraphs = split.byBlankLine ? text.split(/\r?\n[ \t]*\r?\n/) : [text]
     for (const paragraph of paragraphs) {
       const chars = codepoints(paragraph)
       if (chars.length === 0) continue
       if (split.maxChars === 0) {
-        cut.push(paragraph)
+        pieces.push({ text: paragraph, cut: false })
         continue
       }
       let index = 0
       while (index < chars.length) {
         let end = Math.min(index + split.maxChars, chars.length)
         if (end < chars.length && chars[end - 1] === '\r' && chars[end] === '\n') end -= 1
-        cut.push(chars.slice(index, end).join(''))
+        pieces.push({ text: chars.slice(index, end).join(''), cut: true })
         index = end
       }
     }
-    if (cut.length === 0) return []
-    if (cut.length <= split.maxParts) return cut
-    return [...cut.slice(0, split.maxParts - 1), cut.slice(split.maxParts - 1).join('\n\n')]
+    if (pieces.length === 0) return []
+    if (pieces.length <= split.maxParts) return pieces.map((piece) => piece.text)
+    const kept = pieces.slice(0, split.maxParts - 1).map((piece) => piece.text)
+    const head = pieces[split.maxParts - 1]!
+    let merged = head.text
+    let wasCut = head.cut
+    for (const piece of pieces.slice(split.maxParts)) {
+      merged += (wasCut && piece.cut ? '' : '\n\n') + piece.text
+      wasCut = piece.cut
+    }
+    return [...kept, merged]
   }
 
   /** How long to wait before the next part, from its own length. */
