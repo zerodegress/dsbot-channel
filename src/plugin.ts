@@ -42,6 +42,8 @@ import { DEFAULT_PIPELINE } from './pipeline-config.js'
 import type { PipelineLayer, PipelineScopes } from './pipeline-scopes.js'
 import { resolveAndCheck, resolvePipeline } from './pipeline-scopes.js'
 import { compilePolicy } from './policy-config.js'
+import { compileDelivery } from './delivery.js'
+import type { Delivery } from './delivery.js'
 import { compileReply } from './reply-config.js'
 import type { ReplyFacts } from './reply-config.js'
 import type { PolicyConfig } from './policy-config.js'
@@ -82,6 +84,8 @@ export interface AdapterConfig {
   reply?: unknown
   /** How this adapter's messages gather; the keys it writes replace the top-level block's keys whole. */
   turn?: unknown
+  /** How this adapter splits and paces a reply; the keys it writes replace the top-level block's keys whole. */
+  delivery?: unknown
   policy: PolicySettings
   pipeline?: PipelineLayer | undefined
   status?: boolean
@@ -98,6 +102,8 @@ export interface ChannelConfig {
   turn?: unknown
   /** The default policy every adapter starts from; an adapter replaces the keys it writes. */
   policy?: unknown
+  /** The default split and pacing every adapter starts from; an adapter replaces the keys it writes. */
+  delivery?: unknown
   /** Who an account belongs to: declared bindings, validated at mount. */
   identity?: unknown
   /** Where this bot's notes live; absent means the feature is off. */
@@ -162,6 +168,7 @@ export const Config: any = Schema.object({
   identity: Schema.any(),
   impressions: Schema.any(),
   policy: Schema.any(),
+  delivery: Schema.any(),
   turn: Schema.object({
     coalesceMs: Schema.number(),
     maxBatch: Schema.number(),
@@ -184,6 +191,7 @@ export const Config: any = Schema.object({
         model: Schema.string(),
         reply: Schema.any(),
         turn: Schema.any(),
+        delivery: Schema.any(),
         policy: Schema.object({
           relayLimit: Schema.number().default(3),
           requireMention: Schema.boolean().default(false),
@@ -621,6 +629,7 @@ interface ChannelRuntime {
   reply: ReturnType<typeof compileReply>
   turn: TurnSettings
   context: ContextBuffer
+  delivery?: Delivery | undefined
   /** Set when the default bot rule had to fall back: warn once, then stay quiet. */
   mentionFallback: { pending: boolean; warned: boolean }
 }
@@ -633,7 +642,7 @@ function asRecord(raw: unknown): Record<string, unknown> {
 function mergeLayer(
   globalRaw: unknown,
   adapterRaw: unknown,
-  prefix: 'reply' | 'turn' | 'policy',
+  prefix: 'reply' | 'turn' | 'policy' | 'delivery',
 ): { merged: Record<string, unknown>; layers: Record<string, 'global' | 'adapter'> } {
   const merged: Record<string, unknown> = {}
   const layers: Record<string, 'global' | 'adapter'> = {}
@@ -716,7 +725,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     : []
   const written = (adapter: AdapterConfig): Record<string, unknown> | undefined =>
     writtenAdapters[config.adapters.indexOf(adapter)]
-  const rawProfile = (raw ?? {}) as { reply?: unknown; turn?: unknown; policy?: unknown }
+  const rawProfile = (raw ?? {}) as { reply?: unknown; turn?: unknown; policy?: unknown; delivery?: unknown }
   const warn = createWarn(ctx)
   const flushFailures = { count: 0 }
   const judgeFailures = { count: 0 }
@@ -990,17 +999,30 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         hold = undefined
         return
       }
-      const sent = await transport.send({
-        target: message.replyTarget,
-        to: last.author.senderId,
-        body: turn.text,
-        eventId: `reply:${randomUUID()}`,
-        chainId: message.chainId,
-        sender: adapter.botName,
-        instance: adapter.channel,
-        inReplyTo: last.requestId,
-        inReplyToText: last.rawText,
-      })
+      const delivery = runtime.delivery
+      const parts = delivery === undefined ? [turn.text] : delivery.parts(turn.text)
+      const replyEventId = `reply:${randomUUID()}`
+      let sent: Awaited<ReturnType<typeof transport.send>> = { ok: true, messageId: '', duplicate: false }
+      let sentParts = 0
+      for (const [index, part] of (parts.length === 0 ? [turn.text] : parts).entries()) {
+        if (index > 0 && delivery !== undefined) {
+          await new Promise<void>((resolve) => {
+            setTimer(() => resolve(), delivery.gapMs(part))
+          })
+        }
+        sent = await transport.send({
+          target: message.replyTarget,
+          to: last.author.senderId,
+          body: part,
+          eventId: index === 0 ? replyEventId : `${replyEventId}:${index + 1}`,
+          chainId: message.chainId,
+          sender: adapter.botName,
+          instance: adapter.channel,
+          ...(index === 0 ? { inReplyTo: last.requestId, inReplyToText: last.rawText } : {}),
+        })
+        if (!sent.ok) break
+        sentParts += 1
+      }
       if (sent.ok) {
         turns.replied()
         ended('replied')
@@ -1014,7 +1036,10 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
       ended('failed', sent.code)
       runtime.billing.reject(hold)
       hold = undefined
-      warn(`dsbot-channel: reply to ${message.replyTarget} was not delivered: ${sent.code} ${sent.reason}`)
+      warn(
+        `dsbot-channel: reply to ${message.replyTarget} was not delivered: ${sent.code} ${sent.reason}` +
+          (sentParts > 0 ? ` (after ${sentParts} part(s))` : ''),
+      )
     } finally {
       if (hold !== undefined) runtime.billing.refund(hold)
     }
@@ -1060,6 +1085,12 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
       runtimes.push(sessions)
       const writtenBlock = written(adapter)
       const turnLayer = mergeLayer(rawProfile.turn, writtenBlock?.turn, 'turn')
+      const deliveryLayer = mergeLayer(rawProfile.delivery, writtenBlock?.delivery, 'delivery')
+      const delivery = compileDelivery(deliveryLayer.merged, (key) =>
+        deliveryLayer.layers[`delivery.${key}`] === 'adapter'
+          ? ['adapters', String(channel.index), 'delivery', key]
+          : ['delivery', key],
+      )
       const turnSettings = checkTurnSettings(turnLayer.merged as Parameters<typeof checkTurnSettings>[0])
       const context = new ContextBuffer(turnSettings.context)
       const windows = new TurnWindows<InboundMessage>(
@@ -1074,7 +1105,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
       const policyLayer = mergeLayer(rawProfile.policy, writtenBlock?.policy, 'policy')
       configLayers.push({
         channel: adapter.channel,
-        layers: { ...replyBlock.layers, ...turnLayer.layers, ...policyLayer.layers },
+        layers: { ...replyBlock.layers, ...turnLayer.layers, ...policyLayer.layers, ...deliveryLayer.layers },
       })
       const budget = policyBlock.budget
       const ledger = budget === undefined ? undefined : createLedger(budget, { points: { judge: settings.judgePoints } })
@@ -1098,6 +1129,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         reply: replyOf(adapter),
         turn: turnSettings,
         context,
+        delivery,
         mentionFallback: { pending: declaredGroupBots === undefined && !mentionCapable, warned: false },
       }
       const onMessage = async (message: InboundMessage): Promise<InboundVerdict> => {
