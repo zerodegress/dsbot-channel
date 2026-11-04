@@ -56,32 +56,32 @@ export class Delivery {
   /** The parts a reply is sent as, merged into the last part when there are too many. */
   parts(text: string): string[] {
     const split = this.settings.split
-    const pieces: { text: string; cut: boolean }[] = []
+    const pieces: { text: string; para: number }[] = []
     const paragraphs = split.byBlankLine ? text.split(/\r?\n[ \t]*\r?\n/) : [text]
-    for (const paragraph of paragraphs) {
+    paragraphs.forEach((paragraph, para) => {
       const chars = codepoints(paragraph)
-      if (chars.length === 0) continue
+      if (chars.length === 0) return
       if (split.maxChars === 0) {
-        pieces.push({ text: paragraph, cut: false })
-        continue
+        pieces.push({ text: paragraph, para })
+        return
       }
       let index = 0
       while (index < chars.length) {
         let end = Math.min(index + split.maxChars, chars.length)
         if (end < chars.length && chars[end - 1] === '\r' && chars[end] === '\n') end -= 1
-        pieces.push({ text: chars.slice(index, end).join(''), cut: true })
+        pieces.push({ text: chars.slice(index, end).join(''), para })
         index = end
       }
-    }
+    })
     if (pieces.length === 0) return []
     if (pieces.length <= split.maxParts) return pieces.map((piece) => piece.text)
     const kept = pieces.slice(0, split.maxParts - 1).map((piece) => piece.text)
     const head = pieces[split.maxParts - 1]!
     let merged = head.text
-    let wasCut = head.cut
+    let previous = head.para
     for (const piece of pieces.slice(split.maxParts)) {
-      merged += (wasCut && piece.cut ? '' : '\n\n') + piece.text
-      wasCut = piece.cut
+      merged += (piece.para === previous ? '' : '\n\n') + piece.text
+      previous = piece.para
     }
     return [...kept, merged]
   }

@@ -37,6 +37,13 @@ describe('the delivery block', () => {
     expect(parts.join('')).toBe('ab\r\ncd🎉ef')
   })
 
+  test('merging keeps a paragraph boundary even when every piece was hard cut', () => {
+    const delivery = compile({ split: { byBlankLine: true, maxChars: 2, maxParts: 2 } })!
+    const parts = delivery.parts('aaa\n\nbbb')
+    expect(parts).toEqual(['aa', 'a\n\nbbb'])
+    expect(parts.join('')).toBe('aaa\n\nbbb')
+  })
+
   test('the gap comes from the next part and stays inside minMs..maxMs', () => {
     const delivery = compile({ pacing: { charsPerSecond: 10, minMs: 100, maxMs: 500 } })!
     expect(delivery.gapMs('x'.repeat(1))).toBe(100)
