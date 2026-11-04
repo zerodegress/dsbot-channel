@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A `judge` node binds the host service `dsbot-channel/judge`, whose `judge(event, context)` returns `{ score, reason? }`; a profile that declares one without the service fails the mount. `pipeline.judgeTimeoutMs` (default 8000) bounds one call and `pipeline.judgePoints` (default 1) is what a returned verdict costs, charged under `(eventKey, botId, judge)`. A judge that times out or throws refuses the message with `judge_timeout` or `judge_failed` instead of skipping the node, and both are counted under `judgeFailures` in the status. A judge node may carry `allowAtLeast` (0 to 1): a verdict at or above it allows the message, one below it refuses with `judge_below_threshold` and the score, and without it the node only scores. A bot or session layer may insert or override the threshold, and a verdict score that is not a finite number between 0 and 1 fails the judge as `judge_failed`, with or without a threshold.
 - `transport.peers` takes a mapping of peer instance to secret reference as well as the list form: `peers: { peer-a: PEER_A_REFERENCE }`. The two forms read as the same peers; mixing them in one block, mapping an instance to anything but a non-empty secret reference, or writing one peer without the list brackets is refused at mount with the correct form named, and an empty mapping is refused like an empty list.
 
 ### Changed

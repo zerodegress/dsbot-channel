@@ -88,11 +88,22 @@ export function buildPipeline(
       }
       case 'judge': {
         const judge = require(spec.id, 'judge', 'judge', deps.judge)
+        const threshold = spec.allowAtLeast
         return {
           id: spec.id,
           type: 'judge',
           run: async (context) => {
             const verdict = await judge(context.event, context)
+            const score = verdict.score
+            if (typeof score !== 'number' || !Number.isFinite(score) || score < 0 || score > 1) {
+              throw new Error(`judge returned a score outside 0..1: ${String(score)}`)
+            }
+            if (threshold !== undefined) {
+              if (verdict.score >= threshold) {
+                return { kind: 'allow', reason: verdict.reason ?? 'judge_above_threshold' }
+              }
+              return { kind: 'deny', reason: `judge_below_threshold (score ${verdict.score})` }
+            }
             return verdict.reason === undefined
               ? { kind: 'score', value: verdict.score }
               : { kind: 'score', value: verdict.score, reason: verdict.reason }

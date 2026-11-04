@@ -161,8 +161,8 @@ describe('the plugin offers the session API to its host', () => {
     const api = await mount()
 
     expect(() =>
-      api.forSession('bot-a', 'p2p:inst-b', { insert: [{ id: 'j', type: 'judge', after: 'deny' }] }),
-    ).toThrow(/a judge node needs a model call this version does not supply/)
+      api.forSession('bot-a', 'p2p:inst-b', { insert: [{ id: 'j', type: 'score', after: 'deny' }] }),
+    ).toThrow(/a score node needs a scoring function this version does not supply/)
   })
 
   test('a misspelt layer field is refused through the mounted API too', async () => {
@@ -252,8 +252,8 @@ describe('a session layer that could never run is refused', () => {
     const sessions = harness()
 
     expect(() =>
-      sessions.forSession('orca', 'p2p:seal', { insert: [{ id: 'j', type: 'judge', after: 'noise' }] }),
-    ).toThrow(/node "j": a judge node needs a model call this version does not supply/)
+      sessions.forSession('orca', 'p2p:seal', { insert: [{ id: 'j', type: 'score', after: 'noise' }] }),
+    ).toThrow(/node "j": a score node needs a scoring function this version does not supply/)
   })
 
   test('a deny node is accepted when the bot has a deny rule', () => {

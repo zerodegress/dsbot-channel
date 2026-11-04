@@ -189,6 +189,35 @@ describe('a difference that cannot be applied refuses the load', () => {
     expect(merged.fatal).toEqual(['bot: insert "topic" must name exactly one of after or before'])
   })
 
+  test('an inserted judge keeps its threshold', () => {
+    const checked = resolveAndCheck({
+      global: templateNodes(),
+      bot: { insert: [{ id: 'gate', type: 'judge', after: 'score', allowAtLeast: 0.4 }] },
+    })
+
+    expect(checked.layer.fatal).toEqual([])
+    expect(checked.nodes.find((node) => node.id === 'gate')).toMatchObject({ type: 'judge', allowAtLeast: 0.4 })
+  })
+
+  test('a judge threshold can be overridden', () => {
+    const checked = resolveAndCheck({
+      global: templateNodes(),
+      bot: { override: { judge: { allowAtLeast: 0.7 } } },
+    })
+
+    expect(checked.layer.fatal).toEqual([])
+    expect(checked.nodes.find((node) => node.id === 'judge')).toMatchObject({ allowAtLeast: 0.7 })
+  })
+
+  test('a threshold written on another node type is still a mistake', () => {
+    const checked = resolveAndCheck({
+      global: templateNodes(),
+      bot: { override: { deny: { allowAtLeast: 0.5 } as never } },
+    })
+
+    expect(checked.layer.fatal).toEqual(['bot: override "deny" names a field a node does not have: "allowAtLeast"'])
+  })
+
   test('a soft limit is now a field no node has', () => {
     const checked = resolveAndCheck({
       global: templateNodes(),
