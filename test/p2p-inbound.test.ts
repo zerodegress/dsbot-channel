@@ -608,3 +608,67 @@ describe('disposing the bridge', () => {
     expect(events.size).toBe(0)
   })
 })
+
+describe('the model selection a bridge reports', () => {
+  const route = { provider: 'deepseek', model: 'deepseek-chat' }
+
+  test('reports nothing when the profile names no model', async () => {
+    const { controller, events, bridge } = harness()
+    controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['ok'])
+
+    await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })
+
+    expect(bridge.modelSelection).toBeUndefined()
+  })
+
+  test('a host without a selector is unsupported before any turn', () => {
+    const events = bus()
+    const bridge = new PeerSessions({
+      controller: {
+        create: () => Promise.resolve({ sessionId: 'session-1' }),
+        prompt: () => Promise.resolve({ accepted: true }),
+      },
+      observe: events.observe,
+      model: route,
+    })
+
+    expect(bridge.modelSelection).toEqual({ requested: 'deepseek/deepseek-chat', state: 'unsupported' })
+    bridge.dispose()
+  })
+
+  test('a selection the host takes is applied', async () => {
+    const { controller, events, bridge } = harness({ model: route })
+    controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['ok'])
+
+    expect(bridge.modelSelection).toBeUndefined()
+    await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })
+
+    expect(bridge.modelSelection).toEqual({ requested: 'deepseek/deepseek-chat', state: 'applied' })
+  })
+
+  test('a refused selection is rejected and the turn still runs', async () => {
+    const { controller, events, bridge } = harness({ model: route })
+    controller.failModel = new Error('no such model')
+    controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['ok'])
+
+    await expect(bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })).resolves.toMatchObject({
+      text: 'ok',
+    })
+
+    expect(bridge.modelSelection).toEqual({ requested: 'deepseek/deepseek-chat', state: 'rejected' })
+  })
+
+  test('the state follows the last attempt, not the first', async () => {
+    const { controller, events, bridge } = harness({ model: route })
+    controller.failModel = new Error('no such model')
+    controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['ok'])
+
+    await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })
+    expect(bridge.modelSelection?.state).toBe('rejected')
+
+    controller.failModel = undefined
+    await bridge.runTurn({ peer: 'peer-b', requestId: 'evt-2', text: 'there' })
+
+    expect(bridge.modelSelection?.state).toBe('applied')
+  })
+})

@@ -1059,6 +1059,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
 
   const ledgers: BotLedger[] = []
   const reporting = new Set(channels.map((channel) => channel.adapter))
+  const selections = new Map<string, PeerSessions>()
   const started: AdapterHandle[] = []
   const runtimes: PeerSessions[] = []
   const configLayers: { channel: string; layers: Record<string, 'global' | 'adapter'> }[] = []
@@ -1068,6 +1069,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     for (const sessions of runtimes.splice(0)) sessions.dispose()
     await flushSessions('shutdown')
     reporting.clear()
+    selections.clear()
     started.length = 0
   }, 'dsbot-channel: peer listeners')
   try {
@@ -1083,6 +1085,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         ...(channel.model === undefined ? {} : { model: channel.model }),
       })
       runtimes.push(sessions)
+      selections.set(adapter.channel, sessions)
       const writtenBlock = written(adapter)
       const turnLayer = mergeLayer(rawProfile.turn, writtenBlock?.turn, 'turn')
       const deliveryLayer = mergeLayer(rawProfile.delivery, writtenBlock?.delivery, 'delivery')
@@ -1281,7 +1284,11 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   ctx.set('dsbot-channel.status', {
     snapshot: () => ({
       sampledAt: Date.now(),
-      adapters: [...reporting].map((adapter) => adapter.status()),
+      adapters: [...reporting].map((adapter) => {
+        const status = adapter.status()
+        const selection = selections.get(status.channel)?.modelSelection
+        return selection === undefined ? status : { ...status, modelSelection: selection }
+      }),
       config: configLayers.map((entry) => ({ channel: entry.channel, layers: { ...entry.layers } })),
       flushFailures: flushFailures.count,
       judgeFailures: judgeFailures.count,
