@@ -61,3 +61,37 @@ describe('the changelog lists', () => {
     expect(split).toEqual([])
   })
 })
+
+describe('the readme tables', () => {
+  const separator = /^\|(?:\s*:?-{3,}:?\s*\|)+$/
+  const readmes = ['README.md', 'README_ZH.md']
+
+  for (const name of readmes) {
+    test(`${name} opens every table block with a header and a separator`, () => {
+      const lines = readFileSync(join(import.meta.dirname, '..', name), 'utf8').split('\n')
+      const broken: string[] = []
+      let fenced = false
+      let run: number[] = []
+      const check = (): void => {
+        if (run.length === 0) return
+        const second = run[1]
+        if (second === undefined || !separator.test(lines[second] ?? '')) broken.push(`line ${(run[0] ?? 0) + 1}`)
+        run = []
+      }
+      lines.forEach((line, index) => {
+        if (line.trimStart().startsWith('```')) {
+          check()
+          fenced = !fenced
+          return
+        }
+        if (!fenced && line.startsWith('|')) {
+          run.push(index)
+          return
+        }
+        check()
+      })
+      check()
+      expect(broken).toEqual([])
+    })
+  }
+})
