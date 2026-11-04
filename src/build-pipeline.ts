@@ -94,6 +94,10 @@ export function buildPipeline(
           type: 'judge',
           run: async (context) => {
             const verdict = await judge(context.event, context)
+            const score = verdict.score
+            if (typeof score !== 'number' || !Number.isFinite(score) || score < 0 || score > 1) {
+              throw new Error(`judge returned a score outside 0..1: ${String(score)}`)
+            }
             if (threshold !== undefined) {
               if (verdict.score >= threshold) {
                 return { kind: 'allow', reason: verdict.reason ?? 'judge_above_threshold' }

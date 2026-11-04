@@ -9,7 +9,7 @@ const deps = (): PipelineDeps => ({
   denyRules: [{ id: 'noise', reason: 'system noise', matches: () => false }],
   allowRules: [{ id: 'addressed', reason: 'mentions me', matches: () => true }],
   score: () => 2,
-  judge: async () => ({ score: 7, reason: 'looks relevant' }),
+  judge: async () => ({ score: 0.7, reason: 'looks relevant' }),
   prepare: () => {},
 })
 
@@ -44,7 +44,7 @@ describe('building from specs', () => {
   test('a judge node uses the injected model call', async () => {
     const pipeline = buildPipeline([{ id: 'j', type: 'judge' }], deps())
     const result = await pipeline.run(event)
-    expect(result.score).toBe(7)
+    expect(result.score).toBe(0.7)
     expect(result.reasons.j).toBe('looks relevant')
   })
 
@@ -141,6 +141,40 @@ describe('the budget node reports what the ledger says', () => {
       budget: () => ({ state: 'normal', triggeredBy: [] }),
     })
     expect((await pipeline.run(event)).decision).toBe('allow')
+  })
+})
+
+describe('the score a judge may return', () => {
+  const judgeWith = (score: unknown) =>
+    buildPipeline([{ id: 'j', type: 'judge' }], { judge: () => Promise.resolve({ score: score as number }) })
+
+  test.each([0, 1, 0.5])('a score of %s is accepted', async (score) => {
+    const result = await judgeWith(score).run(event)
+    expect(result.decision).toBe('deny')
+    expect(result.score).toBe(score)
+  })
+
+  test.each([1.0001, -0.1, Number.NaN, Number.POSITIVE_INFINITY, 'high'])(
+    'a score of %s fails the judge',
+    async (score) => {
+      const failures: string[] = []
+      const pipeline = buildPipeline([{ id: 'j', type: 'judge' }], { judge: () => Promise.resolve({ score: score as number }) }, {
+        onJudgeFailure: (code) => failures.push(code),
+      })
+      const result = await pipeline.run(event)
+      expect(result.decision).toBe('deny')
+      expect(result.reasons.j).toBe('judge_failed')
+      expect(failures).toEqual(['judge_failed'])
+    },
+  )
+
+  test('an invalid score fails even with a threshold, before the comparison', async () => {
+    const pipeline = buildPipeline([{ id: 'j', type: 'judge', allowAtLeast: 0.5 }], {
+      judge: () => Promise.resolve({ score: Number.NaN }),
+    })
+    const result = await pipeline.run(event)
+    expect(result.reasons.j).toBe('judge_failed')
+    expect(result.reasons.j).not.toMatch(/judge_below_threshold|NaN/)
   })
 })
 

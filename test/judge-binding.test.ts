@@ -211,6 +211,18 @@ describe('a judge node binds the decision service', () => {
     await fork.dispose()
   })
 
+  test('a score outside 0..1 is a judge failure, still charged', async () => {
+    queue = [message('e-judge-invalid')]
+    verdicts = []
+    const ctx = await mount({ judge: () => Promise.resolve({ score: 1.5 }) })
+
+    expect(verdicts[0]).toMatchObject({ ok: false, code: 'rejected' })
+    expect(String((verdicts[0] as { reason?: string }).reason)).toContain('judge_failed')
+    expect(String((verdicts[0] as { reason?: string }).reason)).not.toMatch(/judge_below_threshold|NaN/)
+    expect(judgeFailuresOf(ctx)).toBe(1)
+    expect(usageOf(ctx)).toBe(1)
+  })
+
   test('a verdict at the threshold allows the message', async () => {
     queue = [message('e-judge-threshold-ok')]
     verdicts = []
