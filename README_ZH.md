@@ -60,7 +60,7 @@ config:
 
 一条 OneBot adapter 只用一种协议：`transport.protocol` 取 `http`（默认）、`ws-forward` 或 `ws-reverse`。属于另一种协议的字段会在加载配置时报错。每个 adapter 是一条链路：同一个实现只走一种协议，就只声明一个 OneBot adapter。
 
-`pipeline` 块声明节点链。`judge` 节点需要宿主提供 `dsbot-channel/judge` 服务，它以 `judge(event, context)` 返回 `{ score, reason? }`；声明了节点却没有这个服务会挂载失败，判定超时或抛错时按 `judge_timeout` / `judge_failed` 拒绝这条消息。
+`pipeline` 块声明节点链。`judge` 节点需要宿主提供 `dsbot-channel/judge` 服务，它以 `judge(event, context)` 返回 `{ score, reason? }`；声明了节点却没有这个服务会挂载失败，判定超时或抛错时按 `judge_timeout` / `judge_failed` 拒绝这条消息。`judge` 节点还可以带 `allowAtLeast`（0 到 1）：判定分达到或超过它就放行，低于它则以 `judge_below_threshold` 连同分数拒绝；不配则只计分。
 
 印象库默认关闭，配置顶层的 `impressions` 块给出绝对路径的 `dir` 才启用。它存放关于本回合对端或本群的短笔记，用 `impression_put`、`impression_get`、`impression_forget` 读写。
 
@@ -80,6 +80,7 @@ config:
 | `turn.context.chars` | `2000` | 上下文预算 |
 | `pipeline.judgeTimeoutMs` | `8000` | 单次判定上限 |
 | `pipeline.judgePoints` | `1` | 一次判定扣的点数 |
+| `allowAtLeast`（judge 节点） | 关闭 | 达到该分数才放行 |
 | `impressions.dir` | 关闭 | 笔记根目录 |
 | `transport.protocol` | `http` | OneBot：连接方式 |
 | `transport.heartbeat` | 关闭 | OneBot 走 socket：存活检查 |
