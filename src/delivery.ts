@@ -45,6 +45,12 @@ function codepoints(text: string): string[] {
   return Array.from(text)
 }
 
+/** Code point range of one part inside the text a reply is cut from. */
+export interface DeliverySpan {
+  start: number
+  end: number
+}
+
 /** Splits a reply into parts and paces them; one object per adapter, absent when the block is off. */
 export class Delivery {
   readonly settings: DeliverySettings
@@ -53,37 +59,45 @@ export class Delivery {
     this.settings = settings
   }
 
-  /** The parts a reply is sent as, merged into the last part when there are too many. */
-  parts(text: string): string[] {
+  /** The text the parts are cut from: the reply without its leading and trailing blank lines. */
+  scope(text: string): string {
+    return text.replace(/^(?:[ \t]*\r?\n)+/, '').replace(/(?:\r?\n[ \t]*)+$/, '')
+  }
+
+  /** The parts a reply is sent as, as ranges of the scoped text, merged into the last when too many. */
+  spans(text: string): DeliverySpan[] {
     const split = this.settings.split
-    const pieces: { text: string; para: number }[] = []
-    const paragraphs = split.byBlankLine ? text.split(/\r?\n[ \t]*\r?\n/) : [text]
-    paragraphs.forEach((paragraph, para) => {
-      const chars = codepoints(paragraph)
-      if (chars.length === 0) return
+    const scope = this.scope(text)
+    if (scope.length === 0) return []
+    const chars = codepoints(scope)
+    const pieces: DeliverySpan[] = []
+    const paragraphs = split.byBlankLine ? paragraphRanges(scope) : [{ start: 0, end: scope.length }]
+    for (const paragraph of paragraphs) {
+      const start = codepoints(scope.slice(0, paragraph.start)).length
+      const end = start + codepoints(scope.slice(paragraph.start, paragraph.end)).length
+      if (end <= start) continue
       if (split.maxChars === 0) {
-        pieces.push({ text: paragraph, para })
-        return
+        pieces.push({ start, end })
+        continue
       }
-      let index = 0
-      while (index < chars.length) {
-        let end = Math.min(index + split.maxChars, chars.length)
-        if (end < chars.length && chars[end - 1] === '\r' && chars[end] === '\n') end -= 1
-        pieces.push({ text: chars.slice(index, end).join(''), para })
-        index = end
+      let index = start
+      while (index < end) {
+        let cut = Math.min(index + split.maxChars, end)
+        if (cut < end && chars[cut - 1] === '\r' && chars[cut] === '\n') cut -= 1
+        pieces.push({ start: index, end: cut })
+        index = cut
       }
-    })
-    if (pieces.length === 0) return []
-    if (pieces.length <= split.maxParts) return pieces.map((piece) => piece.text)
-    const kept = pieces.slice(0, split.maxParts - 1).map((piece) => piece.text)
-    const head = pieces[split.maxParts - 1]!
-    let merged = head.text
-    let previous = head.para
-    for (const piece of pieces.slice(split.maxParts)) {
-      merged += (piece.para === previous ? '' : '\n\n') + piece.text
-      previous = piece.para
     }
-    return [...kept, merged]
+    if (pieces.length === 0) return []
+    if (pieces.length <= split.maxParts) return pieces
+    const last = pieces[pieces.length - 1]!
+    return [...pieces.slice(0, split.maxParts - 1), { start: pieces[split.maxParts - 1]!.start, end: last.end }]
+  }
+
+  /** The parts a reply is sent as; joining them with the gaps between them gives the scoped text. */
+  parts(text: string): string[] {
+    const chars = codepoints(this.scope(text))
+    return this.spans(text).map((span) => chars.slice(span.start, span.end).join(''))
   }
 
   /** How long to wait before the next part, from its own length. */
@@ -92,6 +106,21 @@ export class Delivery {
     const wanted = Math.round((codepoints(part).length / pacing.charsPerSecond) * 1_000)
     return Math.min(pacing.maxMs, Math.max(pacing.minMs, wanted))
   }
+}
+
+/** Paragraph ranges in UTF-16 offsets; the blank line between them is not part of either. */
+function paragraphRanges(text: string): { start: number; end: number }[] {
+  const ranges: { start: number; end: number }[] = []
+  const blank = /\r?\n[ \t]*\r?\n/g
+  let cursor = 0
+  for (;;) {
+    const match = blank.exec(text)
+    if (match === null) break
+    ranges.push({ start: cursor, end: match.index })
+    cursor = match.index + match[0].length
+  }
+  ranges.push({ start: cursor, end: text.length })
+  return ranges
 }
 
 /** Reads the delivery block; undefined means the profile turned it off. */

@@ -13,6 +13,19 @@ const REF = '{{SECRET_delivery}}'
 const credentials = staticCredentials({ [REF]: 'shared-value' })
 
 describe('the delivery block', () => {
+  /** Joins the parts with the text between them; the scope plus nothing is what comes back. */
+  function rebuilt(scope: string, parts: readonly string[]): string {
+    let cursor = 0
+    let out = ''
+    for (const part of parts) {
+      const at = scope.indexOf(part, cursor)
+      if (at < 0) throw new Error(`part out of order: ${JSON.stringify(part)}`)
+      out += scope.slice(cursor, at) + part
+      cursor = at + part.length
+    }
+    return out + scope.slice(cursor)
+  }
+
   const compile = (raw: unknown) => compileDelivery(raw, (key) => ['delivery', key])
 
   test('no block turns splitting off', () => {
@@ -39,9 +52,40 @@ describe('the delivery block', () => {
 
   test('merging keeps a paragraph boundary even when every piece was hard cut', () => {
     const delivery = compile({ split: { byBlankLine: true, maxChars: 2, maxParts: 2 } })!
-    const parts = delivery.parts('aaa\n\nbbb')
+    const scope = 'aaa\n\nbbb'
+    const parts = delivery.parts(scope)
     expect(parts).toEqual(['aa', 'a\n\nbbb'])
-    expect(parts.join('')).toBe('aaa\n\nbbb')
+    expect(rebuilt(scope, parts)).toBe(scope)
+  })
+
+  test('a CRLF blank line survives the merge', () => {
+    const delivery = compile({ split: { byBlankLine: true, maxChars: 2, maxParts: 2 } })!
+    const scope = 'aaa\r\n\r\nbbb'
+    const parts = delivery.parts(scope)
+    expect(rebuilt(scope, parts)).toBe(scope)
+    expect(parts[1]).toContain('\r\n\r\n')
+  })
+
+  test('a blank line holding spaces survives the merge', () => {
+    const delivery = compile({ split: { byBlankLine: true, maxChars: 2, maxParts: 2 } })!
+    const scope = 'aaa\n  \nbbb'
+    const parts = delivery.parts(scope)
+    expect(rebuilt(scope, parts)).toBe(scope)
+    expect(parts[1]).toContain('\n  \n')
+  })
+
+  test('parts joined with their own gaps give back the text, split or merged', () => {
+    const split = compile({ split: { byBlankLine: true, maxChars: 0, maxParts: 4 } })!
+    const scope = 'one\n\ntwo\n\nthree'
+    expect(rebuilt(scope, split.parts(scope))).toBe(scope)
+    const merged = compile({ split: { byBlankLine: true, maxChars: 0, maxParts: 2 } })!
+    expect(rebuilt(scope, merged.parts(scope))).toBe(scope)
+  })
+
+  test('leading and trailing blank lines are dropped', () => {
+    const delivery = compile({ split: { byBlankLine: true, maxChars: 0, maxParts: 4 } })!
+    expect(delivery.parts('\r\n\r\nabc\r\n\r\n')).toEqual(['abc'])
+    expect(delivery.parts('\n\n')).toEqual([])
   })
 
   test('the gap comes from the next part and stays inside minMs..maxMs', () => {
