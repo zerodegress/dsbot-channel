@@ -468,25 +468,30 @@ function botScopes(
 }
 
 /** Refuses a transport that takes its own policy out of the core block. */
-function checkPolicy(adapter: AdapterConfig, index: number): void {
-  const path = (field: string): string[] => ['adapters', String(index), 'policy', field]
-  const { relayLimit, relayResetMs } = adapter.policy
-  if (!Number.isInteger(relayLimit) || relayLimit < 1) {
+/** The policy checks a block has to pass, wherever that block was written. */
+function checkPolicyValues(
+  policy: Record<string, unknown>,
+  path: (field: string) => string[],
+): void {
+  const relayLimit = policy.relayLimit as number | undefined
+  const relayResetMs = policy.relayResetMs as number | undefined
+  if (relayLimit !== undefined && (!Number.isInteger(relayLimit) || relayLimit < 1)) {
     throw new ConfigError(`relayLimit must be a whole number of rounds, at least 1: ${relayLimit}`, path('relayLimit'))
   }
-  if (!Number.isInteger(relayResetMs) || relayResetMs < 1) {
+  if (relayResetMs !== undefined && (!Number.isInteger(relayResetMs) || relayResetMs < 1)) {
     throw new ConfigError(
       `relayResetMs must be a whole number of milliseconds, at least 1: ${relayResetMs}`,
       path('relayResetMs'),
     )
   }
-  if (adapter.policy.groupBots !== undefined && !GROUP_BOT_POLICIES.includes(adapter.policy.groupBots)) {
+  const groupBots = policy.groupBots as string | undefined
+  if (groupBots !== undefined && !GROUP_BOT_POLICIES.includes(groupBots as (typeof GROUP_BOT_POLICIES)[number])) {
     throw new ConfigError(
-      `policy.groupBots must be one of ${GROUP_BOT_POLICIES.join(', ')}: ${String(adapter.policy.groupBots)}`,
+      `policy.groupBots must be one of ${GROUP_BOT_POLICIES.join(', ')}: ${String(groupBots)}`,
       path('groupBots'),
     )
   }
-  const budget = adapter.policy.budget
+  const budget = policy.budget as { capacity?: number; hardLimit?: number } | undefined
   if (budget !== undefined && budget.capacity === undefined) {
     throw new ConfigError('policy.budget.capacity is required', path('budget.capacity'))
   }
@@ -601,6 +606,10 @@ interface ChannelRuntime {
   mentionFallback: { pending: boolean; warned: boolean }
 }
 
+function asRecord(raw: unknown): Record<string, unknown> {
+  return raw !== null && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
+}
+
 /** One block merged from the top level and the adapter: a written key replaces that key whole. */
 function mergeLayer(
   globalRaw: unknown,
@@ -710,7 +719,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   checkPipelineScopes(config, warn, written, rawProfile.policy)
   const bots = botScopes(config, written, rawProfile.policy)
   const pipelines = new SessionPipelines({ bots })
-  const channels = mountAdapters(config, settings, warn, registry)
+  const channels = mountAdapters(config, settings, warn, registry, (index) => writtenAdapters[index], rawProfile.policy)
   // Parsed after the adapters so a binding can be checked against instances that really exist.
   const identity = buildIdentity(config.identity, accountSpaces(channels), warn)
   const impressionsConfig = readImpressionsConfig(config.impressions)
@@ -1316,6 +1325,8 @@ function mountAdapters(
   settings: AdapterCheckSettings,
   warn: (message: string) => void,
   registry: AdapterRegistry,
+  written: (index: number) => Record<string, unknown> | undefined,
+  globalPolicy: unknown,
 ): MountedChannel[] {
   const seen = new Set<string>()
   return config.adapters.map((adapter, index) => {
@@ -1324,7 +1335,18 @@ function mountAdapters(
       throw new ConfigError(`duplicate adapter channel: ${adapter.channel}`, ['adapters', String(index), 'channel'])
     }
     seen.add(adapter.channel)
-    checkPolicy(adapter, index)
+    const adapterPath = (field: string): string[] => ['adapters', String(index), 'policy', field]
+    checkPolicyValues(adapter.policy as unknown as Record<string, unknown>, adapterPath)
+    const writtenPolicy = asRecord(written(index)?.policy)
+    const defaults: Record<string, unknown> = { ...(adapter.policy as unknown as Record<string, unknown>) }
+    for (const key of Object.keys(writtenPolicy)) delete defaults[key]
+    const effective = { ...defaults, ...asRecord(globalPolicy), ...writtenPolicy }
+    const layers = mergeLayer(globalPolicy, writtenPolicy, 'policy').layers
+    checkPolicyValues(effective, (field) =>
+      layers[`policy.${field.split('.')[0]}`] === 'global'
+        ? ['policy', field]
+        : ['adapters', String(index), 'policy', field],
+    )
     const kind = adapter.kind ?? 'p2p'
     checkAdapterKind(kind)
     const mount: AdapterMount = {

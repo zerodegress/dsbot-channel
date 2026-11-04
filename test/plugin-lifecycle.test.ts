@@ -152,6 +152,28 @@ describe('plugin lifecycle', () => {
     )
   })
 
+  test('refuses an invalid policy written at the top level, naming that path', async () => {
+    for (const [policy, at] of [
+      [{ groupBots: 'bogus' }, 'policy.groupBots'],
+      [{ budget: { capacity: 10, hardLimit: 2 } }, 'policy.budget.hardLimit'],
+      [{ relayLimit: 0 }, 'policy.relayLimit'],
+    ] as const) {
+      const ctx = await contextWithCredentials()
+      await ctx.plugin(registryPlugin)
+      await expect(ctx.plugin(entry.default, { policy, adapters: [adapter()] })).rejects.toThrow(
+        new RegExp(`\\(at ${at.replace('.', '\\.')}\\)`),
+      )
+    }
+  })
+
+  test('refuses an invalid policy written on an adapter, naming that path', async () => {
+    const ctx = await contextWithCredentials()
+    await ctx.plugin(registryPlugin)
+    await expect(ctx.plugin(entry.default, config({ policy: { relayLimit: 0 } }))).rejects.toThrow(
+      /at adapters\.0\.policy\.relayLimit/,
+    )
+  })
+
   test('refuses to mount without a peer secret', async () => {
     const ctx = await contextWithCredentials()
     await ctx.plugin(registryPlugin)
