@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - A `delivery` block, at the top level or per adapter, splits a turn reply and paces the parts. `split.byBlankLine` cuts at blank lines, `split.maxParts` merges the excess into the last part, and `split.maxChars` hard-cuts by code point without splitting a surrogate pair or a CRLF. `pacing` waits before each next part from its length, inside `minMs` and `maxMs`, and the last part is not followed by a wait. Only the turn reply is split; a failed part stops the rest and reports the parts already sent.
+- `transport.peers` takes a mapping of peer instance to secret reference as well as the list form: `peers: { peer-a: PEER_A_REFERENCE }`. The two forms read as the same peers; mixing them in one block, mapping an instance to anything but a non-empty secret reference, or writing one peer without the list brackets is refused at mount with the correct form named, and an empty mapping is refused like an empty list.
 
 ### Changed
 

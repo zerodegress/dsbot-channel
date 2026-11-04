@@ -54,6 +54,8 @@ config:
         accessToken: ONEBOT_TOKEN
 ```
 
+`transport.peers` 可以写成列表，也可以写成「对端 instance → 密钥引用」的映射，如 `peers: { peer-a: PEER_A_REFERENCE }`。列表写法还能带 `url`、`host` 与 `botName`；映射的值只能是密钥引用，需要这几项的对端仍用列表写法。同一份 `peers` 里混写两种写法，或映射的值不是密钥引用，都会在挂载期被拒绝。
+
 `channel`、`botName`、`transport` 必填，`channel` 不能重复。`reply`、`turn`、`policy` 也可以写在顶层作为默认值；adapter 写哪个键就整块替换那个键，对象和数组按写的那样整体生效，不逐项合并。插件级状态里的 `config[].layers` 标明每个键来自哪一层。两个 adapter 服务同一个 bot、落在同一个会话键时，会话仍然共享，但合并窗口与上下文缓冲各有一份。`channel` 是 adapter 唯一的名字，对端在线路上看到的也是它。`kind` 默认 `p2p`；另一个内置是 `onebot`，第三方传输用 `x-[a-z0-9-]+` 的名字，最长 32 字符。`secret` 与 `accessToken` 填的是宿主任凭服务里的引用名，不是密钥本身。配置里的路径按 POSIX 解释，暂不支持 Windows。
 
 一条 OneBot adapter 只用一种协议：`transport.protocol` 取 `http`（默认）、`ws-forward` 或 `ws-reverse`。属于另一种协议的字段会在加载配置时报错。每个 adapter 是一条链路：同一个实现只走一种协议，就只声明一个 OneBot adapter。
