@@ -72,6 +72,10 @@ export interface AdapterConfig {
   botName: string
   /** Runs every turn of this adapter in one existing session instead of one per address. */
   session?: string
+  /** How this adapter answers; the keys it writes replace the top-level block's keys whole. */
+  reply?: unknown
+  /** How this adapter's messages gather; the keys it writes replace the top-level block's keys whole. */
+  turn?: unknown
   policy: PolicySettings
   pipeline?: PipelineLayer | undefined
   status?: boolean
@@ -85,7 +89,9 @@ export interface ChannelConfig {
   /** How a turn answers: auto lets it write, tool requires a tool call. */
   reply?: unknown
   /** How messages arrive at a turn: one by one, or a short window merged into one. */
-  turn?: TurnSettings | undefined
+  turn?: unknown
+  /** The default policy every adapter starts from; an adapter replaces the keys it writes. */
+  policy?: unknown
   /** Who an account belongs to: declared bindings, validated at mount. */
   identity?: unknown
   /** Where this bot's notes live; absent means the feature is off. */
@@ -146,6 +152,7 @@ export const Config: any = Schema.object({
   reply: Schema.any(),
   identity: Schema.any(),
   impressions: Schema.any(),
+  policy: Schema.any(),
   turn: Schema.object({
     coalesceMs: Schema.number(),
     maxBatch: Schema.number(),
@@ -163,6 +170,8 @@ export const Config: any = Schema.object({
         channel: Schema.string().required(),
         botName: Schema.string().required(),
         session: Schema.string(),
+        reply: Schema.any(),
+        turn: Schema.any(),
         policy: Schema.object({
           relayLimit: Schema.number().default(3),
           requireMention: Schema.boolean().default(false),
@@ -394,7 +403,7 @@ export function checkPipelineScopes(config: ChannelConfig, warn: (message: strin
           : config.pipeline.global
         : declaredNodes(config, adapter)
     if (nodes === undefined) continue
-    const rules = adapter === undefined ? undefined : compilePolicy(adapter.policy).deps
+    const rules = adapter === undefined ? undefined : compilePolicy(effectivePolicy(config, adapter)).deps
     const whose = adapter?.botName ? `bot "${adapter.botName}": ` : ''
     const bindings = {
       deny: (rules?.denyRules ?? []).length > 0,
@@ -420,7 +429,7 @@ function botScopes(config: ChannelConfig): Map<string, BotFacts> {
   const bots = new Map<string, BotFacts>()
   for (const adapter of config.adapters) {
     const seen = bots.get(adapter.botName)
-    const compiled = compilePolicy(adapter.policy)
+    const compiled = compilePolicy(effectivePolicy(config, adapter))
     const deny = (compiled.deps.denyRules ?? []).length > 0
     const allow = (compiled.deps.allowRules ?? []).length > 0
     const base = declaredNodes(config, adapter) ?? compiled.specs
@@ -573,9 +582,35 @@ interface ChannelRuntime {
   gate: InboundGate
   billing: TurnBilling
   deps: PipelineDeps
+  reply: ReturnType<typeof compileReply>
   turn: TurnSettings
   /** Set when the default bot rule had to fall back: warn once, then stay quiet. */
   mentionFallback: { pending: boolean; warned: boolean }
+}
+
+/** One block merged from the top level and the adapter: a written key replaces that key whole. */
+function mergeLayer(
+  globalRaw: unknown,
+  adapterRaw: unknown,
+  prefix: 'reply' | 'turn' | 'policy',
+): { merged: Record<string, unknown>; layers: Record<string, 'global' | 'adapter'> } {
+  const merged: Record<string, unknown> = {}
+  const layers: Record<string, 'global' | 'adapter'> = {}
+  const take = (raw: unknown, from: 'global' | 'adapter'): void => {
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+      if (value === undefined) continue
+      merged[key] = value
+      layers[`${prefix}.${key}`] = from
+    }
+  }
+  take(globalRaw, 'global')
+  take(adapterRaw, 'adapter')
+  return { merged, layers }
+}
+
+function effectivePolicy(config: ChannelConfig, adapter: AdapterConfig): Parameters<typeof compilePolicy>[0] {
+  return mergeLayer(config.policy, adapter.policy, 'policy').merged as Parameters<typeof compilePolicy>[0]
 }
 
 /** Refuses an adapter that still names itself twice: `instance` became `channel`. */
@@ -649,7 +684,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     judgeTimeoutMs: config.pipeline.judgeTimeoutMs,
   }
   checkPipelineSettings(settings)
-  const turn = checkTurnSettings(config.turn)
+  const turn = checkTurnSettings(config.turn as Parameters<typeof checkTurnSettings>[0])
   const context = new ContextBuffer(turn.context)
   checkPipelineScopes(config, warn)
   const bots = botScopes(config)
@@ -663,7 +698,8 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   }
   checkGuidance(channels)
   checkPrepareSupport(bots, channels)
-  const reply = compileReply(config.reply)
+  const replyOf = (adapter: AdapterConfig): ReturnType<typeof compileReply> =>
+    compileReply(mergeLayer(config.reply, adapter.reply, 'reply').merged)
   // A guard against a future edit to the notice text, not profile validation: the block is core-owned.
   if (TOOL_MODE_NOTICE.length > TOOL_MODE_NOTICE_MAX) {
     throw new ConfigError(`the tool-mode block is longer than ${TOOL_MODE_NOTICE_MAX} characters`, ['reply'])
@@ -676,7 +712,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     | ReturnType<typeof createImpressionGet>
     | ReturnType<typeof createImpressionForget>
   const tools = ctx.get('tools') as { register: (definition: AnyTool) => () => void } | undefined
-  if (reply.possibleTool && (tools === undefined || typeof tools.register !== 'function')) {
+  if (config.adapters.some((adapter) => replyOf(adapter).possibleTool) && (tools === undefined || typeof tools.register !== 'function')) {
     throw new ConfigError('the tools service is required when a profile can choose tool mode', ['reply'])
   }
   if (impressionsConfig !== undefined && (tools === undefined || typeof tools.register !== 'function')) {
@@ -820,7 +856,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     let hold: Hold | undefined
     try {
       hold = runtime.billing.begin(adapter.botName, message.sessionKey, message.eventKey)
-      const mode = reply.modeFor(replyFactsOf(last))
+      const mode = runtime.reply.modeFor(replyFactsOf(last))
       const blocks: string[] = []
       if (injected.claim(message.sessionKey)) {
         const guidance = transport.guidance[message.source.scope === 'group' ? 'group' : 'peer']
@@ -940,6 +976,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   const reporting = new Set(channels.map((channel) => channel.adapter))
   const started: AdapterHandle[] = []
   const runtimes: PeerSessions[] = []
+  const configLayers: { channel: string; layers: Record<string, 'global' | 'adapter'> }[] = []
   ctx.effect(() => async () => {
     windows.clear()
     await Promise.allSettled(started.map((handle) => handle.stop()))
@@ -957,12 +994,17 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         ...(adapter.session === undefined ? {} : { session: adapter.session }),
       })
       runtimes.push(sessions)
-      const compiled = compilePolicy(adapter.policy)
-      const budget = adapter.policy.budget
+      const mergedPolicy = effectivePolicy(config, adapter)
+      const compiled = compilePolicy(mergedPolicy)
+      const policyBlock = mergedPolicy as PolicySettings
+      const replyBlock = mergeLayer(config.reply, adapter.reply, 'reply')
+      const policyLayer = mergeLayer(config.policy, adapter.policy, 'policy')
+      configLayers.push({ channel: adapter.channel, layers: { ...replyBlock.layers, ...policyLayer.layers } })
+      const budget = policyBlock.budget
       const ledger = budget === undefined ? undefined : createLedger(budget)
       if (!ledgers.some((one) => one.bot === adapter.botName)) ledgers.push({ bot: adapter.botName, ledger })
       const mentionCapable = transport.capabilities.mention === true
-      const declaredGroupBots = adapter.policy.groupBots
+      const declaredGroupBots = policyBlock.groupBots
       const wantedGroupBots: GroupBotPolicy = declaredGroupBots ?? 'whenMentioned'
       const groupBots: GroupBotPolicy =
         wantedGroupBots === 'whenMentioned' && !mentionCapable ? 'silent' : wantedGroupBots
@@ -970,13 +1012,14 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         channel,
         sessions,
         gate: new InboundGate({
-          loop: { relayLimit: adapter.policy.relayLimit, relayResetMs: adapter.policy.relayResetMs },
-          requireMention: adapter.policy.requireMention === true,
+          loop: { relayLimit: policyBlock.relayLimit, relayResetMs: policyBlock.relayResetMs },
+          requireMention: policyBlock.requireMention === true,
           groupBots,
           ledger,
         }),
         billing: new TurnBilling({ ledger }),
         deps: bots.get(adapter.botName)?.deps ?? compiled.deps,
+        reply: replyOf(adapter),
         turn,
         mentionFallback: { pending: declaredGroupBots === undefined && !mentionCapable, warned: false },
       }
@@ -1115,6 +1158,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     snapshot: () => ({
       sampledAt: Date.now(),
       adapters: [...reporting].map((adapter) => adapter.status()),
+      config: configLayers.map((entry) => ({ channel: entry.channel, layers: { ...entry.layers } })),
       flushFailures: flushFailures.count,
     }),
   })
