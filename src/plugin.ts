@@ -1129,7 +1129,6 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     const router = new PushRouter({
       channels: channels.map((channel) => ({
         channel: channel.config.channel,
-        instance: channel.config.channel,
         botName: channel.config.botName,
       })),
       source: (sessionId) => (sessionId === undefined ? undefined : sources.get(sessionId)),

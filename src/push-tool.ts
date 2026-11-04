@@ -13,7 +13,6 @@ export type PushCode =
 
 export interface PushChannel {
   channel: string
-  instance: string
   botName: string
 }
 

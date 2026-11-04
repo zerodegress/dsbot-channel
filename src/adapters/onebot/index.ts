@@ -220,7 +220,6 @@ export function parseOneBotConfig(mount: AdapterMount): OneBotAdapterConfig {
 
   return {
     channel: mount.channel,
-    instance: mount.channel,
     botName: mount.botName,
     ...(mount.status === undefined ? {} : { status: mount.status }),
     ...(optionalText(raw.selfId, 'selfId') === undefined ? {} : { selfId: raw.selfId as string }),
