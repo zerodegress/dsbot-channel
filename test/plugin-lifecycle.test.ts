@@ -223,6 +223,37 @@ describe('plugin lifecycle', () => {
     await fork.dispose()
   })
 
+  test('mounts with the mapping form of peers', async () => {
+    const ctx = await contextWithCredentials()
+    await ctx.plugin(registryPlugin)
+    const fork = await ctx.plugin(entry.default, {
+      ...config({ peers: { 'inst-b': secretRef } }),
+      identity: { people: [{ id: 'alice', accounts: [{ kind: 'p2p', instance: 'inst-b', accountId: 'u1' }] }] },
+    })
+    expect(ctx.get('dsbot-channel.peers')).toHaveLength(1)
+    await fork.dispose()
+  })
+
+  test('the mapping form and the list form report the same adapter', async () => {
+    const read = async (peers: unknown): Promise<Record<string, unknown>> => {
+      const ctx = await contextWithCredentials()
+      await ctx.plugin(registryPlugin)
+      const fork = await ctx.plugin(entry.default, config({ peers }))
+      const status = ctx.get('dsbot-channel.status') as {
+        snapshot(): { adapters: { sampledAt?: unknown; dedupe?: unknown; health?: Record<string, unknown> }[] }
+      }
+      const report = (status.snapshot().adapters[0] ?? {}) as Record<string, unknown>
+      const stable: Record<string, unknown> = { ...report }
+      delete stable.sampledAt
+      delete stable.dedupe
+      stable.health = { ...(report.health as Record<string, unknown> | undefined), boundPort: undefined }
+      await fork.dispose()
+      return stable
+    }
+    expect(await read({ 'inst-b': secretRef })).toEqual(await read([{ instance: 'inst-b', secret: secretRef }]))
+  })
+
+
   test('refuses to mount without a peer secret', async () => {
     const ctx = await contextWithCredentials()
     await ctx.plugin(registryPlugin)

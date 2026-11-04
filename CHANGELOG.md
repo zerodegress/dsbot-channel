@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - An adapter may set `cwd`, `agentPreset` and `model` for the sessions it creates, beside the existing `session`. `model` is written `provider/model` and is selected through the host session controller's `selectModel` once per session; a host without that method warns and keeps the session's own model, and a rejected selection warns without failing the turn.
+- `transport.peers` takes a mapping of peer instance to secret reference as well as the list form: `peers: { peer-a: PEER_A_REFERENCE }`. The two forms read as the same peers; mixing them in one block, mapping an instance to anything but a non-empty secret reference, or writing one peer without the list brackets is refused at mount with the correct form named, and an empty mapping is refused like an empty list.
 
 ### Changed
 

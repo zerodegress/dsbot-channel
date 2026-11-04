@@ -1329,7 +1329,9 @@ function accountSpaces(channels: readonly MountedChannel[]): MountedAccountSpace
       ? peers
           .map((peer) => (peer !== null && typeof peer === 'object' ? (peer as Record<string, unknown>).instance : undefined))
           .filter((name): name is string => typeof name === 'string' && name.length > 0)
-      : []
+      : peers !== null && typeof peers === 'object'
+        ? Object.keys(peers as Record<string, unknown>).filter((name) => name.length > 0)
+        : []
     return { kind: config.kind ?? 'p2p', instance: config.channel, peers: names }
   })
 }
