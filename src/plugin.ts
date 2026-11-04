@@ -367,6 +367,7 @@ export function checkPipelineScopes(
     policy: adapter.policy,
     reply: adapter.reply,
   }),
+  globalPolicy: unknown = config.policy,
 ): void {
   const layers = new Map<string, PipelineLayer>()
   for (const adapter of config.adapters) {
@@ -410,7 +411,7 @@ export function checkPipelineScopes(
           : config.pipeline.global
         : declaredNodes(config, adapter)
     if (nodes === undefined) continue
-    const rules = adapter === undefined ? undefined : compilePolicy(effectivePolicy(config, adapter, (one) => written(one)?.policy)).deps
+    const rules = adapter === undefined ? undefined : compilePolicy(effectivePolicy(globalPolicy, written(adapter)?.policy)).deps
     const whose = adapter?.botName ? `bot "${adapter.botName}": ` : ''
     const bindings = {
       deny: (rules?.denyRules ?? []).length > 0,
@@ -435,11 +436,12 @@ interface BotFacts extends BotScope {
 function botScopes(
   config: ChannelConfig,
   written: (adapter: AdapterConfig) => Record<string, unknown> | undefined,
+  globalPolicy: unknown,
 ): Map<string, BotFacts> {
   const bots = new Map<string, BotFacts>()
   for (const adapter of config.adapters) {
     const seen = bots.get(adapter.botName)
-    const compiled = compilePolicy(effectivePolicy(config, adapter, (one) => written(one)?.policy))
+    const compiled = compilePolicy(effectivePolicy(globalPolicy, written(adapter)?.policy))
     const deny = (compiled.deps.denyRules ?? []).length > 0
     const allow = (compiled.deps.allowRules ?? []).length > 0
     const base = declaredNodes(config, adapter) ?? compiled.specs
@@ -594,6 +596,7 @@ interface ChannelRuntime {
   deps: PipelineDeps
   reply: ReturnType<typeof compileReply>
   turn: TurnSettings
+  context: ContextBuffer
   /** Set when the default bot rule had to fall back: warn once, then stay quiet. */
   mentionFallback: { pending: boolean; warned: boolean }
 }
@@ -620,11 +623,10 @@ function mergeLayer(
 }
 
 function effectivePolicy(
-  config: ChannelConfig,
-  adapter: AdapterConfig,
-  written: (adapter: AdapterConfig) => unknown,
+  globalPolicy: unknown,
+  writtenPolicy: unknown,
 ): Parameters<typeof compilePolicy>[0] {
-  return mergeLayer(config.policy, written(adapter), 'policy').merged as Parameters<typeof compilePolicy>[0]
+  return mergeLayer(globalPolicy, writtenPolicy, 'policy').merged as Parameters<typeof compilePolicy>[0]
 }
 
 /** Refuses an adapter that still names itself twice: `instance` became `channel`. */
@@ -686,6 +688,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     : []
   const written = (adapter: AdapterConfig): Record<string, unknown> | undefined =>
     writtenAdapters[config.adapters.indexOf(adapter)]
+  const rawProfile = (raw ?? {}) as { reply?: unknown; turn?: unknown; policy?: unknown }
   const warn = createWarn(ctx)
   const flushFailures = { count: 0 }
   const flushSessions = async (when: 'reply' | 'shutdown'): Promise<void> => {
@@ -703,10 +706,9 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     judgeTimeoutMs: config.pipeline.judgeTimeoutMs,
   }
   checkPipelineSettings(settings)
-  const turn = checkTurnSettings(config.turn as Parameters<typeof checkTurnSettings>[0])
-  const context = new ContextBuffer(turn.context)
-  checkPipelineScopes(config, warn, written)
-  const bots = botScopes(config, written)
+  checkTurnSettings(config.turn as Parameters<typeof checkTurnSettings>[0])
+  checkPipelineScopes(config, warn, written, rawProfile.policy)
+  const bots = botScopes(config, written, rawProfile.policy)
   const pipelines = new SessionPipelines({ bots })
   const channels = mountAdapters(config, settings, warn, registry)
   // Parsed after the adapters so a binding can be checked against instances that really exist.
@@ -718,7 +720,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   checkGuidance(channels)
   checkPrepareSupport(bots, channels)
   const replyOf = (adapter: AdapterConfig): ReturnType<typeof compileReply> =>
-    compileReply(mergeLayer(config.reply, written(adapter)?.reply, 'reply').merged)
+    compileReply(mergeLayer(rawProfile.reply, written(adapter)?.reply, 'reply').merged)
   // A guard against a future edit to the notice text, not profile validation: the block is core-owned.
   if (TOOL_MODE_NOTICE.length > TOOL_MODE_NOTICE_MAX) {
     throw new ConfigError(`the tool-mode block is longer than ${TOOL_MODE_NOTICE_MAX} characters`, ['reply'])
@@ -769,10 +771,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   const chains = new ClosedChains()
   const injected = new InjectionLedger()
   const activeTurns = new Map<string, TurnRef>()
-  const windows = new TurnWindows<InboundMessage>(
-    { now: clock, setTimer, clearTimer },
-    { limits: { maxBatch: turn.maxBatch, maxChars: turn.maxChars }, windowMs: turn.coalesceMs },
-  )
+  const windowBuffers: TurnWindows<InboundMessage>[] = []
   const eventKeys = new KeyGuard()
   const chainKeys = new ChainGuard()
   const turns = new TurnStats()
@@ -898,7 +897,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         }
       }
       const mergedKeys = [message.eventKey, ...rest.map((one) => one.eventKey)]
-      const seen = context.entries(`${adapter.botName}|${message.sessionKey}`, mergedKeys)
+      const seen = runtime.context.entries(`${adapter.botName}|${message.sessionKey}`, mergedKeys)
       if (seen.length > 0) blocks.push(renderContext(seen))
       const turn = await runtime.sessions.runTurn({
         peer: message.sessionKey,
@@ -997,7 +996,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   const runtimes: PeerSessions[] = []
   const configLayers: { channel: string; layers: Record<string, 'global' | 'adapter'> }[] = []
   ctx.effect(() => async () => {
-    windows.clear()
+    for (const buffer of windowBuffers.splice(0)) buffer.clear()
     await Promise.allSettled(started.map((handle) => handle.stop()))
     for (const sessions of runtimes.splice(0)) sessions.dispose()
     await flushSessions('shutdown')
@@ -1014,12 +1013,23 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
       })
       runtimes.push(sessions)
       const writtenBlock = written(adapter)
-      const mergedPolicy = effectivePolicy(config, adapter, (one) => written(one)?.policy)
+      const turnLayer = mergeLayer(rawProfile.turn, writtenBlock?.turn, 'turn')
+      const turnSettings = checkTurnSettings(turnLayer.merged as Parameters<typeof checkTurnSettings>[0])
+      const context = new ContextBuffer(turnSettings.context)
+      const windows = new TurnWindows<InboundMessage>(
+        { now: clock, setTimer, clearTimer },
+        { limits: { maxBatch: turnSettings.maxBatch, maxChars: turnSettings.maxChars }, windowMs: turnSettings.coalesceMs },
+      )
+      windowBuffers.push(windows)
+      const mergedPolicy = effectivePolicy(rawProfile.policy, writtenBlock?.policy)
       const compiled = compilePolicy(mergedPolicy)
       const policyBlock = mergedPolicy as PolicySettings
-      const replyBlock = mergeLayer(config.reply, writtenBlock?.reply, 'reply')
-      const policyLayer = mergeLayer(config.policy, writtenBlock?.policy, 'policy')
-      configLayers.push({ channel: adapter.channel, layers: { ...replyBlock.layers, ...policyLayer.layers } })
+      const replyBlock = mergeLayer(rawProfile.reply, writtenBlock?.reply, 'reply')
+      const policyLayer = mergeLayer(rawProfile.policy, writtenBlock?.policy, 'policy')
+      configLayers.push({
+        channel: adapter.channel,
+        layers: { ...replyBlock.layers, ...turnLayer.layers, ...policyLayer.layers },
+      })
       const budget = policyBlock.budget
       const ledger = budget === undefined ? undefined : createLedger(budget)
       if (!ledgers.some((one) => one.bot === adapter.botName)) ledgers.push({ bot: adapter.botName, ledger })
@@ -1040,7 +1050,8 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         billing: new TurnBilling({ ledger }),
         deps: bots.get(adapter.botName)?.deps ?? compiled.deps,
         reply: replyOf(adapter),
-        turn,
+        turn: turnSettings,
+        context,
         mentionFallback: { pending: declaredGroupBots === undefined && !mentionCapable, warned: false },
       }
       const onMessage = async (message: InboundMessage): Promise<InboundVerdict> => {
@@ -1110,7 +1121,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
           ...(pipeline === undefined ? {} : { pipeline }),
         })
         if (message.source.scope === 'group') {
-          context.record(`${adapter.botName}|${message.sessionKey}`, {
+          runtime.context.record(`${adapter.botName}|${message.sessionKey}`, {
             eventKey: message.eventKey,
             senderId: message.author.senderId,
             nickname: message.declared.nickname,
