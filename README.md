@@ -58,6 +58,8 @@ config:
 
 An OneBot adapter speaks one protocol: `transport.protocol` is `http` (the default), `ws-forward` or `ws-reverse`. A field that belongs to another protocol is refused when the profile loads. Each adapter is one link: an implementation reached over one protocol gets one OneBot adapter, not two.
 
+A `pipeline` block declares the node chain. A `judge` node needs the host service `dsbot-channel/judge`, which answers `judge(event, context)` with `{ score, reason? }`; a profile that declares the node without the service fails the mount, and a judge that times out or throws refuses the message with `judge_timeout` or `judge_failed`.
+
 The impression library is off until a top-level `impressions` block names an absolute `dir`. It keeps short notes about the person a turn answers or about its group; `impression_put`, `impression_get` and `impression_forget` read and write them.
 
 | Field | Default | Meaning |
@@ -74,6 +76,8 @@ The impression library is off until a top-level `impressions` block names an abs
 | `turn.maxChars` | `8000` | batch budget |
 | `turn.context.messages` | `0` | earlier messages |
 | `turn.context.chars` | `2000` | context budget |
+| `pipeline.judgeTimeoutMs` | `8000` | one judge call |
+| `pipeline.judgePoints` | `1` | points a verdict costs |
 | `impressions.dir` | off | notes root |
 | `transport.protocol` | `http` | OneBot: how it connects |
 | `transport.heartbeat` | off | OneBot on a socket: liveness |

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A `judge` node binds the host service `dsbot-channel/judge`, whose `judge(event, context)` returns `{ score, reason? }`; a profile that declares one without the service fails the mount. `pipeline.judgeTimeoutMs` (default 8000) bounds one call and `pipeline.judgePoints` (default 1) is what a returned verdict costs, charged under `(eventKey, botId, judge)`. A judge that times out or throws refuses the message with `judge_timeout` or `judge_failed` instead of skipping the node, and both are counted under `judgeFailures` in the status.
+
 ### Changed
 
 - `reply`, `turn` and `policy` may be written at the top level as defaults, and an adapter replaces the keys it writes whole; an object or an array is taken as written. Each adapter keeps its own coalescing window and context buffer, and the plugin-level status names the level that supplied each key under `config[].layers`; two adapters answering for one bot and session key still share that session, while each keeps its own coalescing window and context buffer.
