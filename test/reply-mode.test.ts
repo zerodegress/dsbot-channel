@@ -151,6 +151,32 @@ async function mount(reply: unknown, options: { withTools?: boolean; answer?: st
 
 const wait = (ms = 20): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
+describe('a rule keyed by the peer name on the wire', () => {
+  test('matches the name the peer sends', async () => {
+    queue = [message('e-name-1')]
+    verdicts = []
+    outbound = []
+    const ctx = await mount({ rules: [{ when: { source: { instance: 'inst-a' } }, mode: 'tool' }] })
+
+    await wait()
+    const turns = ctx.get('dsbot-channel.turns') as { snapshot(): { dropped: number; replied: number } }
+    expect(turns.snapshot()).toMatchObject({ dropped: 1, replied: 0 })
+    expect(outbound).toHaveLength(0)
+  })
+
+  test('no longer matches the name a peer used before the merge', async () => {
+    queue = [message('e-name-2')]
+    verdicts = []
+    outbound = []
+    const ctx = await mount({ rules: [{ when: { source: { instance: 'self' } }, mode: 'tool' }] })
+
+    await wait()
+    const turns = ctx.get('dsbot-channel.turns') as { snapshot(): { dropped: number; replied: number } }
+    expect(turns.snapshot()).toMatchObject({ dropped: 0, replied: 1 })
+    expect(outbound).toHaveLength(1)
+  })
+})
+
 describe('a session that must answer with a tool', () => {
   test('a plain text answer is dropped, counted and not sent', async () => {
     queue = [message('e1')]
