@@ -5,6 +5,7 @@ export type LimitLevel = 'normal' | 'hard'
 export interface BudgetPoints {
   accepted: number
   rejected: number
+  judge: number
 }
 
 export interface Hysteresis {
@@ -18,7 +19,7 @@ export interface BudgetSettings {
 }
 
 export const DEFAULT_BUDGET: BudgetSettings = {
-  points: { accepted: 20, rejected: 10 },
+  points: { accepted: 20, rejected: 10, judge: 1 },
   hysteresis: { hardReleaseBelow: 0.95, hardHoldMs: 60_000 },
 }
 
@@ -107,7 +108,7 @@ export class BudgetLedger {
     this.now = now
   }
 
-  pointsFor(outcome: 'accepted' | 'rejected' = 'accepted'): number {
+  pointsFor(outcome: 'accepted' | 'rejected' | 'judge' = 'accepted'): number {
     return this.settings.points[outcome]
   }
 

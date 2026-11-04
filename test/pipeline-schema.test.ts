@@ -3,6 +3,7 @@ import { registryPlugin } from '../src/registry-plugin.js'
 import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
 import { Config, checkPipelineScopes, checkPipelineSettings } from '../src/plugin.js'
+import { checkPipeline } from '../src/pipeline-config.js'
 import type { ChannelConfig } from '../src/plugin.js'
 import { ConfigError } from '../src/config.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
@@ -55,6 +56,22 @@ const node = (id: string, type: string) => ({ id, type })
 const parsed = (config: unknown): ChannelConfig => (Config as (value: unknown) => ChannelConfig)(config)
 
 describe('the pipeline a profile declares', () => {
+  test('a judge threshold is refused outside a judge node or the 0..1 range', () => {
+    expect(checkPipeline([{ id: 'j', type: 'deny', allowAtLeast: 0.5 }]).fatal.join(' ')).toMatch(
+      /only a judge node may declare allowAtLeast/,
+    )
+    expect(checkPipeline([{ id: 'j', type: 'judge', allowAtLeast: 1.5 }]).fatal.join(' ')).toMatch(
+      /allowAtLeast must be between 0 and 1/,
+    )
+    expect(checkPipeline([{ id: 'j', type: 'judge', allowAtLeast: -0.1 }]).fatal.join(' ')).toMatch(/allowAtLeast/)
+    expect(checkPipeline([{ id: 'j', type: 'judge', allowAtLeast: 0.5 }]).fatal).toEqual([])
+  })
+
+  test('a judge threshold is an allow source, so the missing allow node does not warn', () => {
+    const report = checkPipeline([{ id: 'j', type: 'judge', allowAtLeast: 0.5 }])
+    expect(report.warnings.join(' ')).not.toMatch(/no "allow" node/)
+  })
+
   test('refuses a global pipeline that cannot load, and names the layer', async () => {
     await expect(
       mount({ adapters: [], pipeline: { global: [{ id: 'score', type: 'score' }] } }),
@@ -153,19 +170,19 @@ describe('the pipeline a profile declares', () => {
     const config = parsed({
       adapters: [
         adapter({
-          pipeline: { insert: [{ id: 'judge2', type: 'judge', after: 'allow' }] },
+          pipeline: { insert: [{ id: 'score2', type: 'score', after: 'allow' }] },
           policy: { allow: { peers: ['inst-b'] } },
         }),
       ],
       pipeline: { global: [node('allow', 'allow')] },
     })
-    expect(() => checkPipelineScopes(config, () => undefined)).toThrow(/a judge node needs a model call/)
+    expect(() => checkPipelineScopes(config, () => undefined)).toThrow(/a score node needs a scoring function/)
   })
 
   test('refuses an unbound node even when no adapter is declared', async () => {
     await expect(
-      mount({ adapters: [], pipeline: { global: [node('judge', 'judge')] } }),
-    ).rejects.toThrow(/a judge node needs a model call/)
+      mount({ adapters: [], pipeline: { global: [node('score', 'score')] } }),
+    ).rejects.toThrow(/a score node needs a scoring function/)
   })
 
   test('refuses a deny node when no adapter could ever bind a rule', async () => {
@@ -181,7 +198,7 @@ describe('the pipeline a profile declares', () => {
         adapter({ channel: 'p2p:one', botName: 'bot-a', pipeline: layer, policy: { deny: { words: ['spam'] } } }),
         adapter({ channel: 'p2p:two', botName: 'bot-b', pipeline: layer, policy: { deny: { words: ['spam'] } } }),
       ],
-      pipeline: { global: [node('judge', 'judge')] },
+      pipeline: { global: [node('score', 'score')] },
     })
     let message = ''
     try {
@@ -189,7 +206,7 @@ describe('the pipeline a profile declares', () => {
     } catch (error) {
       message = (error as Error).message
     }
-    expect(message.match(/a judge node needs a model call/g)?.length).toBe(1)
+    expect(message.match(/a score node needs a scoring function/g)?.length).toBe(1)
   })
 
   test('refuses a deny node with no rule to match', () => {
@@ -255,13 +272,13 @@ describe('the turn timings a profile declares', () => {
   })
 
   test('a judge timeout beyond the turn ceiling is refused', () => {
-    expect(() => checkPipelineSettings({ maxTurnMs: 1_000, judgeTimeoutMs: 2_000 })).toThrow(
+    expect(() => checkPipelineSettings({ maxTurnMs: 1_000, judgeTimeoutMs: 2_000, judgePoints: 1 })).toThrow(
       /judgeTimeoutMs must not exceed maxTurnMs: 2000 > 1000/,
     )
   })
 
   test.each([0, -1, 1.5])('a timing of %s is refused', (value) => {
-    expect(() => checkPipelineSettings({ maxTurnMs: value, judgeTimeoutMs: 1 })).toThrow(
+    expect(() => checkPipelineSettings({ maxTurnMs: value, judgeTimeoutMs: 1, judgePoints: 1 })).toThrow(
       /maxTurnMs must be a whole number of milliseconds, at least 1/,
     )
   })

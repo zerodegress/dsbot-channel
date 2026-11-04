@@ -66,10 +66,14 @@ export interface PipelineNode {
   run: (context: NodeContext) => NodeOutput | Promise<NodeOutput>
 }
 
+export type JudgeFailure = 'judge_timeout' | 'judge_failed'
+
 export interface PipelineOptions {
   maxTurnMs?: number
   judgeTimeoutMs?: number
   charge?: (context: { nodeId: string; event: PipelineEvent }) => void
+  /** Called once per judge that timed out or threw, before the deny it ends in. */
+  onJudgeFailure?: ((code: JudgeFailure, event: PipelineEvent) => void) | undefined
 }
 
 export interface PipelineResult {
@@ -157,6 +161,11 @@ export class Pipeline {
       })
       return await Promise.race([Promise.resolve(node.run(context)), timeout])
     } catch (error) {
+      if (node.type === 'judge') {
+        const code: JudgeFailure = error instanceof TurnTimeout ? 'judge_timeout' : 'judge_failed'
+        this.options.onJudgeFailure?.(code, context.event)
+        return { kind: 'deny', reason: code }
+      }
       if (error instanceof TurnTimeout) return null
       throw error
     } finally {

@@ -13,9 +13,10 @@ describe('points', () => {
     expect(ledger.pointsFor('rejected')).toBe(10)
   })
 
-  test('the point table names no tier a caller could not reach', () => {
-    expect(Object.keys(DEFAULT_BUDGET.points).sort()).toEqual(['accepted', 'rejected'])
-    expect(CHARGE_KINDS).toEqual(['bot'])
+  test('every point tier names a charge kind a caller can reach', () => {
+    expect(Object.keys(DEFAULT_BUDGET.points).sort()).toEqual(['accepted', 'judge', 'rejected'])
+    expect(CHARGE_KINDS).toEqual(['bot', 'judge'])
+    expect(DEFAULT_BUDGET.points.judge).toBe(1)
   })
 })
 

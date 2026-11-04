@@ -17,6 +17,13 @@ export class TurnBilling {
     return ledger.reserve(botId, session, 'bot', ledger.pointsFor('accepted'), chargeId)
   }
 
+  /** Charges one judge call for this event; a replayed event is charged once. */
+  judge(botId: string, session: string, eventKey: string): void {
+    const ledger = this.options.ledger
+    if (!ledger) return
+    ledger.reserve(botId, session, 'judge', ledger.pointsFor('judge'), chargeKey(eventKey, botId, 'judge'))
+  }
+
   accept(hold: Hold | undefined): void {
     if (hold) this.options.ledger?.settle(hold, 'accepted')
   }

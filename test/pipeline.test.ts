@@ -97,8 +97,8 @@ describe('maxTurnMs', () => {
     expect(DEFAULT_PIPELINE.maxTurnMs).toBe(120_000)
   })
 
-  test('a slow node ends the turn and counts as dropped timeout', async () => {
-    const pipeline = new Pipeline([{ id: 'slow', type: 'judge', run: () => new Promise(() => {}) }], { maxTurnMs: 20 })
+  test('a slow node that is not a judge ends the turn as dropped timeout', async () => {
+    const pipeline = new Pipeline([{ id: 'slow', type: 'score', run: () => new Promise(() => {}) }], { maxTurnMs: 20 })
     const result = await pipeline.run(event)
     expect(result.dropped).toBe('timeout')
     expect(result.decision).toBe('deny')
@@ -109,12 +109,37 @@ describe('maxTurnMs', () => {
     expect(DEFAULT_PIPELINE.judgeTimeoutMs).toBeLessThan(DEFAULT_PIPELINE.maxTurnMs)
   })
 
-  test('a timeout is not charged', async () => {
-    let charged = 0
-    const pipeline = new Pipeline([{ id: 'slow', type: 'judge', run: () => new Promise(() => {}) }], { maxTurnMs: 20, charge: () => { charged += 1 } })
+  test('a judge that times out is refused as judge_timeout, not skipped', async () => {
+    const failures: string[] = []
+    const pipeline = new Pipeline([{ id: 'j', type: 'judge', run: () => new Promise(() => {}) }], {
+      maxTurnMs: 20,
+      onJudgeFailure: (code) => failures.push(code),
+    })
     const result = await pipeline.run(event)
-    expect(result.dropped).toBe('timeout')
-    expect(charged).toBe(0)
+    expect(result.decision).toBe('deny')
+    expect(result.reasons.j).toBe('judge_timeout')
+    expect(result.dropped).toBeUndefined()
+    expect(failures).toEqual(['judge_timeout'])
+  })
+
+  test('a judge that throws is refused as judge_failed', async () => {
+    const failures: string[] = []
+    const pipeline = new Pipeline([{ id: 'j', type: 'judge', run: () => Promise.reject(new Error('boom')) }], {
+      onJudgeFailure: (code) => failures.push(code),
+    })
+    const result = await pipeline.run(event)
+    expect(result.decision).toBe('deny')
+    expect(result.reasons.j).toBe('judge_failed')
+    expect(failures).toEqual(['judge_failed'])
+  })
+
+  test('a judge verdict becomes the score it returned', async () => {
+    const pipeline = new Pipeline([
+      { id: 'j', type: 'judge', run: () => Promise.resolve({ kind: 'score', value: 7, reason: 'clean' }) },
+    ])
+    const result = await pipeline.run(event)
+    expect(result.score).toBe(7)
+    expect(result.reasons.j).toBe('clean')
   })
 })
 
