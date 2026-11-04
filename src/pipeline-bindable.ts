@@ -5,7 +5,6 @@ export const UNBOUND_REASON: Record<string, string> = {
   budget:
     'a budget node needs a session-scoped verdict, which the pipeline dependency cannot carry yet; the gate already refuses a hard window',
   score: 'a score node needs a scoring function this version does not supply',
-  judge: 'a judge node needs a model call this version does not supply',
 }
 
 /** The rules a bot can match, folded over every adapter that answers for it. */

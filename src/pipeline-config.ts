@@ -11,9 +11,11 @@ export interface PipelineNodeSpec {
 export interface PipelineSettings {
   maxTurnMs: number
   judgeTimeoutMs: number
+  /** Points one judge verdict costs; zero turns the charge off. */
+  judgePoints: number
 }
 
-export const DEFAULT_PIPELINE: PipelineSettings = { maxTurnMs: DEFAULT_MAX_TURN_MS, judgeTimeoutMs: 8_000 }
+export const DEFAULT_PIPELINE: PipelineSettings = { maxTurnMs: DEFAULT_MAX_TURN_MS, judgeTimeoutMs: 8_000, judgePoints: 1 }
 
 export interface CheckReport {
   fatal: string[]

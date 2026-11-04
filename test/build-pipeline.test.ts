@@ -147,17 +147,25 @@ describe('the budget node reports what the ledger says', () => {
 describe('the options a host passes', () => {
   const hung = (): PipelineDeps => ({ judge: () => new Promise(() => {}) })
 
-  test('maxTurnMs decides when the turn is dropped', async () => {
+  test('maxTurnMs bounds a judge timeout', async () => {
     const pipeline = buildPipeline([{ id: 'j', type: 'judge' }], hung(), { maxTurnMs: 20 })
     const result = await pipeline.run(event)
-    expect(result.dropped).toBe('timeout')
     expect(result.decision).toBe('deny')
+    expect(result.reasons.j).toBe('judge_timeout')
   })
 
-  test('judgeTimeoutMs ends a judge before the turn ceiling', async () => {
+  test('judgeTimeoutMs refuses a hung judge as judge_timeout before the ceiling', async () => {
     const started = Date.now()
-    const pipeline = buildPipeline([{ id: 'j', type: 'judge' }], hung(), { maxTurnMs: 60_000, judgeTimeoutMs: 20 })
-    expect((await pipeline.run(event)).dropped).toBe('timeout')
+    const failures: string[] = []
+    const pipeline = buildPipeline([{ id: 'j', type: 'judge' }], hung(), {
+      maxTurnMs: 60_000,
+      judgeTimeoutMs: 20,
+      onJudgeFailure: (code) => failures.push(code),
+    })
+    const result = await pipeline.run(event)
+    expect(result.decision).toBe('deny')
+    expect(result.reasons.j).toBe('judge_timeout')
+    expect(failures).toEqual(['judge_timeout'])
     expect(Date.now() - started).toBeLessThan(1_000)
   })
 
@@ -170,7 +178,9 @@ describe('the options a host passes', () => {
       const stillWaiting = await Promise.race([running.then(() => 'finished'), Promise.resolve('pending')])
       expect(stillWaiting).toBe('pending')
       await vi.advanceTimersByTimeAsync(1)
-      expect((await running).dropped).toBe('timeout')
+      const result = await running
+      expect(result.decision).toBe('deny')
+      expect(result.reasons.j).toBe('judge_timeout')
     } finally {
       vi.useRealTimers()
     }
