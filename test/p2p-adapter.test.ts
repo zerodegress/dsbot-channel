@@ -83,6 +83,16 @@ describe('the peers block', () => {
     )
   })
 
+  test('one peer written without the list brackets is refused, naming the list form', () => {
+    expect(() => parseP2PConfig(mount({ instance: REF, secret: REF }))).toThrow(
+      /peers: \[\{ instance, secret \}\]/,
+    )
+  })
+
+  test('a mapping key called instance still mounts', () => {
+    expect(parseP2PConfig(mount({ instance: REF })).peers).toEqual([{ instance: 'instance', secret: REF }])
+  })
+
   test('an empty mapping is refused like an empty list', () => {
     expect(() => parseP2PConfig(mount({}))).toThrow(/at least one peer/)
     expect(() => parseP2PConfig(mount([]))).toThrow(/at least one peer/)

@@ -72,7 +72,14 @@ function parsePeers(value: unknown): P2PPeerConfig[] {
     })
   }
   if (value !== null && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>)
+    const mapping = value as Record<string, unknown>
+    if (Object.hasOwn(mapping, 'instance') && Object.hasOwn(mapping, 'secret')) {
+      refuse(
+        'transport.peers reads as one peer written without the list brackets; the list form is peers: [{ instance, secret }]',
+        'peers',
+      )
+    }
+    const entries = Object.entries(mapping)
     if (entries.length === 0) refuse('transport.peers must list at least one peer', 'peers')
     return entries.map(([instance, secret]) => ({
       instance: requiredText(instance, `peers.${instance}`),
