@@ -2,6 +2,9 @@ import type { AdapterCounters } from './adapter-status.js'
 
 export type ChannelState = 'starting' | 'listening' | 'failed' | 'closed'
 
+/** How many unknown instance names one channel remembers, so a sender cannot grow the set without bound. */
+export const UNKNOWN_WARNED_MAX = 256
+
 export interface ChannelFailure {
   at: number
   reason: string
@@ -106,6 +109,10 @@ export class ChannelStats {
     this.#unknownInstance += 1
     if (this.#unknownWarned.has(instance)) return false
     this.#unknownWarned.add(instance)
+    if (this.#unknownWarned.size > UNKNOWN_WARNED_MAX) {
+      const oldest = this.#unknownWarned.values().next().value
+      if (oldest !== undefined) this.#unknownWarned.delete(oldest)
+    }
     return true
   }
 

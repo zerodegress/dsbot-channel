@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `reply`, `turn` and `policy` may be written at the top level as defaults, and an adapter replaces the keys it writes whole; an object or an array is taken as written. Each adapter keeps its own coalescing window and context buffer, and the plugin-level status names the level that supplied each key under `config[].layers`; two adapters answering for one bot and session key still share that session, while each keeps its own coalescing window and context buffer.
 - One adapter is named once: `channel` is the only adapter name, and it is the name peers see on the wire. A profile that still writes `instance` on an adapter fails the mount and says the two were merged; `peers[].instance` still names the peer. A `reply` rule that matches `when.source.instance` compares it with the name the event carries: the sender's `channel` for p2p, the receiving adapter's `channel` for OneBot. A third-party transport reads `mount.channel`; `AdapterMount.instance` is gone.
+- Two `transport.peers` entries of one instance must reference different secrets: repeating one reference is refused at mount, so an overlapping rotation adds a second reference instead.
 
 ## [0.3.0] - 2026-11-03
 

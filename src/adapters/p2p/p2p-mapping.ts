@@ -9,6 +9,28 @@ export const EXCERPT_CHARS = 200
 /** How much of a peer's own text reaches a line of ours. */
 export const PEER_TEXT_MAX = 200
 
+/** How much of a wire name one log line keeps, escapes included. */
+export const LOG_NAME_MAX = 64
+
+function logChar(char: string): string {
+  const code = char.codePointAt(0) ?? 0
+  if (code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029) {
+    return `\\u${code.toString(16).padStart(4, '0')}`
+  }
+  return char
+}
+
+/** A wire name as one log-safe literal: control characters escaped, length bounded. */
+export function logName(value: string): string {
+  let out = ''
+  for (const char of value) {
+    const piece = logChar(char)
+    if (out.length + piece.length > LOG_NAME_MAX - 1) return `${out}…`
+    out += piece
+  }
+  return out
+}
+
 function flatten(text: string): string {
   let out = ''
   for (const char of text) {

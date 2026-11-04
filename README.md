@@ -101,6 +101,8 @@ The impression library is off until a top-level `impressions` block names an abs
 
 An answer that is empty, or that holds nothing but whitespace, is not sent: it is counted as an empty turn like any other answer with no text, so no empty message reaches the conversation.
 
+Two entries of one peer instance must reference different secrets; the same reference twice is refused at mount.
+
 ## License
 
 MIT. See [LICENSE](./LICENSE).

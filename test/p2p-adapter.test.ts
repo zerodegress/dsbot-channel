@@ -15,6 +15,7 @@ import type { InboundRequest } from '../src/adapters/p2p/p2p-wire.js'
 import type { AdapterPorts, InboundMessage } from '../src/contract.js'
 import type { AdapterMount } from '../src/adapter-registry.js'
 import { parseP2PConfig } from '../src/adapters/p2p/index.js'
+import { logName } from '../src/adapters/p2p/p2p-mapping.js'
 
 const REF = '{{SECRET_7k3mwq8t}}'
 const credentials = staticCredentials({ [REF]: 'shared-value' })
@@ -829,5 +830,40 @@ describe('a rotation that keeps both keys', () => {
       instance: 'inst-b',
     })
     expect(sent.ok).toBe(true)
+  })
+})
+
+describe('an unknown name the log carries', () => {
+  test('stays one escaped line, however the sender spells it', async () => {
+    const warnings: string[] = []
+    const adapter = new P2PAdapter(config(0), { warn: (line) => warnings.push(line) })
+    adapter.checkConfig({ maxTurnMs: 120_000 })
+    const handle = await adapter.start({
+      onMessage: async () => ({ ok: true }),
+      resolveSecret: (ref) => Promise.resolve(credentials.resolve(ref).then((one) => one?.value)),
+    })
+    stops.push(handle.stop)
+    const port = instancePort(adapter)
+    const name = 'inst-z\nFAKE LOG LINE'
+    const stranger = staticCredentials({ [REF]: 'a-different-value' })
+    const sent = await sendToPeer({
+      peer: { instance: name, secret: REF, url: `http://127.0.0.1:${port}` },
+      credentials: stranger,
+      to: 'bot-b',
+      body: 'hello',
+      eventId: 'evt-line-1',
+      sender: 'bot-a',
+      instance: name,
+    })
+    expect(sent).toMatchObject({ ok: false, code: 'unauthorized' })
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).not.toContain('\n')
+    expect(warnings[0]).toContain('inst-z\\u000aFAKE LOG LINE')
+  })
+
+  test('a long name is cut to a bound', () => {
+    expect(logName('x'.repeat(200))).toHaveLength(64)
+    expect(logName('x'.repeat(200)).endsWith('…')).toBe(true)
+    expect(logName('a\tb')).toBe('a\\u0009b')
   })
 })

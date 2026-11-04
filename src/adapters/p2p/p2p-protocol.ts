@@ -3,7 +3,7 @@ import type { CredentialsLike, PeerRef } from './p2p-secrets.js'
 import { SecretRefError, resolvePeers } from './p2p-secrets.js'
 import type { DedupeTable } from './p2p-dedupe.js'
 import type { ChannelStats } from '../../channel-stats.js'
-import { EXCERPT_CHARS } from './p2p-mapping.js'
+import { EXCERPT_CHARS, logName } from './p2p-mapping.js'
 import { MEDIA_TYPES, mediaNameProblem } from '../../event-types.js'
 import type { P2PMediaItem } from './p2p-wire.js'
 
@@ -219,11 +219,12 @@ export async function handleMessage(input: HandleInput): Promise<HandleResult> {
   const request = parsed.value
   const roster = config.peers.map((peer) => peer.instance)
   if (!roster.includes(request.instance)) {
-    const firstForInstance = input.stats === undefined || input.stats.unknownInstance(request.instance)
+    const name = logName(request.instance)
+    const firstForInstance = input.stats === undefined || input.stats.unknownInstance(name)
     if (firstForInstance) {
       config.warn?.(
-        `dsbot-channel: refused a message from unknown instance "${request.instance}" for ${config.botName}; ` +
-          `configured peers are ${roster.join(', ')}`,
+        `dsbot-channel: refused a message from unknown instance "${name}" for ${config.botName}; ` +
+          `configured peers are ${roster.map(logName).join(', ')}`,
       )
     }
   }

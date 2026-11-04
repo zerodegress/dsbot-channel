@@ -163,3 +163,13 @@ describe('an instance the roster does not name', () => {
     expect(channel.snapshot()).toMatchObject({ unknownInstance: 3, authFailures: 0 })
   })
 })
+
+describe('the warn memory a hostile roster fills', () => {
+  test('keeps at most 256 names and forgets the oldest', () => {
+    const { stats: channel } = stats()
+    for (let index = 0; index < 257; index += 1) expect(channel.unknownInstance(`ghost-${index}`)).toBe(true)
+    expect(channel.unknownInstance('ghost-0')).toBe(true)
+    expect(channel.unknownInstance('ghost-256')).toBe(false)
+    expect(channel.snapshot().unknownInstance).toBe(259)
+  })
+})
