@@ -99,6 +99,8 @@ adapter 可以用 `session` 指定每回合都跑在某个已有会话里，用 
 | `transport.fileFromUrl` | `false` | OneBot：用 url 发文件 |
 | `status` | `true` | 状态路由 |
 
+空回答不发送：内容为空、或者只有空白的回答，按「没有文字的回合」计数，不会把一条空消息发进对话。
+
 ## 许可证
 
 MIT，见 [LICENSE](./LICENSE)。

@@ -292,6 +292,31 @@ describe('a reply that is sent in parts', () => {
     expect(sentInputs.map((input) => input.body)).toEqual(['one', 'two'])
   })
 
+
+  test('an answer of nothing but whitespace is not sent at all', async () => {
+    queue = [message('e-blank-1')]
+    verdicts = []
+    sentInputs.length = 0
+    failOnSend = 0
+    reply = '   \n\n  \t\n'
+    await mount({ split: { byBlankLine: true, maxParts: 2 } })
+    await wait(40)
+
+    expect(sentInputs).toHaveLength(0)
+  })
+
+  test('an answer that trims to nothing is not sent even without a delivery block', async () => {
+    queue = [message('e-blank-2')]
+    verdicts = []
+    sentInputs.length = 0
+    failOnSend = 0
+    reply = '\n\n\t\n'
+    await mount(undefined)
+    await wait(40)
+
+    expect(sentInputs).toHaveLength(0)
+  })
+
   test('no delivery block keeps one send', async () => {
     queue = [message('e-part-3')]
     verdicts = []

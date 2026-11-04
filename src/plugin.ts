@@ -991,7 +991,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         hold = undefined
         return
       }
-      if (turn.text.length === 0) {
+      if (turn.text.trim().length === 0) {
         warn(`dsbot-channel: the turn for ${message.requestId} from ${message.replyTarget} ended without an answer`)
         turns.empty()
         ended('empty')
@@ -1004,7 +1004,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
       const replyEventId = `reply:${randomUUID()}`
       let sent: Awaited<ReturnType<typeof transport.send>> = { ok: true, messageId: '', duplicate: false }
       let sentParts = 0
-      for (const [index, part] of (parts.length === 0 ? [turn.text] : parts).entries()) {
+      for (const [index, part] of parts.entries()) {
         if (index > 0 && delivery !== undefined) {
           await new Promise<void>((resolve) => {
             setTimer(() => resolve(), delivery.gapMs(part))

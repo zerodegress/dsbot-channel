@@ -99,6 +99,8 @@ The impression library is off until a top-level `impressions` block names an abs
 | `transport.fileFromUrl` | `false` | OneBot: file from a url |
 | `status` | `true` | status route |
 
+An answer that is empty, or that holds nothing but whitespace, is not sent: it is counted as an empty turn like any other answer with no text, so no empty message reaches the conversation.
+
 ## License
 
 MIT. See [LICENSE](./LICENSE).
