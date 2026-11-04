@@ -86,6 +86,15 @@ export interface AdapterCounters {
 
 export type Health = ConnectionHealth | ListenerHealth
 
+export const MODEL_SELECTION_STATES = ['applied', 'unsupported', 'rejected'] as const
+export type ModelSelectionState = (typeof MODEL_SELECTION_STATES)[number]
+
+/** The model an adapter asked its host for, and whether the selection took. */
+export interface ModelSelection {
+  requested: string
+  state: ModelSelectionState
+}
+
 export interface AdapterStatus {
   channel: string
   account: string
@@ -99,6 +108,8 @@ export interface AdapterStatus {
   queueDepth: number
   /** The replay window a transport keeps, when it keeps one. */
   dedupe?: { epoch: number } | undefined
+  /** Absent when the profile names no model, or when the host has not decided yet. */
+  modelSelection?: ModelSelection | undefined
 }
 
 export interface ListenerInput {
@@ -122,6 +133,7 @@ export interface StatusInput {
   sampledAt: number
   queueDepth: number
   dedupe?: { epoch: number } | undefined
+  modelSelection?: ModelSelection | undefined
 }
 
 function assertMember<T extends string>(name: string, allowed: readonly T[], value: string): T {
@@ -180,6 +192,14 @@ export function buildStatus(input: StatusInput): AdapterStatus {
     sampledAt: input.sampledAt,
     queueDepth: input.queueDepth,
     ...(input.dedupe === undefined ? {} : { dedupe: { epoch: input.dedupe.epoch } }),
+    ...(input.modelSelection === undefined
+      ? {}
+      : {
+          modelSelection: {
+            requested: input.modelSelection.requested,
+            state: assertMember('model selection state', MODEL_SELECTION_STATES, input.modelSelection.state),
+          },
+        }),
   }
 }
 

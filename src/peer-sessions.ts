@@ -1,3 +1,5 @@
+import type { ModelSelection, ModelSelectionState } from './adapter-status.js'
+
 export interface SessionMessagePart {
   type: string
   text?: string
@@ -96,6 +98,7 @@ export class PeerSessions {
   readonly #cwd: string | undefined
   readonly #agentPreset: string | undefined
   readonly #model: ModelRoute | undefined
+  #modelState: ModelSelectionState | undefined
   readonly #warn: ((message: string) => void) | undefined
   readonly #readyModels = new Map<string, Promise<string>>()
   #warnedNoSelector = false
@@ -113,6 +116,8 @@ export class PeerSessions {
     this.#cwd = options.cwd
     this.#agentPreset = options.agentPreset
     this.#model = options.model
+    this.#modelState =
+      options.model !== undefined && options.controller.selectModel === undefined ? 'unsupported' : undefined
     this.#warn = options.warn
   }
 
@@ -127,6 +132,13 @@ export class PeerSessions {
     this.#sessions.clear()
     this.#readyModels.clear()
     this.#tail.clear()
+  }
+
+  /** The model this adapter asked for and whether the host took it; absent until that is decided. */
+  get modelSelection(): ModelSelection | undefined {
+    const model = this.#model
+    if (model === undefined || this.#modelState === undefined) return undefined
+    return { requested: `${model.provider}/${model.model}`, state: this.#modelState }
   }
 
   /** Whether dispose ran; a disposed bridge refuses every later turn. */
@@ -197,7 +209,9 @@ export class PeerSessions {
       }
       try {
         await this.#controller.selectModel({ sessionId, provider: model.provider, model: model.model })
+        this.#modelState = 'applied'
       } catch (error) {
+        this.#modelState = 'rejected'
         this.#warn?.(
           `dsbot-channel: selecting model ${model.provider}/${model.model} for ${sessionId} failed: ${String(error)}`,
         )
