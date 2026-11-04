@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- One adapter is named once: `channel` is the only adapter name, and it is the name peers see on the wire. A profile that still writes `instance` on an adapter fails the mount and says the two were merged; `peers[].instance` still names the peer. A `reply` rule that matches `when.source.instance` compares it with the name the peer sends, which is that peer's `channel`. A third-party transport reads `mount.channel`; `AdapterMount.instance` is gone.
+- One adapter is named once: `channel` is the only adapter name, and it is the name peers see on the wire. A profile that still writes `instance` on an adapter fails the mount and says the two were merged; `peers[].instance` still names the peer. A `reply` rule that matches `when.source.instance` compares it with the name the event carries: the sender's `channel` for p2p, the receiving adapter's `channel` for OneBot. A third-party transport reads `mount.channel`; `AdapterMount.instance` is gone.
 
 ## [0.3.0] - 2026-11-03
 

@@ -21,14 +21,14 @@ let queue: InboundMessage[] = []
 let verdicts: InboundVerdict[] = []
 let outbound: SendInput[] = []
 
-function message(eventKey: string, text = 'hello'): InboundMessage {
+function message(eventKey: string, text = 'hello', instance = 'inst-a'): InboundMessage {
   return {
     eventKey,
     chainId: eventKey,
     sessionKey: 'demo:chat-1',
     replyTarget: 'chat-1',
     requestId: eventKey,
-    source: { kind: 'x-demo', instance: 'inst-a', peer: 'inst-a', scope: 'p2p' },
+    source: { kind: 'x-demo', instance, peer: 'inst-a', scope: 'p2p' },
     author: { senderId: 'bot-a', kind: 'bot', personId: null },
     rawText: text,
     body: { text, media: [], replyTo: null },
@@ -152,11 +152,11 @@ async function mount(reply: unknown, options: { withTools?: boolean; answer?: st
 const wait = (ms = 20): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 describe('a rule keyed by the peer name on the wire', () => {
-  test('matches the name the peer sends', async () => {
-    queue = [message('e-name-1')]
+  test('matches the name the event carries, not this adapter', async () => {
+    queue = [message('e-name-1', 'hello', 'peer-x')]
     verdicts = []
     outbound = []
-    const ctx = await mount({ rules: [{ when: { source: { instance: 'inst-a' } }, mode: 'tool' }] })
+    const ctx = await mount({ rules: [{ when: { source: { instance: 'peer-x' } }, mode: 'tool' }] })
 
     await wait()
     const turns = ctx.get('dsbot-channel.turns') as { snapshot(): { dropped: number; replied: number } }
