@@ -104,7 +104,12 @@ const prompted: string[] = []
 
 async function mount(
   reply: unknown,
-  options: { withTools?: boolean; answer?: string; adapter?: Record<string, unknown> } = {},
+  options: {
+    withTools?: boolean
+    answer?: string
+    adapter?: Record<string, unknown>
+    turn?: Record<string, unknown>
+  } = {},
 ): Promise<Context> {
   const ctx = new Context()
   const answer = options.answer ?? 'a plain answer'
@@ -139,6 +144,7 @@ async function mount(
   await ctx.plugin(registryPlugin)
   await ctx.plugin(entry, {
     reply,
+    ...(options.turn === undefined ? {} : { turn: options.turn }),
     adapters: [
       {
         kind: 'x-demo',
@@ -222,6 +228,39 @@ describe('the top level supplies defaults an adapter can replace', () => {
         layers: { 'reply.default': 'adapter', 'reply.rules': 'global' },
       },
     ])
+  })
+})
+
+describe('the turn block follows the same per-key rule', () => {
+  test('an adapter coalesce window replaces the top-level one', async () => {
+    await wait(30)
+    queue = [message('e-turn-1')]
+    verdicts = []
+    outbound = []
+    prompted.length = 0
+    await mount({ default: 'auto' }, { turn: { coalesceMs: 1_000 }, adapter: { turn: { coalesceMs: 0 } } })
+
+    await wait(40)
+    expect(prompted).toHaveLength(1)
+    await wait(30)
+  })
+
+  test('the status names the turn keys by level', async () => {
+    queue = []
+    verdicts = []
+    outbound = []
+    const ctx = await mount(
+      { default: 'auto' },
+      { turn: { coalesceMs: 1_000 }, adapter: { turn: { maxBatch: 1 } } },
+    )
+
+    const status = ctx.get('dsbot-channel.status') as {
+      snapshot(): { config: { channel: string; layers: Record<string, string> }[] }
+    }
+    expect(status.snapshot().config[0]?.layers).toMatchObject({
+      'turn.coalesceMs': 'global',
+      'turn.maxBatch': 'adapter',
+    })
   })
 })
 
