@@ -193,8 +193,11 @@ describe('plugin lifecycle', () => {
       const status = ctx.get('dsbot-channel.status') as {
         snapshot(): { adapters: { sampledAt?: unknown; dedupe?: unknown; health?: Record<string, unknown> }[] }
       }
-      const [{ sampledAt, dedupe, health, ...rest }] = status.snapshot().adapters
-      const stable = { ...rest, health: { ...health, boundPort: undefined } }
+      const report = (status.snapshot().adapters[0] ?? {}) as Record<string, unknown>
+      const stable: Record<string, unknown> = { ...report }
+      delete stable.sampledAt
+      delete stable.dedupe
+      stable.health = { ...(report.health as Record<string, unknown> | undefined), boundPort: undefined }
       await fork.dispose()
       return stable
     }
