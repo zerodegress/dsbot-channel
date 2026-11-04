@@ -360,7 +360,14 @@ export function checkPipelineSettings(settings: PipelineSettings): void {
 }
 
 /** Refuses a pipeline that cannot load, and reports the ones that only look wrong. */
-export function checkPipelineScopes(config: ChannelConfig, warn: (message: string) => void): void {
+export function checkPipelineScopes(
+  config: ChannelConfig,
+  warn: (message: string) => void,
+  written: (adapter: AdapterConfig) => Record<string, unknown> | undefined = (adapter) => ({
+    policy: adapter.policy,
+    reply: adapter.reply,
+  }),
+): void {
   const layers = new Map<string, PipelineLayer>()
   for (const adapter of config.adapters) {
     const layer = adapter.pipeline
@@ -403,7 +410,7 @@ export function checkPipelineScopes(config: ChannelConfig, warn: (message: strin
           : config.pipeline.global
         : declaredNodes(config, adapter)
     if (nodes === undefined) continue
-    const rules = adapter === undefined ? undefined : compilePolicy(effectivePolicy(config, adapter)).deps
+    const rules = adapter === undefined ? undefined : compilePolicy(effectivePolicy(config, adapter, (one) => written(one)?.policy)).deps
     const whose = adapter?.botName ? `bot "${adapter.botName}": ` : ''
     const bindings = {
       deny: (rules?.denyRules ?? []).length > 0,
@@ -425,11 +432,14 @@ interface BotFacts extends BotScope {
   deps: PipelineDeps
 }
 
-function botScopes(config: ChannelConfig): Map<string, BotFacts> {
+function botScopes(
+  config: ChannelConfig,
+  written: (adapter: AdapterConfig) => Record<string, unknown> | undefined,
+): Map<string, BotFacts> {
   const bots = new Map<string, BotFacts>()
   for (const adapter of config.adapters) {
     const seen = bots.get(adapter.botName)
-    const compiled = compilePolicy(effectivePolicy(config, adapter))
+    const compiled = compilePolicy(effectivePolicy(config, adapter, (one) => written(one)?.policy))
     const deny = (compiled.deps.denyRules ?? []).length > 0
     const allow = (compiled.deps.allowRules ?? []).length > 0
     const base = declaredNodes(config, adapter) ?? compiled.specs
@@ -609,8 +619,12 @@ function mergeLayer(
   return { merged, layers }
 }
 
-function effectivePolicy(config: ChannelConfig, adapter: AdapterConfig): Parameters<typeof compilePolicy>[0] {
-  return mergeLayer(config.policy, adapter.policy, 'policy').merged as Parameters<typeof compilePolicy>[0]
+function effectivePolicy(
+  config: ChannelConfig,
+  adapter: AdapterConfig,
+  written: (adapter: AdapterConfig) => unknown,
+): Parameters<typeof compilePolicy>[0] {
+  return mergeLayer(config.policy, written(adapter), 'policy').merged as Parameters<typeof compilePolicy>[0]
 }
 
 /** Refuses an adapter that still names itself twice: `instance` became `channel`. */
@@ -667,6 +681,11 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     )
   }
   const config = readConfig(raw)
+  const writtenAdapters = Array.isArray((raw as { adapters?: unknown } | null)?.adapters)
+    ? ((raw as { adapters: Record<string, unknown>[] }).adapters ?? [])
+    : []
+  const written = (adapter: AdapterConfig): Record<string, unknown> | undefined =>
+    writtenAdapters[config.adapters.indexOf(adapter)]
   const warn = createWarn(ctx)
   const flushFailures = { count: 0 }
   const flushSessions = async (when: 'reply' | 'shutdown'): Promise<void> => {
@@ -686,8 +705,8 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   checkPipelineSettings(settings)
   const turn = checkTurnSettings(config.turn as Parameters<typeof checkTurnSettings>[0])
   const context = new ContextBuffer(turn.context)
-  checkPipelineScopes(config, warn)
-  const bots = botScopes(config)
+  checkPipelineScopes(config, warn, written)
+  const bots = botScopes(config, written)
   const pipelines = new SessionPipelines({ bots })
   const channels = mountAdapters(config, settings, warn, registry)
   // Parsed after the adapters so a binding can be checked against instances that really exist.
@@ -699,7 +718,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   checkGuidance(channels)
   checkPrepareSupport(bots, channels)
   const replyOf = (adapter: AdapterConfig): ReturnType<typeof compileReply> =>
-    compileReply(mergeLayer(config.reply, adapter.reply, 'reply').merged)
+    compileReply(mergeLayer(config.reply, written(adapter)?.reply, 'reply').merged)
   // A guard against a future edit to the notice text, not profile validation: the block is core-owned.
   if (TOOL_MODE_NOTICE.length > TOOL_MODE_NOTICE_MAX) {
     throw new ConfigError(`the tool-mode block is longer than ${TOOL_MODE_NOTICE_MAX} characters`, ['reply'])
@@ -994,11 +1013,12 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         ...(adapter.session === undefined ? {} : { session: adapter.session }),
       })
       runtimes.push(sessions)
-      const mergedPolicy = effectivePolicy(config, adapter)
+      const writtenBlock = written(adapter)
+      const mergedPolicy = effectivePolicy(config, adapter, (one) => written(one)?.policy)
       const compiled = compilePolicy(mergedPolicy)
       const policyBlock = mergedPolicy as PolicySettings
-      const replyBlock = mergeLayer(config.reply, adapter.reply, 'reply')
-      const policyLayer = mergeLayer(config.policy, adapter.policy, 'policy')
+      const replyBlock = mergeLayer(config.reply, writtenBlock?.reply, 'reply')
+      const policyLayer = mergeLayer(config.policy, writtenBlock?.policy, 'policy')
       configLayers.push({ channel: adapter.channel, layers: { ...replyBlock.layers, ...policyLayer.layers } })
       const budget = policyBlock.budget
       const ledger = budget === undefined ? undefined : createLedger(budget)
