@@ -255,17 +255,27 @@ describe('a judge node binds the decision service', () => {
     expect(judgeFailuresOf(ctx)).toBe(1)
     expect(usageOf(ctx)).toBe(0)
     expect(warnings.some((line) => line.includes('inst-a') && line.includes('judge_failed'))).toBe(true)
+    expect(warnings.some((line) => line.includes('judge_timeout'))).toBe(false)
+    expect(String((verdicts[0] as { reason?: string }).reason)).toContain('judge_failed')
     expect(warnings.some((line) => line.includes('hello'))).toBe(false)
   })
 
   test('a judge that times out is refused as judge_timeout and counted', async () => {
     queue = [message('e-judge-5')]
     verdicts = []
-    const ctx = await mount({ judge: () => new Promise(() => {}), pipeline: { judgeTimeoutMs: 20 } })
+    const warnings: string[] = []
+    const ctx = await mount({
+      judge: () => new Promise(() => {}),
+      pipeline: { judgeTimeoutMs: 20 },
+      warnings,
+    })
     await wait(60)
 
     expect(verdicts[0]).toMatchObject({ ok: false, code: 'rejected' })
     expect(judgeFailuresOf(ctx)).toBe(1)
     expect(usageOf(ctx)).toBe(0)
+    expect(warnings.some((line) => line.includes('inst-a') && line.includes('judge_timeout'))).toBe(true)
+    expect(warnings.some((line) => line.includes('judge_failed'))).toBe(false)
+    expect(String((verdicts[0] as { reason?: string }).reason)).toContain('judge_timeout')
   })
 })
