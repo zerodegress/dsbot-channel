@@ -12,10 +12,18 @@ interface Recorded {
 class FakeController implements SessionControllerLike {
   readonly creates: unknown[] = []
   readonly prompts: Recorded[] = []
+  readonly models: { sessionId: string; provider: string; model: string }[] = []
   onPrompt?: (request: PromptRequest) => void
   failCreate: Error | undefined
   failPrompt: Error | undefined
+  failModel: Error | undefined
   #count = 0
+
+  selectModel(request: { sessionId: string; provider: string; model: string }): Promise<unknown> {
+    this.models.push(request)
+    if (this.failModel) return Promise.reject(this.failModel)
+    return Promise.resolve({ selected: { provider: request.provider, model: request.model } })
+  }
 
   create(request: { cwd?: string; agentPreset?: string }): Promise<{ sessionId: string }> {
     this.creates.push(request)
@@ -69,7 +77,16 @@ function turn(sessionId: string, emit: (sessionId: string, event: SessionEventLi
   emit(sessionId, { type: 'turn/end' })
 }
 
-function harness(options: { timeoutMs?: number; cwd?: string; agentPreset?: string; session?: string } = {}) {
+function harness(
+  options: {
+    timeoutMs?: number
+    cwd?: string
+    agentPreset?: string
+    session?: string
+    model?: { provider: string; model: string }
+    warn?: (message: string) => void
+  } = {},
+) {
   const controller = new FakeController()
   const events = bus()
   const bridge = new PeerSessions({ controller, observe: events.observe, ...options })
@@ -364,6 +381,81 @@ describe('peer sessions', () => {
 
     expect(result.text).toBe('ok')
     expect(controller.creates).toHaveLength(2)
+  })
+})
+
+describe('the model a bridge runs', () => {
+  const route = { provider: 'deepseek', model: 'deepseek-chat' }
+
+  test('selects the configured model once per session', async () => {
+    const { controller, events, bridge } = harness({ model: route })
+    controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['ok'])
+
+    await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'one' })
+    await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-2', text: 'two' })
+
+    expect(controller.models).toEqual([{ sessionId: 'session-1', provider: 'deepseek', model: 'deepseek-chat' }])
+  })
+
+  test('selects once for each peer session', async () => {
+    const { controller, events, bridge } = harness({ model: route })
+    controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['ok'])
+
+    await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'a' })
+    await bridge.runTurn({ peer: 'peer-b', requestId: 'evt-2', text: 'b' })
+
+    expect(controller.models.map((one) => one.sessionId)).toEqual(['session-1', 'session-2'])
+  })
+
+  test('selects on the one configured session too', async () => {
+    const { controller, events, bridge } = harness({ session: 'session-main', model: route })
+    controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['ok'])
+
+    await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })
+
+    expect(controller.models).toEqual([{ sessionId: 'session-main', provider: 'deepseek', model: 'deepseek-chat' }])
+  })
+
+  test('a host without a selector only warns and the turn still runs', async () => {
+    const events = bus()
+    const warnings: string[] = []
+    const controller = {
+      create: () => Promise.resolve({ sessionId: 'session-1' }),
+      prompt: (request: PromptRequest, signal: AbortSignal) => {
+        signal.throwIfAborted()
+        turn('session-1', events.emit, ['ok'])
+        void request
+        return Promise.resolve({ accepted: true })
+      },
+    }
+    const bridge = new PeerSessions({ controller, observe: events.observe, model: route, warn: (line) => warnings.push(line) })
+
+    await expect(bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })).resolves.toMatchObject({
+      text: 'ok',
+    })
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('cannot select one')
+  })
+
+  test('a rejected selection warns and the turn still runs', async () => {
+    const warnings: string[] = []
+    const { controller, events, bridge } = harness({ model: route, warn: (line) => warnings.push(line) })
+    controller.failModel = new Error('no such model')
+    controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['ok'])
+
+    await expect(bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })).resolves.toMatchObject({
+      text: 'ok',
+    })
+    expect(warnings.some((line) => line.includes('no such model'))).toBe(true)
+  })
+
+  test('no model configured never touches the selector', async () => {
+    const { controller, events, bridge } = harness()
+    controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['ok'])
+
+    await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })
+
+    expect(controller.models).toEqual([])
   })
 })
 

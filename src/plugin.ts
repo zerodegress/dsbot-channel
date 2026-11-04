@@ -34,7 +34,7 @@ import { InjectionLedger, TOOL_MODE_NOTICE, TOOL_MODE_NOTICE_MAX } from './inbou
 import { usageSnapshot } from './usage-view.js'
 import type { BotLedger } from './usage-view.js'
 import { PeerSessions } from './peer-sessions.js'
-import type { SessionControllerLike, SessionEventLike } from './peer-sessions.js'
+import type { ModelRoute, SessionControllerLike, SessionEventLike } from './peer-sessions.js'
 import type { PipelineEvent } from './pipeline.js'
 import { unboundReason, unboundRuleReason } from './pipeline-bindable.js'
 import type { PipelineNodeSpec, PipelineSettings } from './pipeline-config.js'
@@ -72,6 +72,12 @@ export interface AdapterConfig {
   botName: string
   /** Runs every turn of this adapter in one existing session instead of one per address. */
   session?: string
+  /** The directory the created sessions own. */
+  cwd?: string
+  /** The agent preset the created sessions run. */
+  agentPreset?: string
+  /** The model every session of this adapter runs on, as `provider/model`. */
+  model?: string
   /** How this adapter answers; the keys it writes replace the top-level block's keys whole. */
   reply?: unknown
   /** How this adapter's messages gather; the keys it writes replace the top-level block's keys whole. */
@@ -170,6 +176,9 @@ export const Config: any = Schema.object({
         channel: Schema.string().required(),
         botName: Schema.string().required(),
         session: Schema.string(),
+        cwd: Schema.string(),
+        agentPreset: Schema.string(),
+        model: Schema.string(),
         reply: Schema.any(),
         turn: Schema.any(),
         policy: Schema.object({
@@ -591,6 +600,7 @@ interface MountedChannel {
   config: AdapterConfig
   adapter: ChannelAdapter
   index: number
+  model?: ModelRoute | undefined
 }
 
 interface ChannelRuntime {
@@ -1018,7 +1028,11 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
       const sessions = new PeerSessions({
         controller,
         observe,
+        warn,
         ...(adapter.session === undefined ? {} : { session: adapter.session }),
+        ...(adapter.cwd === undefined ? {} : { cwd: adapter.cwd }),
+        ...(adapter.agentPreset === undefined ? {} : { agentPreset: adapter.agentPreset }),
+        ...(channel.model === undefined ? {} : { model: channel.model }),
       })
       runtimes.push(sessions)
       const writtenBlock = written(adapter)
@@ -1335,6 +1349,24 @@ function mountAdapters(
       throw new ConfigError(`duplicate adapter channel: ${adapter.channel}`, ['adapters', String(index), 'channel'])
     }
     seen.add(adapter.channel)
+    for (const field of ['cwd', 'agentPreset'] as const) {
+      const value = adapter[field]
+      if (value === undefined) continue
+      if (typeof value !== 'string' || value.trim().length === 0) {
+        throw new ConfigError(`${field} must be a non-empty string`, ['adapters', String(index), field])
+      }
+    }
+    let model: ModelRoute | undefined
+    if (adapter.model !== undefined) {
+      const slash = typeof adapter.model === 'string' ? adapter.model.indexOf('/') : -1
+      if (slash <= 0 || slash === adapter.model.length - 1) {
+        throw new ConfigError(
+          `model must name a route as "provider/model": ${String(adapter.model)}`,
+          ['adapters', String(index), 'model'],
+        )
+      }
+      model = { provider: adapter.model.slice(0, slash), model: adapter.model.slice(slash + 1) }
+    }
     const adapterPath = (field: string): string[] => ['adapters', String(index), 'policy', field]
     checkPolicyValues(adapter.policy as unknown as Record<string, unknown>, adapterPath)
     const writtenPolicy = asRecord(written(index)?.policy)
@@ -1376,6 +1408,6 @@ function mountAdapters(
       )
     }
     transport.checkConfig(settings)
-    return { config: adapter, adapter: transport, index }
+    return { config: adapter, adapter: transport, index, ...(model === undefined ? {} : { model }) }
   })
 }
