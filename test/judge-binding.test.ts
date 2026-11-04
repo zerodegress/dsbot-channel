@@ -76,6 +76,7 @@ class DemoAdapter implements ChannelAdapter {
       health: buildListenerHealth({ listenState: 'stopped', boundPort: null, lastAuthenticatedAt: null, queueDepth: 0 }),
       counters: {
         authFailures: 0,
+        unknownInstance: 0,
         unknownPaths: 0,
         underruns: 0,
         protocolMismatches: 0,

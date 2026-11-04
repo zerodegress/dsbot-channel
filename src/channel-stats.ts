@@ -28,6 +28,8 @@ export interface ChannelSnapshot {
   unknownPaths: number
   /** Requests refused because the caller did not present the configured token. */
   authFailures: number
+  /** Messages from an instance the roster does not name. */
+  unknownInstance: number
   /** Peers that spoke a protocol version this build does not sign. */
   protocolMismatches: number
   lastProtocolMismatchAt: number | null
@@ -49,10 +51,12 @@ export class ChannelStats {
   #underruns = 0
   #unknownPaths = 0
   #authFailures = 0
+  #unknownInstance = 0
   #protocolMismatches = 0
   #lastProtocolMismatchAt: number | null = null
   readonly #staleSentAt = new Map<string, number>()
   readonly #staleWarned = new Set<string>()
+  readonly #unknownWarned = new Set<string>()
   #emptyTurns = 0
   readonly #sendFailures = new Map<string, number>()
 
@@ -95,6 +99,14 @@ export class ChannelStats {
 
   authFailure(): void {
     this.#authFailures += 1
+  }
+
+  /** Counts a message from an instance the roster does not name; true only the first time that name is warned about. */
+  unknownInstance(instance: string): boolean {
+    this.#unknownInstance += 1
+    if (this.#unknownWarned.has(instance)) return false
+    this.#unknownWarned.add(instance)
+    return true
   }
 
   protocolMismatch(): void {
@@ -141,6 +153,7 @@ export class ChannelStats {
       underruns: this.#underruns,
       unknownPaths: this.#unknownPaths,
       authFailures: this.#authFailures,
+      unknownInstance: this.#unknownInstance,
       protocolMismatches: this.#protocolMismatches,
       lastProtocolMismatchAt: this.#lastProtocolMismatchAt,
       staleSentAt: Object.fromEntries(this.#staleSentAt),
@@ -158,6 +171,7 @@ export class ChannelStats {
 export function countersOf(snapshot: ChannelSnapshot): AdapterCounters {
   return {
     authFailures: snapshot.authFailures,
+    unknownInstance: snapshot.unknownInstance,
     unknownPaths: snapshot.unknownPaths,
     underruns: snapshot.underruns,
     protocolMismatches: snapshot.protocolMismatches,

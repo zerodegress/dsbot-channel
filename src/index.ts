@@ -114,6 +114,7 @@ export type {
   ListenState,
   PlatformAttributes,
   QuotaView,
+  SendFailureView,
   StatusInput,
 } from './adapter-status.js'
 export { BuildError, buildPipeline } from './build-pipeline.js'

@@ -72,6 +72,8 @@ export interface AdapterCounters {
   authFailures: number
   /** Requests for a path this transport does not serve, which a port scan also produces. */
   unknownPaths: number
+  /** Messages from an instance the roster does not name. */
+  unknownInstance: number
   /** Deliveries that ended without one having begun, which is always a bug. */
   underruns: number
   /** Peers that spoke a protocol version this build does not accept. */
@@ -95,6 +97,13 @@ export interface ModelSelection {
   state: ModelSelectionState
 }
 
+/** The peer and failure code of the last send that left an adapter and failed. */
+export interface SendFailureView {
+  at: number
+  instance: string
+  reason: string
+}
+
 export interface AdapterStatus {
   channel: string
   account: string
@@ -110,6 +119,10 @@ export interface AdapterStatus {
   dedupe?: { epoch: number } | undefined
   /** Absent when the profile names no model, or when the host has not decided yet. */
   modelSelection?: ModelSelection | undefined
+  /** When this adapter last completed a send; null when it never has. */
+  lastSuccessAt?: number | null | undefined
+  /** The peer and failure code of the last send that left this adapter and failed; null when none has. */
+  lastSendFailure?: SendFailureView | null | undefined
 }
 
 export interface ListenerInput {
@@ -134,6 +147,8 @@ export interface StatusInput {
   queueDepth: number
   dedupe?: { epoch: number } | undefined
   modelSelection?: ModelSelection | undefined
+  lastSuccessAt?: number | null | undefined
+  lastSendFailure?: SendFailureView | null | undefined
 }
 
 function assertMember<T extends string>(name: string, allowed: readonly T[], value: string): T {
@@ -166,6 +181,7 @@ export function buildStatus(input: StatusInput): AdapterStatus {
     health: input.health,
     counters: {
       authFailures: input.counters.authFailures,
+      unknownInstance: input.counters.unknownInstance,
       unknownPaths: input.counters.unknownPaths,
       underruns: input.counters.underruns,
       protocolMismatches: input.counters.protocolMismatches,
@@ -199,6 +215,19 @@ export function buildStatus(input: StatusInput): AdapterStatus {
             requested: input.modelSelection.requested,
             state: assertMember('model selection state', MODEL_SELECTION_STATES, input.modelSelection.state),
           },
+        }),
+    ...(input.lastSuccessAt === undefined ? {} : { lastSuccessAt: input.lastSuccessAt }),
+    ...(input.lastSendFailure === undefined
+      ? {}
+      : {
+          lastSendFailure:
+            input.lastSendFailure === null
+              ? null
+              : {
+                  at: input.lastSendFailure.at,
+                  instance: input.lastSendFailure.instance,
+                  reason: input.lastSendFailure.reason,
+                },
         }),
   }
 }

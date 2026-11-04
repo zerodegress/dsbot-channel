@@ -12,6 +12,7 @@ const base = {
   quota: { softLimit: 0.8, hardLimit: 1 },
   counters: {
     authFailures: 0,
+    unknownInstance: 0,
     unknownPaths: 0,
     underruns: 0,
     protocolMismatches: 0,
@@ -58,5 +59,26 @@ describe('health is one of the two shapes', () => {
       health: { kind: 'connection', state: 'online', lastFailure: null, lastFailureAt: null, reconnectCount: 0, lastConnectedAt: 1, queueDepth: 0 },
     })
     expect('listenState' in status.health).toBe(false)
+  })
+})
+
+describe('the link a status reports', () => {
+  const health = { kind: 'connection' as const, state: 'online' as const, lastFailure: null, lastFailureAt: null, reconnectCount: 0, lastConnectedAt: 1, queueDepth: 0 }
+
+  test('carries the last success and the last failed send when given', () => {
+    const status = buildStatus({
+      ...base,
+      health,
+      lastSuccessAt: 1_500,
+      lastSendFailure: { at: 1_600, instance: 'peer-a', reason: 'unreachable' },
+    })
+    expect(status.lastSuccessAt).toBe(1_500)
+    expect(status.lastSendFailure).toEqual({ at: 1_600, instance: 'peer-a', reason: 'unreachable' })
+  })
+
+  test('leaves both out when the transport keeps neither', () => {
+    const status = buildStatus({ ...base, health })
+    expect('lastSuccessAt' in status).toBe(false)
+    expect('lastSendFailure' in status).toBe(false)
   })
 })

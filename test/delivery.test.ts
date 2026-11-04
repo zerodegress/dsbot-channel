@@ -144,7 +144,7 @@ class DemoAdapter implements ChannelAdapter {
     return buildStatus({
       channel: 'x:a', account: 'inst-a', bot: 'bot-a',
       health: buildListenerHealth({ listenState: 'stopped', boundPort: null, lastAuthenticatedAt: null, queueDepth: 0 }),
-      counters: { authFailures: 0, unknownPaths: 0, underruns: 0, protocolMismatches: 0, staleSentAt: {}, sendFailures: {}, lastFailure: null },
+      counters: { authFailures: 0, unknownInstance: 0, unknownPaths: 0, underruns: 0, protocolMismatches: 0, staleSentAt: {}, sendFailures: {}, lastFailure: null },
       capabilities: this.capabilities, attributes: { stableMessageId: true },
       quota: { softLimit: 0, hardLimit: 0 }, sampledAt: 1, queueDepth: 0,
     })

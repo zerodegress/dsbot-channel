@@ -217,6 +217,16 @@ export async function handleMessage(input: HandleInput): Promise<HandleResult> {
     }
   }
   const request = parsed.value
+  const roster = config.peers.map((peer) => peer.instance)
+  if (!roster.includes(request.instance)) {
+    const firstForInstance = input.stats === undefined || input.stats.unknownInstance(request.instance)
+    if (firstForInstance) {
+      config.warn?.(
+        `dsbot-channel: refused a message from unknown instance "${request.instance}" for ${config.botName}; ` +
+          `configured peers are ${roster.join(', ')}`,
+      )
+    }
+  }
 
   let resolved
   try {

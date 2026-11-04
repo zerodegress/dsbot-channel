@@ -82,6 +82,7 @@ const statusFixture = () => ({
   health: { kind: 'listener' as const, listenState: 'listening' as const, boundPort: 7123, lastAuthenticatedAt: null, lastSkewMs: null, lastFailure: null, queueDepth: 0 },
   counters: {
     authFailures: 0,
+    unknownInstance: 0,
     unknownPaths: 0,
     underruns: 0,
     protocolMismatches: 0,
