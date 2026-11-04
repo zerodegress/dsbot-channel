@@ -97,7 +97,8 @@ export class PeerSessions {
   readonly #agentPreset: string | undefined
   readonly #model: ModelRoute | undefined
   readonly #warn: ((message: string) => void) | undefined
-  readonly #models = new Set<string>()
+  readonly #readyModels = new Map<string, Promise<string>>()
+  #warnedNoSelector = false
   readonly #sessions = new Map<string, Promise<string>>()
   readonly #tail = new Map<string, Promise<void>>()
   readonly #running = new Set<RunningTurn>()
@@ -124,6 +125,7 @@ export class PeerSessions {
     this.#running.clear()
     for (const detach of [...this.#detachers]) detach()
     this.#sessions.clear()
+    this.#readyModels.clear()
     this.#tail.clear()
   }
 
@@ -177,25 +179,33 @@ export class PeerSessions {
     return run
   }
 
-  /** Picks the configured model once per session; a host without a selector only warns. */
-  async #ready(sessionId: string): Promise<string> {
+  /** Picks the configured model once per session; every caller waits for that same pick. */
+  #ready(sessionId: string): Promise<string> {
     const model = this.#model
-    if (model === undefined || this.#models.has(sessionId)) return sessionId
-    this.#models.add(sessionId)
-    if (this.#controller.selectModel === undefined) {
-      this.#warn?.(
-        `dsbot-channel: a model is configured but the host session controller cannot select one; ${sessionId} keeps its own model`,
-      )
+    if (model === undefined) return Promise.resolve(sessionId)
+    const started = this.#readyModels.get(sessionId)
+    if (started !== undefined) return started
+    const ready = (async (): Promise<string> => {
+      if (this.#controller.selectModel === undefined) {
+        if (!this.#warnedNoSelector) {
+          this.#warnedNoSelector = true
+          this.#warn?.(
+            'dsbot-channel: a model is configured but the host session controller cannot select one; sessions keep their own model',
+          )
+        }
+        return sessionId
+      }
+      try {
+        await this.#controller.selectModel({ sessionId, provider: model.provider, model: model.model })
+      } catch (error) {
+        this.#warn?.(
+          `dsbot-channel: selecting model ${model.provider}/${model.model} for ${sessionId} failed: ${String(error)}`,
+        )
+      }
       return sessionId
-    }
-    try {
-      await this.#controller.selectModel({ sessionId, provider: model.provider, model: model.model })
-    } catch (error) {
-      this.#warn?.(
-        `dsbot-channel: selecting model ${model.provider}/${model.model} for ${sessionId} failed: ${String(error)}`,
-      )
-    }
-    return sessionId
+    })()
+    this.#readyModels.set(sessionId, ready)
+    return ready
   }
 
   async #runTurn(input: PeerTurnInput): Promise<PeerTurn> {

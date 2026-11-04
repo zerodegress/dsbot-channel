@@ -416,6 +416,84 @@ describe('the model a bridge runs', () => {
     expect(controller.models).toEqual([{ sessionId: 'session-main', provider: 'deepseek', model: 'deepseek-chat' }])
   })
 
+  test('two peers on one fixed session wait for the same selection', async () => {
+    const { controller, events, bridge } = harness({ session: 'session-main', model: route })
+    void events
+    let release: () => void = () => undefined
+    const selection = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let selects = 0
+    controller.selectModel = () => {
+      selects += 1
+      return selection.then(() => ({}))
+    }
+
+    const first = bridge.sessionFor('peer-a')
+    const second = bridge.sessionFor('peer-b')
+    let settled = 0
+    void first.then(() => {
+      settled += 1
+    })
+    void second.then(() => {
+      settled += 1
+    })
+    await flush()
+
+    expect(selects).toBe(1)
+    expect(settled).toBe(0)
+    release()
+    await expect(first).resolves.toBe('session-main')
+    await expect(second).resolves.toBe('session-main')
+    expect(settled).toBe(2)
+  })
+
+  test('a rejected selection still hands out the session', async () => {
+    const { controller, events, bridge } = harness({ session: 'session-main', model: route })
+    void events
+    controller.selectModel = () => Promise.reject(new Error('no such model'))
+    const warnings: string[] = []
+    const bridgeWithWarn = new PeerSessions({
+      controller,
+      observe: events.observe,
+      session: 'session-main',
+      model: route,
+      warn: (line) => warnings.push(line),
+    })
+    void bridge
+
+    await expect(bridgeWithWarn.sessionFor('peer-a')).resolves.toBe('session-main')
+    await expect(bridgeWithWarn.sessionFor('peer-b')).resolves.toBe('session-main')
+    expect(warnings.some((line) => line.includes('no such model'))).toBe(true)
+  })
+
+  test('a host without a selector warns once across peer sessions', async () => {
+    const events = bus()
+    const warnings: string[] = []
+    let count = 0
+    const controller = {
+      create: () => {
+        count += 1
+        return Promise.resolve({ sessionId: `session-${count}` })
+      },
+      prompt: (request: PromptRequest) => {
+        turn(request.sessionId, events.emit, ['ok'])
+        return Promise.resolve({ accepted: true })
+      },
+    }
+    const bridge = new PeerSessions({
+      controller,
+      observe: events.observe,
+      model: route,
+      warn: (line) => warnings.push(line),
+    })
+
+    await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'a' })
+    await bridge.runTurn({ peer: 'peer-b', requestId: 'evt-2', text: 'b' })
+
+    expect(warnings).toHaveLength(1)
+  })
+
   test('a host without a selector only warns and the turn still runs', async () => {
     const events = bus()
     const warnings: string[] = []
