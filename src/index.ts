@@ -88,6 +88,7 @@ export type {
 } from './budget-ledger.js'
 export { DEFAULT_TURN_TIMEOUT_MS, PeerSessions, TurnTimeoutError } from './peer-sessions.js'
 export type {
+  ModelRoute,
   PeerSessionsOptions,
   PeerTurn,
   PeerTurnInput,

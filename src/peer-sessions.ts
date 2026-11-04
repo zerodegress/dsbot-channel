@@ -20,9 +20,17 @@ export interface PromptRequest {
   content: readonly { type: 'text'; text: string }[]
 }
 
+/** One model route a session can run on: the provider id and the model id under it. */
+export interface ModelRoute {
+  provider: string
+  model: string
+}
+
 export interface SessionControllerLike {
   create(request: { cwd?: string; agentPreset?: string }): Promise<{ sessionId: string }>
   prompt(request: PromptRequest, signal: AbortSignal): Promise<{ accepted: boolean }>
+  /** Selects the model a session runs on; absent when the host cannot choose one. */
+  selectModel?(request: ModelRoute & { sessionId: string }): Promise<unknown>
 }
 
 export interface PeerSessionsOptions {
@@ -33,6 +41,10 @@ export interface PeerSessionsOptions {
   timeoutMs?: number
   cwd?: string
   agentPreset?: string
+  /** The model every session of this bridge runs on. */
+  model?: ModelRoute | undefined
+  /** Receives what the host could not honour, such as a missing model selector. */
+  warn?: ((message: string) => void) | undefined
 }
 
 export interface PeerTurnInput {
@@ -83,6 +95,10 @@ export class PeerSessions {
   readonly #timeoutMs: number
   readonly #cwd: string | undefined
   readonly #agentPreset: string | undefined
+  readonly #model: ModelRoute | undefined
+  readonly #warn: ((message: string) => void) | undefined
+  readonly #readyModels = new Map<string, Promise<string>>()
+  #warnedNoSelector = false
   readonly #sessions = new Map<string, Promise<string>>()
   readonly #tail = new Map<string, Promise<void>>()
   readonly #running = new Set<RunningTurn>()
@@ -96,6 +112,8 @@ export class PeerSessions {
     this.#timeoutMs = options.timeoutMs ?? DEFAULT_TURN_TIMEOUT_MS
     this.#cwd = options.cwd
     this.#agentPreset = options.agentPreset
+    this.#model = options.model
+    this.#warn = options.warn
   }
 
   /** Stops every turn in flight and rejects the turns asked for afterwards; safe to call more than once. */
@@ -107,6 +125,7 @@ export class PeerSessions {
     this.#running.clear()
     for (const detach of [...this.#detachers]) detach()
     this.#sessions.clear()
+    this.#readyModels.clear()
     this.#tail.clear()
   }
 
@@ -118,9 +137,9 @@ export class PeerSessions {
   /** Creates the peer session once and hands the same identity to every later turn. */
   sessionFor(peer: string): Promise<string> {
     if (this.#disposed) return Promise.reject(new Error('the peer sessions were disposed'))
-    if (this.#session !== undefined) return Promise.resolve(this.#session)
+    if (this.#session !== undefined) return this.#ready(this.#session)
     const cached = this.#sessions.get(peer)
-    if (cached !== undefined) return cached
+    if (cached !== undefined) return cached.then((sessionId) => this.#ready(sessionId))
     const created = this.#controller
       .create({
         ...(this.#cwd === undefined ? {} : { cwd: this.#cwd }),
@@ -134,10 +153,11 @@ export class PeerSessions {
         return sessionId
       })
     this.#sessions.set(peer, created)
+    const ready = created.then((sessionId) => this.#ready(sessionId))
     void created.catch(() => {
       if (this.#sessions.get(peer) === created) this.#sessions.delete(peer)
     })
-    return created
+    return ready
   }
 
   /** Queues a turn behind the peer's previous one so replies stay attributable. */
@@ -157,6 +177,35 @@ export class PeerSessions {
       if (this.#tail.get(input.peer) === tail) this.#tail.delete(input.peer)
     })
     return run
+  }
+
+  /** Picks the configured model once per session; every caller waits for that same pick. */
+  #ready(sessionId: string): Promise<string> {
+    const model = this.#model
+    if (model === undefined) return Promise.resolve(sessionId)
+    const started = this.#readyModels.get(sessionId)
+    if (started !== undefined) return started
+    const ready = (async (): Promise<string> => {
+      if (this.#controller.selectModel === undefined) {
+        if (!this.#warnedNoSelector) {
+          this.#warnedNoSelector = true
+          this.#warn?.(
+            'dsbot-channel: a model is configured but the host session controller cannot select one; sessions keep their own model',
+          )
+        }
+        return sessionId
+      }
+      try {
+        await this.#controller.selectModel({ sessionId, provider: model.provider, model: model.model })
+      } catch (error) {
+        this.#warn?.(
+          `dsbot-channel: selecting model ${model.provider}/${model.model} for ${sessionId} failed: ${String(error)}`,
+        )
+      }
+      return sessionId
+    })()
+    this.#readyModels.set(sessionId, ready)
+    return ready
   }
 
   async #runTurn(input: PeerTurnInput): Promise<PeerTurn> {
