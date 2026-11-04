@@ -32,7 +32,6 @@ config:
   adapters:
     - kind: p2p
       channel: p2p:self
-      instance: self
       botName: self-bot
       transport:
         listen: { host: 127.0.0.1, port: 7123 }
@@ -41,7 +40,6 @@ config:
             secret: PEER_A_REFERENCE
     - kind: onebot
       channel: onebot:self
-      instance: onebot
       botName: self-bot
       transport:
         listen: { host: 127.0.0.1, port: 7331 }
@@ -49,7 +47,6 @@ config:
         accessToken: ONEBOT_TOKEN
     - kind: onebot
       channel: onebot:ws
-      instance: onebot-ws
       botName: self-bot
       transport:
         protocol: ws-reverse
@@ -57,7 +54,7 @@ config:
         accessToken: ONEBOT_TOKEN
 ```
 
-`channel`, `instance`, `botName` and `transport` are required, and `channel` must be unique. `kind` defaults to `p2p`; `onebot` is the other built-in, and a third-party transport registers as `x-[a-z0-9-]+`, at most 32 characters. `secret` and `accessToken` are reference names in the host credentials service, not the secrets themselves. Paths in a profile are read as POSIX paths; Windows is not supported.
+`channel`, `botName` and `transport` are required, and `channel` must be unique. `channel` is the adapter's only name; peers see it on the wire too. `kind` defaults to `p2p`; `onebot` is the other built-in, and a third-party transport registers as `x-[a-z0-9-]+`, at most 32 characters. `secret` and `accessToken` are reference names in the host credentials service, not the secrets themselves. Paths in a profile are read as POSIX paths; Windows is not supported.
 
 An OneBot adapter speaks one protocol: `transport.protocol` is `http` (the default), `ws-forward` or `ws-reverse`. A field that belongs to another protocol is refused when the profile loads. Each adapter is one link: an implementation reached over one protocol gets one OneBot adapter, not two.
 

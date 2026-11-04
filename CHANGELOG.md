@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- One adapter is named once: `channel` is the only adapter name, and it is the name peers see on the wire. A profile that still writes `instance` on an adapter fails the mount and says the two were merged; `peers[].instance` still names the peer.
+
 ## [0.3.0] - 2026-11-03
 
 ### Added
