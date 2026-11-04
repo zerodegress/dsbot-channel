@@ -5,8 +5,8 @@ import type { ChannelAdapter } from './contract.js'
 /** What core knows about an adapter before it asks the transport to validate itself. */
 export interface AdapterMount {
   kind: string
+  /** The one name this adapter answers to, on the wire and in the profile. */
   channel: string
-  instance: string
   botName: string
   /** The transport block the profile declared; only the adapter knows its shape. */
   transport: Record<string, unknown>

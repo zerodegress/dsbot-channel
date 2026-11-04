@@ -42,8 +42,7 @@ describe('the transport block a profile declares', () => {
       mount({
         adapters: [
           {
-            channel: 'p2p:a',
-            instance: 'inst-a',
+            channel: 'inst-a',
             botName: 'bot-a',
             peers: [{ instance: 'inst-b', secret: REF }],
             listen: { host: '127.0.0.1', port: 0 },
@@ -58,8 +57,7 @@ describe('the transport block a profile declares', () => {
       mount({
         adapters: [
           {
-            channel: 'p2p:a',
-            instance: 'inst-a',
+            channel: 'inst-a',
             botName: 'bot-a',
             transport: { peers: [{ instance: 'inst-b', secret: REF }], bogus: true },
           },
@@ -75,8 +73,7 @@ describe('the mention switch a profile sets', () => {
       mount({
         adapters: [
           {
-            channel: 'p2p:a',
-            instance: 'inst-a',
+            channel: 'inst-a',
             botName: 'bot-a',
             policy: { requireMention: true },
             transport: { peers: [{ instance: 'inst-b', secret: REF }], listen: { host: '127.0.0.1', port: 0 } },
@@ -108,8 +105,7 @@ describe('the transport block an old profile names', () => {
       mount({
         adapters: [
           {
-            channel: 'p2p:a',
-            instance: 'inst-a',
+            channel: 'inst-a',
             botName: 'bot-a',
             p2p: { peers: [{ instance: 'inst-b', secret: REF }] },
           },

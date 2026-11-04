@@ -142,8 +142,7 @@ async function mount(options: { policy?: Record<string, unknown>; turn?: Record<
     adapters: [
       {
         kind: 'x-group',
-        channel: 'x:a',
-        instance: 'inst-a',
+        channel: 'inst-a',
         botName: 'bot-a',
         policy: { ...(options.policy ?? {}) },
         transport: {},

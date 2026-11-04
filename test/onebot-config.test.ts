@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { parseOneBotConfig } from '../src/adapters/onebot/index.js'
 
 function mount(transport: Record<string, unknown>) {
-  return { kind: 'onebot', channel: 'onebot:a', instance: 'inst-a', botName: 'bot-a', transport }
+  return { kind: 'onebot', channel: 'inst-a', botName: 'bot-a', transport }
 }
 
 describe('the onebot transport block', () => {
@@ -18,8 +18,7 @@ describe('the onebot transport block', () => {
       }),
     )
     expect(config).toMatchObject({
-      channel: 'onebot:a',
-      instance: 'inst-a',
+      channel: 'inst-a',
       botName: 'bot-a',
       selfId: '10001',
       listen: { host: '127.0.0.1', port: 7331, path: '/onebot/event' },

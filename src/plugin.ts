@@ -69,7 +69,6 @@ export interface PolicySettings extends PolicyConfig {
 export interface AdapterConfig {
   kind?: string
   channel: string
-  instance: string
   botName: string
   /** Runs every turn of this adapter in one existing session instead of one per address. */
   session?: string
@@ -162,7 +161,6 @@ export const Config: any = Schema.object({
       Schema.object({
         kind: Schema.string().default('p2p'),
         channel: Schema.string().required(),
-        instance: Schema.string().required(),
         botName: Schema.string().required(),
         session: Schema.string(),
         policy: Schema.object({
@@ -580,8 +578,22 @@ interface ChannelRuntime {
   mentionFallback: { pending: boolean; warned: boolean }
 }
 
+/** Refuses an adapter that still names itself twice: `instance` became `channel`. */
+function checkMergedName(raw: unknown): void {
+  const adapters = (raw as { adapters?: unknown } | null | undefined)?.adapters
+  if (!Array.isArray(adapters)) return
+  adapters.forEach((adapter, index) => {
+    if (adapter === null || typeof adapter !== 'object' || !Object.hasOwn(adapter, 'instance')) return
+    throw new ConfigError(
+      `adapter ${index}: "instance" was merged into "channel"; name this adapter with "channel" and drop "instance"`,
+      ['adapters', String(index), 'instance'],
+    )
+  })
+}
+
 /** Reads the profile, pointing an old `p2p` key at the block that replaced it. */
 function readConfig(raw: unknown): ChannelConfig {
+  checkMergedName(raw)
   try {
     return validateConfig<ChannelConfig>(Config, raw)
   } catch (error) {
@@ -889,7 +901,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         eventId: `reply:${randomUUID()}`,
         chainId: message.chainId,
         sender: adapter.botName,
-        instance: adapter.instance,
+        instance: adapter.channel,
         inReplyTo: last.requestId,
         inReplyToText: last.rawText,
       })
@@ -1117,7 +1129,6 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     const router = new PushRouter({
       channels: channels.map((channel) => ({
         channel: channel.config.channel,
-        instance: channel.config.instance,
         botName: channel.config.botName,
       })),
       source: (sessionId) => (sessionId === undefined ? undefined : sources.get(sessionId)),
@@ -1146,7 +1157,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
           eventId: delivery.eventId,
           chainId: delivery.eventId,
           sender: channel.config.botName,
-          instance: channel.config.instance,
+          instance: channel.config.channel,
         })
       },
     })
@@ -1221,7 +1232,7 @@ function accountSpaces(channels: readonly MountedChannel[]): MountedAccountSpace
           .map((peer) => (peer !== null && typeof peer === 'object' ? (peer as Record<string, unknown>).instance : undefined))
           .filter((name): name is string => typeof name === 'string' && name.length > 0)
       : []
-    return { kind: config.kind ?? 'p2p', instance: config.instance, peers: names }
+    return { kind: config.kind ?? 'p2p', instance: config.channel, peers: names }
   })
 }
 
@@ -1244,7 +1255,6 @@ function mountAdapters(
     const mount: AdapterMount = {
       kind,
       channel: adapter.channel,
-      instance: adapter.instance,
       botName: adapter.botName,
       transport: adapter.transport ?? {},
       ...(adapter.status === undefined ? {} : { status: adapter.status }),

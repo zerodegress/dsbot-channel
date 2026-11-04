@@ -42,7 +42,6 @@ export interface P2PPeerConfig extends PeerRef {
 
 export interface P2PAdapterConfig {
   channel: string
-  instance: string
   botName: string
   peers: readonly P2PPeerConfig[]
   listen?: { host?: string; port?: number } | undefined
@@ -166,7 +165,7 @@ export class P2PAdapter implements ChannelAdapter {
     const failed = snapshot.state === 'failed'
     return buildStatus({
       channel: this.#config.channel,
-      account: this.#config.instance,
+      account: this.#config.channel,
       bot: this.#config.botName,
       health: buildListenerHealth({
         listenState: listening ? 'listening' : failed ? 'failed' : 'stopped',
@@ -239,7 +238,7 @@ export class P2PAdapter implements ChannelAdapter {
       ...(media.length === 0 ? {} : { media }),
       eventId: input.eventId,
       sender: input.sender,
-      instance: this.#config.instance,
+      instance: this.#config.channel,
       ...(input.sentAt === undefined ? {} : { sentAt: input.sentAt }),
       ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
       ...(input.inReplyTo === undefined ? {} : { inReplyTo: input.inReplyTo }),
@@ -276,7 +275,7 @@ export class P2PAdapter implements ChannelAdapter {
       eventId: `decline:${input.inReplyTo}`,
       chainId: input.chainId,
       sender: this.#config.botName,
-      instance: this.#config.instance,
+      instance: this.#config.channel,
       status: 'declined',
       reason: input.reason,
       final: true,

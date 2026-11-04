@@ -82,7 +82,6 @@ async function mountForward(): Promise<Mounted> {
       {
         kind: 'onebot',
         channel: 'onebot:a',
-        instance: 'inst-a',
         botName: 'bot-a',
         policy: {},
         transport: {
@@ -186,7 +185,6 @@ describe('OneBot over a forward websocket', () => {
         {
           kind: 'onebot',
           channel: 'onebot:a',
-          instance: 'inst-a',
           botName: 'bot-a',
           policy: {},
           transport: {

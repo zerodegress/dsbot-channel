@@ -75,8 +75,7 @@ async function waitFor(check: () => boolean, timeoutMs = 5000): Promise<void> {
 const adapter = (overrides: Record<string, unknown> = {}) => {
   const { peers, listen, dedupe, inflightTtlMs, sentAtWindowMs, maxBodyBytes, waitMs, ...rest } = overrides
   return {
-    channel: 'p2p:self',
-    instance: 'inst-a',
+    channel: 'inst-a',
     botName: 'bot-a',
     transport: {
       peers: peers ?? [{ instance: 'inst-b', secret: secretRef }],
@@ -142,6 +141,14 @@ describe('plugin lifecycle', () => {
     await ctx.plugin(registryPlugin)
     await expect(ctx.plugin(entry.default, config({ listen: { host: '0.0.0.0', port: 0 } }))).rejects.toThrow(
       ConfigError,
+    )
+  })
+
+  test('refuses an adapter that still writes instance', async () => {
+    const ctx = await contextWithCredentials()
+    await ctx.plugin(registryPlugin)
+    await expect(ctx.plugin(entry.default, config({ instance: 'self' }))).rejects.toThrow(
+      /"instance" was merged into "channel"/,
     )
   })
 

@@ -124,7 +124,6 @@ async function mount(options: { budget?: Record<string, unknown> } = {}): Promis
       {
         kind: 'x-obs',
         channel: 'x:a',
-        instance: 'inst-a',
         botName: 'bot-a',
         policy: options.budget === undefined ? {} : { budget: options.budget },
         transport: {},

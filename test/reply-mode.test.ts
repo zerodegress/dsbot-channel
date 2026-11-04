@@ -21,14 +21,14 @@ let queue: InboundMessage[] = []
 let verdicts: InboundVerdict[] = []
 let outbound: SendInput[] = []
 
-function message(eventKey: string, text = 'hello'): InboundMessage {
+function message(eventKey: string, text = 'hello', instance = 'inst-a'): InboundMessage {
   return {
     eventKey,
     chainId: eventKey,
     sessionKey: 'demo:chat-1',
     replyTarget: 'chat-1',
     requestId: eventKey,
-    source: { kind: 'x-demo', instance: 'inst-a', peer: 'inst-a', scope: 'p2p' },
+    source: { kind: 'x-demo', instance, peer: 'inst-a', scope: 'p2p' },
     author: { senderId: 'bot-a', kind: 'bot', personId: null },
     rawText: text,
     body: { text, media: [], replyTo: null },
@@ -139,8 +139,7 @@ async function mount(reply: unknown, options: { withTools?: boolean; answer?: st
     adapters: [
       {
         kind: 'x-demo',
-        channel: 'x:a',
-        instance: 'inst-a',
+        channel: 'inst-a',
         botName: 'bot-a',
         policy: {},
         transport: {},
@@ -151,6 +150,32 @@ async function mount(reply: unknown, options: { withTools?: boolean; answer?: st
 }
 
 const wait = (ms = 20): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+describe('a rule keyed by the peer name on the wire', () => {
+  test('matches the name the event carries, not this adapter', async () => {
+    queue = [message('e-name-1', 'hello', 'peer-x')]
+    verdicts = []
+    outbound = []
+    const ctx = await mount({ rules: [{ when: { source: { instance: 'peer-x' } }, mode: 'tool' }] })
+
+    await wait()
+    const turns = ctx.get('dsbot-channel.turns') as { snapshot(): { dropped: number; replied: number } }
+    expect(turns.snapshot()).toMatchObject({ dropped: 1, replied: 0 })
+    expect(outbound).toHaveLength(0)
+  })
+
+  test('no longer matches the name a peer used before the merge', async () => {
+    queue = [message('e-name-2')]
+    verdicts = []
+    outbound = []
+    const ctx = await mount({ rules: [{ when: { source: { instance: 'self' } }, mode: 'tool' }] })
+
+    await wait()
+    const turns = ctx.get('dsbot-channel.turns') as { snapshot(): { dropped: number; replied: number } }
+    expect(turns.snapshot()).toMatchObject({ dropped: 0, replied: 1 })
+    expect(outbound).toHaveLength(1)
+  })
+})
 
 describe('a session that must answer with a tool', () => {
   test('a plain text answer is dropped, counted and not sent', async () => {

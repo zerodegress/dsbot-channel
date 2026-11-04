@@ -6,8 +6,7 @@ let adapter: OneBotAdapter | undefined
 
 function config(history: { group: boolean; private: boolean }) {
   return {
-    channel: 'onebot:a',
-    instance: 'inst-a',
+    channel: 'inst-a',
     botName: 'bot-a',
     listen: { host: '127.0.0.1', port: 0, path: '/onebot/event' },
     api: { url: 'http://127.0.0.1:9', timeoutMs: 1000 },

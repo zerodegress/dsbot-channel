@@ -26,7 +26,6 @@ async function waitFor(check: () => boolean, timeoutMs = 3000): Promise<void> {
 function config(port: number): P2PAdapterConfig {
   return {
     channel: 'p2p:b',
-    instance: 'inst-b',
     botName: 'bot-b',
     peers: [{ instance: 'inst-a', secret: REF }],
     listen: { host: '127.0.0.1', port },
@@ -80,7 +79,7 @@ describe('the p2p adapter owns its own keys and addresses', () => {
 
   test('the status is the shipped adapter shape', () => {
     const status = adapter.status()
-    expect(status).toMatchObject({ channel: 'p2p:b', account: 'inst-b', bot: 'bot-b' })
+    expect(status).toMatchObject({ channel: 'p2p:b', account: 'p2p:b', bot: 'bot-b' })
     expect(status.health).toMatchObject({ kind: 'listener', listenState: 'stopped' })
     expect(status.capabilities.text).toBe(true)
     expect(status.capabilities.reply).toBe(true)
@@ -271,7 +270,6 @@ describe('the p2p adapter tells a peer it was refused', () => {
 
     const adapter = new P2PAdapter({
       channel: 'p2p:b',
-      instance: 'inst-b',
       botName: 'bot-b',
       peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}`, botName: 'bot-a' }],
       listen: { host: '127.0.0.1', port: 0 },
@@ -311,7 +309,7 @@ describe('the p2p adapter tells a peer it was refused', () => {
     const listener = await startListener({
       config: {
         botName: 'bot-a',
-        peers: [{ instance: 'inst-b', secret: REF }],
+        peers: [{ instance: 'p2p:b', secret: REF }],
         credentials,
         inflightTtlMs: 300_000,
         maxBodyBytes: 64 * 1024,
@@ -324,7 +322,6 @@ describe('the p2p adapter tells a peer it was refused', () => {
     })
     const adapter = new P2PAdapter({
       channel: 'p2p:b',
-      instance: 'inst-b',
       botName: 'bot-b',
       peers: [
         {
@@ -390,7 +387,6 @@ describe('the p2p adapter sends through its own addressing', () => {
 
     const adapter = new P2PAdapter({
       channel: 'p2p:b',
-      instance: 'inst-b',
       botName: 'bot-b',
       peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}` }],
       listen: { host: '127.0.0.1', port: 0 },
@@ -446,7 +442,6 @@ describe('the reason a refusal carries', () => {
     const capturePort = (capture.address() as AddressInfo).port
     const adapter = new P2PAdapter({
       channel: 'p2p:b',
-      instance: 'inst-b',
       botName: 'bot-b',
       peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}`, botName: 'bot-a' }],
       listen: { host: '127.0.0.1', port: 0 },
@@ -494,7 +489,6 @@ describe('what the adapter can carry', () => {
 describe('media in the adapter', () => {
   const adapter = new P2PAdapter({
     channel: 'p2p:b',
-    instance: 'inst-b',
     botName: 'bot-b',
     peers: [{ instance: 'inst-a', secret: REF }],
     listen: { host: '127.0.0.1', port: 0 },
@@ -547,7 +541,6 @@ describe('media a peer could not receive', () => {
     const adapter = new P2PAdapter(
       {
         channel: 'p2p:b',
-        instance: 'inst-b',
         botName: 'bot-b',
         peers: [{ instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${capturePort}`, botName: 'bot-a' }],
         listen: { host: '127.0.0.1', port: 0 },

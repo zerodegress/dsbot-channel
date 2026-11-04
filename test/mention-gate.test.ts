@@ -129,8 +129,7 @@ async function mount(policy: Record<string, unknown>, adapter = 'x-group'): Prom
     adapters: [
       {
         kind: adapter,
-        channel: 'x:a',
-        instance: 'inst-a',
+        channel: 'inst-a',
         botName: 'bot-a',
         policy: { ...policy },
         transport: {},

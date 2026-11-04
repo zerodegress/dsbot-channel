@@ -219,7 +219,7 @@ async function mount(
     ...(options.impressions === undefined ? {} : { impressions: options.impressions }),
     ...(options.identity === undefined ? {} : { identity: options.identity }),
     ...(options.turn === undefined ? {} : { turn: options.turn }),
-    adapters: [{ kind: 'x-group', channel: 'x:a', instance: 'inst-a', botName: 'bot-a', policy: {}, transport: {} }],
+    adapters: [{ kind: 'x-group', channel: 'x:a', botName: 'bot-a', policy: {}, transport: {} }],
   })
   return { registered, tools, prompts, warnings }
 }

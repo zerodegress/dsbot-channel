@@ -4,8 +4,8 @@ import type { PushChannel, PushDelivery, PushSource } from '../src/push-tool.js'
 import type { SendResult } from '../src/contract.js'
 
 const channels: PushChannel[] = [
-  { channel: 'p2p:orca', instance: 'orca', botName: 'orca' },
-  { channel: 'p2p:relay', instance: 'relay', botName: 'relay' },
+  { channel: 'p2p:orca', botName: 'orca' },
+  { channel: 'p2p:relay', botName: 'relay' },
 ]
 
 const addresses: Record<string, string[]> = {

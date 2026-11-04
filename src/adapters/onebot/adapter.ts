@@ -29,7 +29,6 @@ import { ADAPTER_META_MAX_BYTES } from '../../adapter-meta.js'
 
 export interface OneBotAdapterConfig {
   channel: string
-  instance: string
   botName: string
   selfId?: string
   /** How this link carries OneBot; the other fields below are read per protocol. */
@@ -200,7 +199,7 @@ export function mapOneBotEvent(
     warn?.(`dsbot-channel: kept the raw payload of onebot message ${messageId} out of the event: it is larger than ${ADAPTER_META_MAX_BYTES} bytes`)
   }
   const built = buildEvent({
-    source: { kind: 'onebot', instance: config.instance, peer: target, scope },
+    source: { kind: 'onebot', instance: config.channel, peer: target, scope },
     author: { senderId, kind, personId: null },
     body: { text: body, media, replyTo: replyTo ?? null },
     transport: {
@@ -346,7 +345,7 @@ export class OneBotAdapter implements ChannelAdapter {
     const forward = this.#forward
     return buildStatus({
       channel: this.#config.channel,
-      account: this.#config.instance,
+      account: this.#config.channel,
       bot: this.#config.botName,
       health: forward === undefined ? buildListenerHealth({
         listenState: listening ? 'listening' : snapshot.state === 'failed' ? 'failed' : 'stopped',
@@ -675,7 +674,7 @@ export class OneBotAdapter implements ChannelAdapter {
       }
       if (item.url === null) {
         const owner = item.owner
-        if (owner === undefined || owner.kind !== this.kind || owner.instance !== this.#config.instance) {
+        if (owner === undefined || owner.kind !== this.kind || owner.instance !== this.#config.channel) {
           this.#warn?.('dsbot-channel: dropped an image whose handle belongs to another instance')
           continue
         }

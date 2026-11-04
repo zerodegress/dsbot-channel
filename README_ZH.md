@@ -32,7 +32,6 @@ config:
   adapters:
     - kind: p2p
       channel: p2p:self
-      instance: self
       botName: self-bot
       transport:
         listen: { host: 127.0.0.1, port: 7123 }
@@ -41,7 +40,6 @@ config:
             secret: PEER_A_REFERENCE
     - kind: onebot
       channel: onebot:self
-      instance: onebot
       botName: self-bot
       transport:
         listen: { host: 127.0.0.1, port: 7331 }
@@ -49,7 +47,6 @@ config:
         accessToken: ONEBOT_TOKEN
     - kind: onebot
       channel: onebot:ws
-      instance: onebot-ws
       botName: self-bot
       transport:
         protocol: ws-reverse
@@ -57,7 +54,7 @@ config:
         accessToken: ONEBOT_TOKEN
 ```
 
-`channel`、`instance`、`botName`、`transport` 必填，`channel` 不能重复。`kind` 默认 `p2p`；另一个内置是 `onebot`，第三方传输用 `x-[a-z0-9-]+` 的名字，最长 32 字符。`secret` 与 `accessToken` 填的是宿主任凭服务里的引用名，不是密钥本身。配置里的路径按 POSIX 解释，暂不支持 Windows。
+`channel`、`botName`、`transport` 必填，`channel` 不能重复。`channel` 是 adapter 唯一的名字，对端在线路上看到的也是它。`kind` 默认 `p2p`；另一个内置是 `onebot`，第三方传输用 `x-[a-z0-9-]+` 的名字，最长 32 字符。`secret` 与 `accessToken` 填的是宿主任凭服务里的引用名，不是密钥本身。配置里的路径按 POSIX 解释，暂不支持 Windows。
 
 一条 OneBot adapter 只用一种协议：`transport.protocol` 取 `http`（默认）、`ws-forward` 或 `ws-reverse`。属于另一种协议的字段会在加载配置时报错。每个 adapter 是一条链路：同一个实现只走一种协议，就只声明一个 OneBot adapter。
 

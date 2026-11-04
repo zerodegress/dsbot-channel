@@ -24,8 +24,7 @@ async function mount(turn: Record<string, unknown>): Promise<Context> {
   await ctx.plugin(entry, {
     adapters: [
       {
-        channel: 'p2p:self',
-        instance: 'inst-a',
+        channel: 'inst-a',
         botName: 'bot-a',
         transport: { peers: [{ instance: 'inst-b', secret: REF }], listen: { host: '127.0.0.1', port: 0 } },
       },
@@ -55,8 +54,7 @@ describe('the turn block a profile may declare', () => {
       ctx.plugin(entry, {
         adapters: [
           {
-            channel: 'p2p:self',
-            instance: 'inst-a',
+            channel: 'inst-a',
             botName: 'bot-a',
             transport: { peers: [{ instance: 'inst-b', secret: REF }], listen: { host: '127.0.0.1', port: 0 } },
           },
