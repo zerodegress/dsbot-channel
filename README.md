@@ -54,6 +54,8 @@ config:
         accessToken: ONEBOT_TOKEN
 ```
 
+`transport.peers` takes either a list or a mapping of peer instance to secret reference, `peers: { peer-a: PEER_A_REFERENCE }`. The list form also carries `url`, `host` and `botName`; a mapping value is only a secret reference, so a peer that needs one of the other fields stays in the list form. A profile that mixes the two forms, or maps an instance to something that is not a secret reference, is refused at mount.
+
 `channel`, `botName` and `transport` are required, and `channel` must be unique. `reply`, `turn` and `policy` may also be written at the top level as defaults; an adapter replaces the keys it writes whole, so an object or an array is taken as written and not merged field by field. The plugin-level status names the level that supplied each key under `config[].layers`. Two adapters that answer for the same bot and session key still share that session, but each keeps its own coalescing window and context buffer. `channel` is the adapter's only name; peers see it on the wire too. `kind` defaults to `p2p`; `onebot` is the other built-in, and a third-party transport registers as `x-[a-z0-9-]+`, at most 32 characters. `secret` and `accessToken` are reference names in the host credentials service, not the secrets themselves. Paths in a profile are read as POSIX paths; Windows is not supported.
 
 An OneBot adapter speaks one protocol: `transport.protocol` is `http` (the default), `ws-forward` or `ws-reverse`. A field that belongs to another protocol is refused when the profile loads. Each adapter is one link: an implementation reached over one protocol gets one OneBot adapter, not two.

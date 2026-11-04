@@ -11,6 +11,8 @@ import { DedupeTable } from '../src/adapters/p2p/p2p-dedupe.js'
 import { startListener } from '../src/adapters/p2p/p2p-listener.js'
 import type { InboundRequest } from '../src/adapters/p2p/p2p-wire.js'
 import type { AdapterPorts, InboundMessage } from '../src/contract.js'
+import type { AdapterMount } from '../src/adapter-registry.js'
+import { parseP2PConfig } from '../src/adapters/p2p/index.js'
 
 const REF = '{{SECRET_7k3mwq8t}}'
 const credentials = staticCredentials({ [REF]: 'shared-value' })
@@ -53,6 +55,37 @@ describe('the p2p adapter checks what it takes from a profile', () => {
   test('a window of zero milliseconds is refused', () => {
     const adapter = new P2PAdapter({ ...config(7123), sentAtWindowMs: 0 })
     expect(() => adapter.checkConfig({ maxTurnMs: 120_000 })).toThrow(/sentAtWindowMs/)
+  })
+})
+
+describe('the peers block', () => {
+  const mount = (peers: unknown): AdapterMount => ({
+    kind: 'p2p',
+    channel: 'p2p:a',
+    botName: 'bot-a',
+    transport: { peers },
+  })
+
+  test('the mapping form reads the same peers as the list form', () => {
+    expect(parseP2PConfig(mount({ 'peer-a': REF }))).toEqual(
+      parseP2PConfig(mount([{ instance: 'peer-a', secret: REF }])),
+    )
+  })
+
+  test('a non-string mapping value is refused, naming its key', () => {
+    expect(() => parseP2PConfig(mount({ 'peer-a': 7 }))).toThrow(/peers\.peer-a.*non-empty string/)
+    expect(() => parseP2PConfig(mount({ 'peer-a': '' }))).toThrow(/peers\.peer-a.*non-empty string/)
+  })
+
+  test('mixing the two forms is refused', () => {
+    expect(() => parseP2PConfig(mount([{ instance: 'peer-a', secret: REF }, { 'peer-b': REF }]))).toThrow(
+      /mixes the list form and the mapping form/,
+    )
+  })
+
+  test('an empty mapping is refused like an empty list', () => {
+    expect(() => parseP2PConfig(mount({}))).toThrow(/at least one peer/)
+    expect(() => parseP2PConfig(mount([]))).toThrow(/at least one peer/)
   })
 })
 
