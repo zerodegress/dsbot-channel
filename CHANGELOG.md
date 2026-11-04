@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A `delivery` block, at the top level or per adapter, splits a turn reply and paces the parts. `split.byBlankLine` cuts at blank lines, `split.maxParts` merges the excess into the last part, and `split.maxChars` hard-cuts by code point without splitting a surrogate pair or a CRLF. `pacing` waits before each next part from its length, inside `minMs` and `maxMs`, and the last part is not followed by a wait. Only the turn reply is split; a failed part stops the rest and reports the parts already sent.
+
 ### Changed
 
 - `reply`, `turn` and `policy` may be written at the top level as defaults, and an adapter replaces the keys it writes whole; an object or an array is taken as written. Each adapter keeps its own coalescing window and context buffer, and the plugin-level status names the level that supplied each key under `config[].layers`; two adapters answering for one bot and session key still share that session, while each keeps its own coalescing window and context buffer.

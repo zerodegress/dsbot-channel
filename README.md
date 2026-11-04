@@ -58,6 +58,8 @@ config:
 
 An OneBot adapter speaks one protocol: `transport.protocol` is `http` (the default), `ws-forward` or `ws-reverse`. A field that belongs to another protocol is refused when the profile loads. Each adapter is one link: an implementation reached over one protocol gets one OneBot adapter, not two.
 
+A `delivery` block, at the top level or on one adapter, splits a turn reply into parts and paces them. Only a turn reply is split: `send_text`, decline and refusal messages go out whole. `split.byBlankLine` (default `true`) cuts at blank lines, `split.maxParts` (default `4`) merges what exceeds it into the last part instead of dropping it, and `split.maxChars` (default `0`, off) hard-cuts by code point without splitting a surrogate pair or a CRLF. `pacing` waits before each next part for its code points ÷ `charsPerSecond` (default `14`), kept inside `minMs` (default `700`) and `maxMs` (default `5000`); the last part is not followed by a wait. A part that fails stops the rest, and the reply is reported as failed with the parts already sent. Without a `delivery` block a reply is sent whole.
+
 The impression library is off until a top-level `impressions` block names an absolute `dir`. It keeps short notes about the person a turn answers or about its group; `impression_put`, `impression_get` and `impression_forget` read and write them.
 
 | Field | Default | Meaning |
@@ -74,6 +76,12 @@ The impression library is off until a top-level `impressions` block names an abs
 | `turn.maxChars` | `8000` | batch budget |
 | `turn.context.messages` | `0` | earlier messages |
 | `turn.context.chars` | `2000` | context budget |
+| `delivery.split.byBlankLine` | `true` | split a reply at blank lines |
+| `delivery.split.maxParts` | `4` | parts per reply, tail merged |
+| `delivery.split.maxChars` | `0` | code points per part, off |
+| `delivery.pacing.charsPerSecond` | `14` | reading speed for the wait |
+| `delivery.pacing.minMs` | `700` | shortest wait between parts |
+| `delivery.pacing.maxMs` | `5000` | longest wait between parts |
 | `impressions.dir` | off | notes root |
 | `transport.protocol` | `http` | OneBot: how it connects |
 | `transport.heartbeat` | off | OneBot on a socket: liveness |
