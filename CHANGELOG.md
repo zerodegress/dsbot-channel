@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- An adapter may set `cwd`, `agentPreset` and `model` for the sessions it creates, beside the existing `session`. `model` is written `provider/model` and is selected through the host session controller's `selectModel` once per session; a host without that method warns and keeps the session's own model, and a rejected selection warns without failing the turn.
+
 ### Changed
 
 - `reply`, `turn` and `policy` may be written at the top level as defaults, and an adapter replaces the keys it writes whole; an object or an array is taken as written. Each adapter keeps its own coalescing window and context buffer, and the plugin-level status names the level that supplied each key under `config[].layers`; two adapters answering for one bot and session key still share that session, while each keeps its own coalescing window and context buffer.

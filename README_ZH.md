@@ -58,6 +58,8 @@ config:
 
 一条 OneBot adapter 只用一种协议：`transport.protocol` 取 `http`（默认）、`ws-forward` 或 `ws-reverse`。属于另一种协议的字段会在加载配置时报错。每个 adapter 是一条链路：同一个实现只走一种协议，就只声明一个 OneBot adapter。
 
+adapter 可以用 `session` 指定每回合都跑在某个已有会话里，用 `cwd`、`agentPreset`、`model` 指定它创建的会话；`model` 写成 `provider/model`。宿主的会话控制器通过 `selectModel` 设置该模型；宿主没有这个方法时只 warn，会话保持自己的模型。
+
 印象库默认关闭，配置顶层的 `impressions` 块给出绝对路径的 `dir` 才启用。它存放关于本回合对端或本群的短笔记，用 `impression_put`、`impression_get`、`impression_forget` 读写。
 
 | 字段 | 默认值 | 作用 |

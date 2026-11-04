@@ -58,6 +58,8 @@ config:
 
 An OneBot adapter speaks one protocol: `transport.protocol` is `http` (the default), `ws-forward` or `ws-reverse`. A field that belongs to another protocol is refused when the profile loads. Each adapter is one link: an implementation reached over one protocol gets one OneBot adapter, not two.
 
+An adapter may name `session` to run every turn in one existing session, and `cwd`, `agentPreset` and `model` for the sessions it creates; `model` is written `provider/model`. The host's session controller selects that model through `selectModel`; a host without it warns and the session keeps its own model.
+
 The impression library is off until a top-level `impressions` block names an absolute `dir`. It keeps short notes about the person a turn answers or about its group; `impression_put`, `impression_get` and `impression_forget` read and write them.
 
 | Field | Default | Meaning |
