@@ -131,6 +131,7 @@ const nodeSpecSchema = Schema.object({
   type: Schema.string().required(),
   restrictSkip: Schema.any(),
   mayRestrict: Schema.boolean(),
+  allowAtLeast: Schema.number(),
 })
 
 const layerSchema = Schema.object({
@@ -142,6 +143,7 @@ const layerSchema = Schema.object({
       type: Schema.string().required(),
       after: Schema.string(),
       before: Schema.string(),
+      allowAtLeast: Schema.number(),
     }),
   ).default([]),
   override: Schema.dict(Schema.any()).default({}),
@@ -153,6 +155,7 @@ export const Config: any = Schema.object({
     global: Schema.array(nodeSpecSchema).default([]),
     maxTurnMs: Schema.number().default(DEFAULT_PIPELINE.maxTurnMs),
     judgeTimeoutMs: Schema.number().default(DEFAULT_PIPELINE.judgeTimeoutMs),
+    judgePoints: Schema.number().default(DEFAULT_PIPELINE.judgePoints),
   }).default({}),
   /** Nested shape, enum and regex checks live in reply-config; this schema only claims the key. */
   reply: Schema.any(),
@@ -358,6 +361,12 @@ export function checkPipelineSettings(settings: PipelineSettings): void {
         ['pipeline', field],
       )
     }
+  }
+  if (!Number.isInteger(settings.judgePoints) || settings.judgePoints < 0) {
+    throw new ConfigError(
+      `judgePoints must be a whole number of points, at least 0: ${settings.judgePoints}`,
+      ['pipeline', 'judgePoints'],
+    )
   }
   if (settings.judgeTimeoutMs > settings.maxTurnMs) {
     throw new ConfigError(
@@ -709,6 +718,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   const rawProfile = (raw ?? {}) as { reply?: unknown; turn?: unknown; policy?: unknown; delivery?: unknown }
   const warn = createWarn(ctx)
   const flushFailures = { count: 0 }
+  const judgeFailures = { count: 0 }
   const flushSessions = async (when: 'reply' | 'shutdown'): Promise<void> => {
     const service = ctx.get('sessionPersistence') as { flush?: () => Promise<void> } | undefined
     if (typeof service?.flush !== 'function') return
@@ -722,6 +732,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   const settings: PipelineSettings = {
     maxTurnMs: config.pipeline.maxTurnMs,
     judgeTimeoutMs: config.pipeline.judgeTimeoutMs,
+    judgePoints: config.pipeline.judgePoints,
   }
   checkPipelineSettings(settings)
   checkTurnSettings(config.turn as Parameters<typeof checkTurnSettings>[0])
@@ -729,6 +740,18 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   const bots = botScopes(config, written, rawProfile.policy)
   const pipelines = new SessionPipelines({ bots })
   const channels = mountAdapters(config, settings, warn, registry, (index) => writtenAdapters[index], rawProfile.policy)
+  const judgeService = ctx.get('dsbot-channel/judge') as
+    | { judge?: (event: PipelineEvent, context: unknown) => Promise<{ score: number; reason?: string }> }
+    | undefined
+  const declaresJudge = channels.some(({ config: adapter }) =>
+    (declaredNodes(config, adapter) ?? []).some((node) => node.type === 'judge'),
+  )
+  if (declaresJudge && (judgeService === undefined || typeof judgeService.judge !== 'function')) {
+    throw new ConfigError(
+      'a judge node needs the "dsbot-channel/judge" service: mount a plugin that provides it',
+      ['pipeline'],
+    )
+  }
   // Parsed after the adapters so a binding can be checked against instances that really exist.
   const identity = buildIdentity(config.identity, accountSpaces(channels), warn)
   const impressionsConfig = readImpressionsConfig(config.impressions)
@@ -1071,7 +1094,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         layers: { ...replyBlock.layers, ...turnLayer.layers, ...policyLayer.layers, ...deliveryLayer.layers },
       })
       const budget = policyBlock.budget
-      const ledger = budget === undefined ? undefined : createLedger(budget)
+      const ledger = budget === undefined ? undefined : createLedger(budget, { points: { judge: settings.judgePoints } })
       if (!ledgers.some((one) => one.bot === adapter.botName)) ledgers.push({ bot: adapter.botName, ledger })
       const mentionCapable = transport.capabilities.mention === true
       const declaredGroupBots = policyBlock.groupBots
@@ -1136,9 +1159,24 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
           text: message.rawText,
           ...(message.source.peer === null ? {} : { peer: message.source.peer }),
         }
+        const judge =
+          judgeService?.judge === undefined
+            ? undefined
+            : async (judgeEvent: PipelineEvent, context: unknown) => {
+                const verdict = await judgeService.judge!(judgeEvent, context)
+                runtime.billing.judge(adapter.botName, message.sessionKey, judgeEvent.eventKey)
+                return verdict
+              }
+        const deps = judge === undefined ? runtime.deps : { ...runtime.deps, judge }
         const pipeline =
           specs.length > 0
-            ? buildPipeline(specs, bindPrepare(runtime.deps, transport, event, message.sessionKey, warn), settings)
+            ? buildPipeline(specs, bindPrepare(deps, transport, event, message.sessionKey, warn), {
+                ...settings,
+                onJudgeFailure: (code) => {
+                  judgeFailures.count += 1
+                  warn(`dsbot-channel: judge for ${message.source.instance} failed: ${code}`)
+                },
+              })
             : undefined
         if (
           runtime.mentionFallback.pending &&
@@ -1232,6 +1270,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
       adapters: [...reporting].map((adapter) => adapter.status()),
       config: configLayers.map((entry) => ({ channel: entry.channel, layers: { ...entry.layers } })),
       flushFailures: flushFailures.count,
+      judgeFailures: judgeFailures.count,
     }),
   })
   ctx.provide('dsbot-channel.turns')

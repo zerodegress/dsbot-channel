@@ -10,6 +10,8 @@ export interface InsertSpec {
   type: string
   after?: string
   before?: string
+  /** A judge inserted by a layer may carry its threshold like one declared in the profile. */
+  allowAtLeast?: number
 }
 
 /** What a bot or a session adds to the layer above it: a difference, never a whole pipeline. */
@@ -39,7 +41,7 @@ export const OVERRIDABLE_BY_TYPE: Record<NodeType, readonly string[]> = {
   budget: COMMON,
   allow: COMMON,
   score: COMMON,
-  judge: COMMON,
+  judge: [...COMMON, 'allowAtLeast'],
   prepare: COMMON,
 }
 
@@ -86,7 +88,11 @@ function applyLayer(
       continue
     }
     const position = spec.after === undefined ? at : at + 1
-    nodes.splice(position, 0, { id: spec.id, type: spec.type as PipelineNodeSpec['type'] })
+    nodes.splice(position, 0, {
+      id: spec.id,
+      type: spec.type as PipelineNodeSpec['type'],
+      ...(spec.allowAtLeast === undefined ? {} : { allowAtLeast: spec.allowAtLeast }),
+    })
     ids.add(spec.id)
   }
 

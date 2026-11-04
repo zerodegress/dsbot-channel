@@ -61,6 +61,7 @@ config:
 An OneBot adapter speaks one protocol: `transport.protocol` is `http` (the default), `ws-forward` or `ws-reverse`. A field that belongs to another protocol is refused when the profile loads. Each adapter is one link: an implementation reached over one protocol gets one OneBot adapter, not two.
 
 A `delivery` block, at the top level or on one adapter, splits a turn reply into parts and paces them. Only a turn reply is split: `send_text`, decline and refusal messages go out whole. `split.byBlankLine` (default `true`) cuts at blank lines, `split.maxParts` (default `4`) merges what exceeds it into the last part instead of dropping it, and `split.maxChars` (default `0`, off) hard-cuts by code point without splitting a surrogate pair or a CRLF. `pacing` waits before each next part for its code points ÷ `charsPerSecond` (default `14`), kept inside `minMs` (default `700`) and `maxMs` (default `5000`); the last part is not followed by a wait. A part that fails stops the rest, and the reply is reported as failed with the parts already sent. Leading and trailing blank lines are dropped, and the blank lines that separate two parts are not sent. Without a `delivery` block anywhere, a reply is sent whole; an empty block on an adapter adds no keys, so the top level's values stay.
+A `pipeline` block declares the node chain. A `judge` node needs the host service `dsbot-channel/judge`, which answers `judge(event, context)` with `{ score, reason? }`; a profile that declares the node without the service fails the mount, and a judge that times out or throws refuses the message with `judge_timeout` or `judge_failed`. A judge node may also carry `allowAtLeast` (0 to 1): a verdict at or above it allows the message, one below it refuses with `judge_below_threshold` and the score, and without it the node only scores. A bot or session layer may insert or override `allowAtLeast` on a judge node. A verdict score must be a finite number between 0 and 1; anything else fails the judge as `judge_failed`, whether or not a threshold is set.
 
 The impression library is off until a top-level `impressions` block names an absolute `dir`. It keeps short notes about the person a turn answers or about its group; `impression_put`, `impression_get` and `impression_forget` read and write them.
 
@@ -84,6 +85,9 @@ The impression library is off until a top-level `impressions` block names an abs
 | `delivery.pacing.charsPerSecond` | `14` | reading speed for the wait |
 | `delivery.pacing.minMs` | `700` | shortest wait between parts |
 | `delivery.pacing.maxMs` | `5000` | longest wait between parts |
+| `pipeline.judgeTimeoutMs` | `8000` | one judge call |
+| `pipeline.judgePoints` | `1` | points a verdict costs |
+| `allowAtLeast` (judge node) | off | score that allows the message |
 | `impressions.dir` | off | notes root |
 | `transport.protocol` | `http` | OneBot: how it connects |
 | `transport.heartbeat` | off | OneBot on a socket: liveness |
