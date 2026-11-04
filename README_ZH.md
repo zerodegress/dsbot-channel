@@ -76,6 +76,8 @@ adapter 可以用 `session` 指定每回合都跑在某个已有会话里，用 
 | `reply.default` | `auto` | 回合怎么答 |
 | `reply.byScope` | — | 按作用域 |
 | `reply.rules` | — | 有序覆盖规则 |
+
+空回答不发送：内容为空、或者只有空白的回答，按「没有文字的回合」计数，不会把一条空消息发进对话。
 | `turn.coalesceMs` | `0` | 合并窗口 |
 | `turn.maxBatch` | `10` | 每批条数 |
 | `turn.maxChars` | `8000` | 批次预算 |

@@ -991,7 +991,9 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         hold = undefined
         return
       }
-      if (turn.text.length === 0) {
+      // Whitespace is not an answer: a reply of blank lines would otherwise be split into no part and
+      // then sent whole, which puts an empty message in the conversation.
+      if (turn.text.trim().length === 0) {
         warn(`dsbot-channel: the turn for ${message.requestId} from ${message.replyTarget} ended without an answer`)
         turns.empty()
         ended('empty')
@@ -1004,7 +1006,9 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
       const replyEventId = `reply:${randomUUID()}`
       let sent: Awaited<ReturnType<typeof transport.send>> = { ok: true, messageId: '', duplicate: false }
       let sentParts = 0
-      for (const [index, part] of (parts.length === 0 ? [turn.text] : parts).entries()) {
+      // The splitter and this loop agree on what is empty: an answer that survived the check above
+      // always has at least one part, so there is no fallback that would send the text whole.
+      for (const [index, part] of parts.entries()) {
         if (index > 0 && delivery !== undefined) {
           await new Promise<void>((resolve) => {
             setTimer(() => resolve(), delivery.gapMs(part))

@@ -76,6 +76,8 @@ The impression library is off until a top-level `impressions` block names an abs
 | `reply.default` | `auto` | how a turn answers |
 | `reply.byScope` | — | mode per scope |
 | `reply.rules` | — | ordered overrides |
+
+An answer that is empty, or that holds nothing but whitespace, is not sent: it is counted as an empty turn like any other answer with no text, so no empty message reaches the conversation.
 | `turn.coalesceMs` | `0` | merge window |
 | `turn.maxBatch` | `10` | messages per batch |
 | `turn.maxChars` | `8000` | batch budget |
