@@ -160,7 +160,7 @@ export function apply(ctx) {
 }
 ```
 
-The value is added to the running score; it may be negative and it decides nothing by itself.
+The value is added to the running score; it may be negative and it decides nothing by itself. Later nodes see the running score in `context.score`, and a judge provider that reads it can fold it into its own verdict. The two built-in providers do not read it, so a score never enters their prompt. `allowAtLeast` compares the judge's own score, not the running total.
 
 ## How a message is decided
 
@@ -203,7 +203,7 @@ A key other than these in `question` fails the mount and names the node and the 
 
 A `chance` node takes its bucket from a fixed hash of the event key and the node id: the same message replayed takes the same outcome, and two chance nodes on one message draw independently. It records `chance_allow`, `chance_deny` or `chance_miss` with `p=` under `reasons`, and the adapter that carried the message counts it under `counters.chance[nodeId]` as `{ hit, miss }`; the key appears only after the node has run.
 
-A `score` node adds what `dsbot-channel/score` returns. A profile that declares one without that service fails the mount; a call that throws or returns anything but a finite number refuses the turn with `score_failed` and leaves the running score untouched. The running score is in the result and readable by later nodes; it decides nothing on its own, and `allowAtLeast`, `question` and `context` stay on `judge`.
+A `score` node adds what `dsbot-channel/score` returns. A profile that declares one without that service fails the mount; a call that throws or returns anything but a finite number refuses the turn with `score_failed` and leaves the running score untouched. The running score is in the result; it decides nothing on its own, and `allowAtLeast`, `question` and `context` stay on `judge`.
 
 A `budget` node reads the spend of the busiest window: the ratio is the largest of the global, bot and session usage divided by `policy.budget.capacity`. `hardLimit` refuses; with `mayRestrict`, a ratio at or above `policy.budget.restrictAt` returns a restrict, which skips what `restrictSkip` names and lets the chain continue. A restrict is not an allow: a chain that ends after one still refuses, with `pipeline-restrict` in the gate. `restrictSkip` without `mayRestrict`, `mayRestrict` without `restrictAt` or without a non-empty `restrictSkip`, declares a field that would do nothing and fails the mount.
 

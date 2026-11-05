@@ -196,7 +196,7 @@ Both entries send the body, the scope, the author id, whether the bot was named 
 
 ## Score
 
-A `score` node needs the host service `dsbot-channel/score`, which answers `score(event, context)` with a number, synchronously or as a promise. Mount it before the gateway: the gateway reads the service while it mounts. The value is added to the running score; it may be negative and it decides nothing by itself.
+A `score` node needs the host service `dsbot-channel/score`, which answers `score(event, context)` with a number, synchronously or as a promise. Mount it before the gateway: the gateway reads the service while it mounts. The value is added to the running score; it may be negative and it decides nothing by itself. Later nodes see the running score in `context.score`, and a judge provider that reads it can fold it into its own verdict. The two built-in providers do not read it, so a score never enters their prompt. `allowAtLeast` compares the judge's own score, not the running total.
 
 ```ts
 import type { PipelineEvent, NodeContext } from 'dsbot-channel'
@@ -292,7 +292,7 @@ A key other than these inside `question` fails the mount and names the node and 
 
 A `chance` node takes its bucket from a fixed hash of the event key and the node id, so the same message replayed takes the same outcome and two chance nodes on one message draw independently. It records `chance_allow`, `chance_deny` or `chance_miss` with `p=` under `reasons`, and the adapter that carried the message counts it under `counters.chance[nodeId]` as `{ hit, miss }`; that key appears only after the node has run.
 
-A `score` node adds what the host service `dsbot-channel/score` returns. A profile that declares one without that service fails the mount; a call that throws or returns anything but a finite number refuses the message with `score_failed` and leaves the running score untouched. The running score is in the result and readable by later nodes; it decides nothing on its own, and `allowAtLeast`, `question` and `context` stay on `judge`.
+A `score` node adds what the host service `dsbot-channel/score` returns. A profile that declares one without that service fails the mount; a call that throws or returns anything but a finite number refuses the message with `score_failed` and leaves the running score untouched. The running score is in the result; it decides nothing on its own, and `allowAtLeast`, `question` and `context` stay on `judge`.
 
 A `budget` node reads the spend of the busiest window: the ratio is the largest of the global, bot and session usage divided by `policy.budget.capacity`. `hardLimit` refuses; with `mayRestrict`, a ratio at or above `policy.budget.restrictAt` returns a restrict, which skips what `restrictSkip` names and lets the chain continue. A restrict is not an allow: a chain that ends after one still refuses, and the gate records `pipeline-restrict`. `restrictSkip` without `mayRestrict`, `mayRestrict` without `restrictAt`, or `mayRestrict` with an empty `restrictSkip` declares a field that would do nothing and fails the mount.
 

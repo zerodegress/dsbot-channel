@@ -196,7 +196,7 @@ config:
 
 ## 评分
 
-`score` 节点需要宿主服务 `dsbot-channel/score`，它以 `score(event, context)` 返回一个数，同步或异步均可。它必须**排在网关之前**：网关挂载时读取该服务。返回值累加进分数，可以为负，它自己不做判定。
+`score` 节点需要宿主服务 `dsbot-channel/score`，它以 `score(event, context)` 返回一个数，同步或异步均可。它必须**排在网关之前**：网关挂载时读取该服务。返回值累加进分数，可以为负，它自己不做判定。后续节点在 `context.score` 里能看到累计分，读它的 judge provider 可以把它并进自己的判定。内置 provider 不读这个分，所以它不会进提示词。`allowAtLeast` 比的是 judge 自己的分，不是累计分。
 
 ```ts
 import type { PipelineEvent, NodeContext } from 'dsbot-channel'
@@ -292,7 +292,7 @@ config:
 
 `chance` 节点的落桶值来自「事件键 + 节点 id」的固定哈希：同一条消息重放结果相同，同一条消息上的两个 chance 节点互相独立。它在 `reasons` 下记 `chance_allow`、`chance_deny` 或 `chance_miss`（带 `p=`），承载这条消息的 adapter 在 `counters.chance[nodeId]` 记 `{ hit, miss }`；该键只在节点实际跑过之后出现。
 
-`score` 节点加上宿主服务 `dsbot-channel/score` 返回的值。声明了节点却没有该服务，挂载失败；调用抛错或返回的不是有限数，该消息以 `score_failed` 拒绝，累计分数保持不变。累计分数在结果里，后续节点可读；它自己不做判定，`allowAtLeast`、`question` 与 `context` 仍只归 `judge`。
+`score` 节点加上宿主服务 `dsbot-channel/score` 返回的值。声明了节点却没有该服务，挂载失败；调用抛错或返回的不是有限数，该消息以 `score_failed` 拒绝，累计分数保持不变。累计分数在结果里；它自己不做判定，`allowAtLeast`、`question` 与 `context` 仍只归 `judge`。
 
 `budget` 节点读取最忙窗口的花费：比例取 global、bot 与 session 三者用量的最大值除以 `policy.budget.capacity`。`hardLimit` 拒绝；配了 `mayRestrict` 时，比例达到 `policy.budget.restrictAt` 就返回 restrict，跳过 `restrictSkip` 指定的节点并让链条继续。restrict 不是放行：走到链尾仍然拒绝，网关记为 `pipeline-restrict`。`restrictSkip` 没配 `mayRestrict`、`mayRestrict` 没配 `restrictAt`、或 `mayRestrict` 的 `restrictSkip` 为空，都是不会生效的字段，挂载失败。
 
