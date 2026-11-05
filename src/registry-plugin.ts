@@ -2,6 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { createWarn } from './warn.js'
 import { AdapterRegistry, REGISTRY_SERVICE } from './adapter-registry.js'
 import { createOneBotAdapter } from './adapters/onebot/index.js'
+import { createWebhookAdapter } from './adapters/webhook/index.js'
 import { createP2PAdapter } from './adapters/p2p/index.js'
 
 /** The composition root for transports: mounted before the adapters and the gateway. */
@@ -15,6 +16,7 @@ export const registryPlugin = {
     const registry = new AdapterRegistry()
     registry.builtin('p2p', createP2PAdapter)
     registry.builtin('onebot', createOneBotAdapter)
+    registry.builtin('webhook', createWebhookAdapter)
     ctx.provide(REGISTRY_SERVICE)
     ctx.set(REGISTRY_SERVICE, registry)
   },

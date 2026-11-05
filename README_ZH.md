@@ -45,7 +45,7 @@ config:
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
-| `kind` | `p2p` | `p2p`、`onebot`，第三方传输用 `x-[a-z0-9-]+` |
+| `kind` | `p2p` | `p2p`、`onebot`、`webhook`，第三方传输用 `x-[a-z0-9-]+` |
 | `channel` | required | 链路唯一名字，对端在线上也看到它 |
 | `botName` | required | 这条链路服务的 Bot |
 | `transport` | required | 按 kind 的配置块，见「对端」与「OneBot」 |
@@ -119,6 +119,37 @@ config:
 | `events.turn` | `[]` | 允许开回合的非消息事件类；adapter 自己的动作用 `action.<type>` |
 
 一个 adapter 只用一种协议；属于另一种协议的字段在加载期被拒。一个实现只对应一个 adapter，不是两个。`events.turn` 按 `<kind>.<type>` 填类名：OneBot 自己的 `notice.group_recall`、`request.friend` 这类，或 adapter 为 push、CI、定时器事件定义的 `action.<type>`。其余非消息事件只被记录与计数、不开回合，`meta_event` 与自己的回声永不开回合，写了未知类名会挂载失败，被点名的类跳过提及要求。
+
+## Webhook
+
+评论所在的房间按 issue 或 pull request 命名：`gh:<owner>/<repo>#<number>`；只属于仓库的事件（如 push、release）所在房间是 `gh:<owner>/<repo>`。
+
+```yaml
+config:
+  adapters:
+    - kind: webhook
+      channel: gh:acme/api
+      botName: self-bot
+      transport:
+        listen: { host: 127.0.0.1, port: 8463, path: /github/webhook }
+        secret: WEBHOOK_SECRET
+        token: API_TOKEN
+        api: https://api.github.com
+        login: acme-bot
+```
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `transport.listen.host` / `.port` / `.path` | `127.0.0.1` / `8463` / `/github/webhook` | 调用到达的位置 |
+| `transport.secret` | required | 凭据引用：原始请求体的 HMAC-SHA256 密钥 |
+| `transport.token` | required | 凭据引用，用来发评论 |
+| `transport.dialect` | `auto` | `github`、`forgejo`，或由请求头判断的 `auto`；请求写了另一种方言时返回 400 |
+| `transport.api` | `https://api.github.com` | 评论 API 的基地址 |
+| `transport.login` | required | 本 bot 的 login，用于解析 `@` |
+| `transport.bots` | `[]` | 计入 bot 发言的 login |
+| `transport.repos` | `[]` | 可选的 `owner/repo` 白名单 |
+
+issue 评论、review 评论，或带正文的 pull request review 会起一个回合，回复作为评论发回同一个 issue。评论之外的事件，例如 `issues`、`pull_request`、`push`、`release` 与 CI 运行，是 `action` 事件：只带一行摘要，除非类的名字写进 `events.turn`（`action.push`、`action.ci`、`action.issues` 等），否则不起回合。ping 与 installation 事件直接回 200，在进网关前丢掉。签名校验不通过的请求直接 401，不进网关；签名通过但没有事件头的请求回 400；同一次投递、或同一条评论换个 delivery 重投，只跑一次。这个 adapter 只写评论，不编辑、不关闭任何东西。
 
 ## 邮件
 

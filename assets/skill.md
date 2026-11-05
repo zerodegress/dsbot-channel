@@ -19,7 +19,7 @@ config:
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `kind` | `p2p` | `p2p`, `onebot`, or `x-[a-z0-9-]+` (third-party) |
+| `kind` | `p2p` | `p2p`, `onebot`, `webhook`, or `x-[a-z0-9-]+` (third-party) |
 | `channel` | required | unique link name; peers see it on the wire |
 | `botName` | required | the bot this link answers for |
 | `transport` | required | per-kind block below |
@@ -66,6 +66,21 @@ config:
 One adapter accepts one connection in `ws-reverse`; a new connection for the same account replaces the old one. A named class is `<kind>.<type>`: OneBot's own names, or an adapter's `action.<type>`; it skips the mention requirement, and an unknown name fails the mount.
 
 An adapter whose `capabilities.outbound` is `false` is never written back: core does not call its `send` or `refuse`, and the `send_text` tool answers `unsupported` for it. Its turns still run, so a profile that lets such an adapter start turns needs a reply block that always chooses `tool`, or the mount fails.
+
+### webhook transport
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `listen.host` / `listen.port` / `listen.path` | `127.0.0.1` / `8463` / `/github/webhook` | where the calls arrive |
+| `secret` | required | credential reference: the HMAC-SHA256 key of the raw body |
+| `token` | required | credential reference used to post a comment |
+| `dialect` | `auto` | `github`, `forgejo`, or `auto` to read it from the request headers; a request naming the other dialect gets 400 |
+| `api` | `https://api.github.com` | base URL of the comment api |
+| `login` | required | the bot's own login, used for `@` mentions |
+| `bots` | `[]` | logins counted as bot speech |
+| `repos` | `[]` | optional `owner/repo` allow list |
+
+An issue comment, a review comment, or a pull request review that carries a body runs a turn and the answer is posted as a comment on the issue. Events that are not comments, such as `issues`, `pull_request`, `push`, `release` and CI runs, are `action` events with a one line summary; they start no turn unless `events.turn` names the class (`action.push`, `action.ci`, …). A failed signature is a 401 and never reaches the gateway, and a request that verifies but names no event header is a 400; a repeated delivery runs once.
 
 ### mail transport
 
