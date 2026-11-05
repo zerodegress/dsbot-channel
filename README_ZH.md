@@ -233,24 +233,18 @@ config:
   pipeline:
     global:
       - { id: guard, type: deny }
-      - { id: verdict, type: judge, allowAtLeast: 0.6 }
-```
-
-judge 节点需要先挂上一个 provider；下面的 adapter 示例修改它继承到的链条。
-
-```yaml
-config:
+      - { id: shadow, type: deny }
   adapters:
     - kind: p2p
       channel: p2p:peer-a
       botName: self-bot
       transport: { listen: { host: 127.0.0.1, port: 7123 }, peers: { peer-b: PEER_B_REFERENCE } }
       pipeline:
-        remove: [guard]
-        insert: [{ id: strict, type: judge, after: verdict, allowAtLeast: 0.8 }]
-        override:
-          verdict: { allowAtLeast: 0.9 }
+        remove: [shadow]
+        insert: [{ id: extra, type: deny, after: guard }]
 ```
+
+`override` 按 id 替换节点字段，judge 节点用它改 `allowAtLeast`；judge 节点还需要先挂上一个 provider。
 
 ## 身份与印象库
 

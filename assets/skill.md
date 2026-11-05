@@ -170,19 +170,15 @@ config:
   pipeline:
     global:
       - { id: guard, type: deny }
-      - { id: verdict, type: judge, allowAtLeast: 0.6 }
-```
-
-```yaml
-config:
+      - { id: shadow, type: deny }
   adapters:
     - kind: p2p
       channel: p2p:peer-a
       botName: self-bot
       transport: { listen: { host: 127.0.0.1, port: 7123 }, peers: { peer-b: PEER_B_REFERENCE } }
       pipeline:
-        remove: [guard]
-        insert: [{ id: strict, type: judge, after: verdict, allowAtLeast: 0.8 }]
-        override:
-          verdict: { allowAtLeast: 0.9 }
+        remove: [shadow]
+        insert: [{ id: extra, type: deny, after: guard }]
 ```
+
+`override` replaces fields by id; a judge node uses it for `allowAtLeast` and needs one provider mounted.

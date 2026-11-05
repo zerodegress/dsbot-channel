@@ -233,24 +233,18 @@ config:
   pipeline:
     global:
       - { id: guard, type: deny }
-      - { id: verdict, type: judge, allowAtLeast: 0.6 }
-```
-
-The judge node needs one provider mounted; the adapter example below changes the chain it inherits.
-
-```yaml
-config:
+      - { id: shadow, type: deny }
   adapters:
     - kind: p2p
       channel: p2p:peer-a
       botName: self-bot
       transport: { listen: { host: 127.0.0.1, port: 7123 }, peers: { peer-b: PEER_B_REFERENCE } }
       pipeline:
-        remove: [guard]
-        insert: [{ id: strict, type: judge, after: verdict, allowAtLeast: 0.8 }]
-        override:
-          verdict: { allowAtLeast: 0.9 }
+        remove: [shadow]
+        insert: [{ id: extra, type: deny, after: guard }]
 ```
+
+`override` replaces fields by id and is what a judge node uses to change `allowAtLeast`; a judge node also needs one provider mounted.
 
 ## Identity and impressions
 
