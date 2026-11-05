@@ -162,18 +162,15 @@ function eventKeyOf(input: {
   entity: Entity
   action: string
 }): string {
-  const id =
-    input.event === 'issue_comment'
-      ? whole(record(input.payload.comment)?.id)
-      : input.event === 'pull_request_review_comment'
-        ? whole(record(input.payload.comment)?.id)
-        : undefined
-  if (id !== undefined) {
-    const base = input.event === 'issue_comment' ? `comment:${id}` : `review_comment:${id}`
+  const comment = whole(record(input.payload.comment)?.id)
+  if (comment !== undefined) {
+    const base = input.event === 'pull_request_review_comment' ? `review_comment:${comment}` : `comment:${comment}`
     return input.action === 'created' ? base : `${base}:${input.action}`
   }
   const review = whole(record(input.payload.review)?.id)
-  if (input.event === 'pull_request_review' && review !== undefined) return `review:${review}`
+  if (review !== undefined) {
+    return input.action === 'submitted' || input.action === 'created' ? `review:${review}` : `review:${review}:${input.action}`
+  }
   if (input.entity.number !== undefined) {
     const stamp =
       text(record(input.payload.issue)?.updated_at) ??
@@ -294,7 +291,11 @@ function actionOf(input: MappingInput, entity: Entity, action: string): InboundM
   return {
     eventKey: eventKeyOf({ event: input.event, payload, delivery: input.delivery, entity, action }),
     kind: 'action',
-    event: { postType: input.event, type: semanticClass(input.event), ...(action === '' ? {} : { subType: action }) },
+    event: {
+      postType: input.event,
+      type: record(payload.review) === undefined ? semanticClass(input.event) : 'review',
+      ...(action === '' ? {} : { subType: action }),
+    },
     sessionKey: scoped,
     replyTarget: scoped,
     requestId: input.delivery,
@@ -339,12 +340,9 @@ export function mapWebhook(input: MappingInput): MappingResult {
   const action = text(payload.action) ?? ''
   const found = bodyOf(payload)
   const written = found.body.length > 0
-  const created = action === 'created' || event === 'pull_request_comment'
-  const message =
-    (event === 'issue_comment' && action === 'created') ||
-    (event === 'pull_request_comment' && created) ||
-    (event === 'pull_request_review_comment' && created && written) ||
-    (event === 'pull_request_review' && action === 'submitted' && written)
+  const comment = record(payload.comment)
+  const review = record(payload.review)
+  const message = comment !== undefined ? action === 'created' : review !== undefined && written
   if (message) return { message: messageOf(input, entity, action) }
   return { message: actionOf(input, entity, action) }
 }

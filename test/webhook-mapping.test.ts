@@ -178,6 +178,64 @@ describe('a webhook action becomes a one line event', () => {
     expect(mapped.message.sessionKey).toBe('gh:acme/api#4')
   })
 
+  test('forgejo keys the conversation comment by its comment id', () => {
+    const mapped = mapWebhook({
+      dialect: 'forgejo',
+      event: 'pull_request_comment',
+      delivery: 'f-2',
+      payload: {
+        action: 'created',
+        repository: repo,
+        pull_request: { number: 4, title: 'A lane', updated_at: '2026-01-02T03:04:07Z' },
+        comment: { id: 91, body: 'looks good', user: { login: 'seal' } },
+        sender: { login: 'seal' },
+      },
+      config,
+    })
+    if (!('message' in mapped)) throw new Error('expected a message')
+    expect(mapped.message.eventKey).toBe('comment:91')
+  })
+
+  test('a forgejo review without a body stays an action of class review', () => {
+    const mapped = mapWebhook({
+      dialect: 'forgejo',
+      event: 'pull_request_approved',
+      delivery: 'f-3',
+      payload: {
+        action: 'approved',
+        repository: repo,
+        pull_request: { number: 4, title: 'A lane', updated_at: '2026-01-02T03:04:07Z' },
+        review: { id: 92, body: '', user: { login: 'seal' } },
+        sender: { login: 'seal' },
+      },
+      config,
+    })
+    if (!('message' in mapped)) throw new Error('expected a message')
+    expect(mapped.message.kind).toBe('action')
+    expect(classOf(mapped.message)).toBe('action.review')
+    expect(mapped.message.eventKey).toBe('review:92:approved')
+  })
+
+  test('a forgejo approval with a body is a message', () => {
+    const mapped = mapWebhook({
+      dialect: 'forgejo',
+      event: 'pull_request_approved',
+      delivery: 'f-4',
+      payload: {
+        action: 'approved',
+        repository: repo,
+        pull_request: { number: 4, title: 'A lane', updated_at: '2026-01-02T03:04:07Z' },
+        review: { id: 93, body: 'ship it', user: { login: 'seal' } },
+        sender: { login: 'seal' },
+      },
+      config,
+    })
+    if (!('message' in mapped)) throw new Error('expected a message')
+    expect(mapped.message.kind).toBe('message')
+    expect(mapped.message.body.text).toBe('ship it')
+    expect(mapped.message.eventKey).toBe('review:93')
+  })
+
   test('a ping carries no event', () => {
     expect(map('ping', { zen: 'hi', repository: repo })).toEqual({ skip: 'ping' })
   })
