@@ -234,7 +234,7 @@ export class MailAdapter implements ChannelAdapter {
         let message = undefined
         let mail: ParsedMail | undefined = undefined
         try {
-          mail = parseMail(item.raw.toString('utf8'), this.#config.maxAttachmentBytes)
+          mail = parseMail(item.raw, this.#config.maxAttachmentBytes)
           message = mapMail({
             mail,
             config: { channel: this.#config.channel, from: this.#config.from, bots: this.#config.bots, lists: this.#config.lists },

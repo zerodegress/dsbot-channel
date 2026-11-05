@@ -73,6 +73,31 @@ const ports = (verdicts: InboundVerdict[], received: InboundMessage[] = []): Ada
 
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
+describe('the raw bytes reach the reader untouched', () => {
+  test('a latin-1 body arrives as its own characters', async () => {
+    const latin = Buffer.from(
+      [
+        'From: Seal <seal@example.test>',
+        'To: bot@example.test',
+        'Subject: latin',
+        'Message-ID: <latin-adapter@example.test>',
+        'Content-Type: text/plain; charset=iso-8859-1',
+        '',
+        'caf\xe9',
+        '',
+      ].join('\r\n'),
+      'latin1',
+    )
+    const state: FakeState = { queue: [{ uid: 41, raw: latin }], seen: [], sent: [], fetches: [], closed: false }
+    const received: InboundMessage[] = []
+    const adapter = new MailAdapter(config(), { transport: fakeTransport(state) })
+    const handle = await adapter.start(ports([], received))
+    await wait(60)
+    expect(received[0]?.body.text).toContain('café')
+    await handle.stop()
+  })
+})
+
 describe('the mail adapter polls and answers', () => {
   test('an accepted mail is marked seen and becomes an event', async () => {
     const state: FakeState = { queue: [{ uid: 10, raw: raw() }], seen: [], sent: [], fetches: [], closed: false }
