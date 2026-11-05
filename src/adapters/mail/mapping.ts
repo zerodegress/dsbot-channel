@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { InboundMessage } from '../../contract.js'
-import type { MediaRef } from '../../event-types.js'
 import { addressOf, cleanId } from './mime.js'
 import type { MailAttachment, ParsedMail } from './mime.js'
 
@@ -51,14 +50,8 @@ export function isList(mail: ParsedMail, lists: readonly string[]): boolean {
   return lists.some((one) => one.toLowerCase() === from)
 }
 
-function mediaOf(attachments: readonly MailAttachment[]): MediaRef[] {
-  return attachments.map((one) => ({
-    type: one.type.startsWith('image/') ? 'image' : one.type.startsWith('audio/') ? 'voice' : 'file',
-    url: null,
-    handle: one.handle,
-    name: one.name,
-    owner: { kind: 'mail', instance: '' },
-  }))
+function attachmentMeta(attachments: readonly MailAttachment[]): { name: string; type: string; size: number }[] {
+  return attachments.map((one) => ({ name: one.name, type: one.type, size: one.size }))
 }
 
 export interface MailMappingInput {
@@ -78,8 +71,6 @@ export function mapMail(input: MailMappingInput): InboundMessage {
   const target = replyAddressOf(mail, config.lists)
   const from = addressOf(mail.from)
   const isBot = config.bots.some((one) => one.toLowerCase() === from.toLowerCase())
-  const media = mediaOf(mail.attachments)
-  for (const one of media) one.owner.instance = config.channel
   const references = mail.references.map((one) => cleanId(one)).filter((one) => one !== '').slice(0, REFERENCES_MAX)
   return {
     eventKey: `mail:${hashOf(messageId, 32)}`,
@@ -97,7 +88,7 @@ export function mapMail(input: MailMappingInput): InboundMessage {
     },
     author: { senderId: from, kind: isBot ? 'bot' : 'person', personId: null },
     rawText: mail.text,
-    body: { text: mail.text, media, replyTo: cleanId(mail.inReplyTo) || null },
+    body: { text: mail.text, media: [], replyTo: cleanId(mail.inReplyTo) || null },
     transport: {
       messageId,
       timestamp: mail.date ?? input.receivedAt,
@@ -111,6 +102,7 @@ export function mapMail(input: MailMappingInput): InboundMessage {
       messageId,
       references,
       ...(list ? { list: target } : {}),
+      ...(mail.attachments.length === 0 ? {} : { attachments: attachmentMeta(mail.attachments) }),
     },
     receivedAt: input.receivedAt,
   }

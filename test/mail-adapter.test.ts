@@ -25,7 +25,7 @@ const config = (over: Partial<MailConfig> = {}): MailConfig => ({
   channel: 'mail:bot',
   botName: 'bot-a',
   from: 'bot@example.test',
-  imap: { host: '127.0.0.1', port: 993, secure: true, user: 'bot@example.test', password: 'imap-ref', mailbox: 'INBOX', pollMs: 1000 },
+  imap: { host: '127.0.0.1', port: 993, secure: true, user: 'bot@example.test', password: 'imap-ref', mailbox: 'INBOX', pollMs: 20 },
   smtp: { host: '127.0.0.1', port: 465, secure: true, user: 'bot@example.test', password: 'smtp-ref' },
   bots: ['bot@example.test'],
   lists: ['list@example.test'],
@@ -44,8 +44,9 @@ function fakeTransport(state: FakeState): MailTransport {
   return {
     async fetch(mailbox, cursor) {
       state.fetches.push({ mailbox, cursor })
+      if (cursor === undefined) return { uidValidity: 7, maxUid: 0, messages: [] }
       const messages = state.queue.splice(0)
-      return { uidValidity: 7, messages }
+      return { uidValidity: 7, maxUid: 0, messages }
     },
     async markSeen(_mailbox, uids) {
       state.seen.push(...uids)
@@ -78,7 +79,7 @@ describe('the mail adapter polls and answers', () => {
     const received: InboundMessage[] = []
     const adapter = new MailAdapter(config(), { transport: fakeTransport(state) })
     const handle = await adapter.start(ports([], received))
-    await wait(20)
+    await wait(60)
     expect(received).toHaveLength(1)
     expect(received[0]).toMatchObject({ sessionKey: 'mail:root-100@example.test', replyTarget: 'seal@example.test' })
     expect(state.seen).toEqual([10])
@@ -90,10 +91,44 @@ describe('the mail adapter polls and answers', () => {
     const state: FakeState = { queue: [{ uid: 11, raw: raw({ messageId: 'busy-1@example.test' }) }], seen: [], sent: [], fetches: [], closed: false }
     const adapter = new MailAdapter(config(), { transport: fakeTransport(state) })
     const handle = await adapter.start(ports([{ ok: false, code: 'busy', reason: 'full' }]))
-    await wait(20)
+    await wait(60)
     expect(state.seen).toEqual([])
     const cursor = state.fetches.at(-1)?.cursor
-    expect(cursor).toBeUndefined()
+    expect(cursor?.uid).toBe(0)
+    await handle.stop()
+  })
+
+  test('the same message id is delivered once', async () => {
+    const same = raw({ messageId: 'dup-1@example.test' })
+    const state: FakeState = {
+      queue: [{ uid: 21, raw: same }, { uid: 22, raw: same }],
+      seen: [],
+      sent: [],
+      fetches: [],
+      closed: false,
+    }
+    const received: InboundMessage[] = []
+    const adapter = new MailAdapter(config(), { transport: fakeTransport(state) })
+    const handle = await adapter.start(ports([], received))
+    await wait(80)
+    expect(received).toHaveLength(1)
+    await handle.stop()
+  })
+
+  test('a broken message does not stop the ones after it', async () => {
+    const broken = Buffer.from('From: broken\r\nSubject: no headers\r\n\r\n&#999999999;\r\n')
+    const state: FakeState = {
+      queue: [{ uid: 31, raw: broken }, { uid: 32, raw: raw({ messageId: 'after-bad@example.test' }) }],
+      seen: [],
+      sent: [],
+      fetches: [],
+      closed: false,
+    }
+    const received: InboundMessage[] = []
+    const adapter = new MailAdapter(config(), { transport: fakeTransport(state) })
+    const handle = await adapter.start(ports([], received))
+    await wait(80)
+    expect(received.map((one) => one.requestId)).toContain('after-bad@example.test')
     await handle.stop()
   })
 
@@ -102,12 +137,13 @@ describe('the mail adapter polls and answers', () => {
     const received: InboundMessage[] = []
     const adapter = new MailAdapter(config(), { transport: fakeTransport(state) })
     const handle = await adapter.start(ports([], received))
-    await wait(20)
+    await wait(60)
     const message = received[0]!
     const result = await adapter.send({
       target: message.replyTarget,
       body: 'an answer',
-      eventId: message.requestId,
+      eventId: `reply:fixed`,
+      inReplyTo: message.requestId,
       chainId: message.chainId,
       sender: 'bot-a',
       instance: 'mail:bot',

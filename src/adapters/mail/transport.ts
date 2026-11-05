@@ -31,7 +31,7 @@ export interface FetchedMail {
 
 /** The wire layers behind one interface, so a test can stand in for both protocols. */
 export interface MailTransport {
-  fetch(mailbox: string, cursor: Cursor | undefined): Promise<{ uidValidity: number; messages: FetchedMail[] }>
+  fetch(mailbox: string, cursor: Cursor | undefined): Promise<{ uidValidity: number; maxUid: number; messages: FetchedMail[] }>
   markSeen(mailbox: string, uids: readonly number[]): Promise<void>
   append(mailbox: string, raw: Buffer): Promise<void>
   send(envelope: { from: string; to: readonly string[] }, raw: Buffer): Promise<void>
@@ -60,12 +60,14 @@ export class ImapSmtpTransport implements MailTransport {
     })
   }
 
-  async fetch(mailbox: string, cursor: Cursor | undefined): Promise<{ uidValidity: number; messages: FetchedMail[] }> {
+  async fetch(mailbox: string, cursor: Cursor | undefined): Promise<{ uidValidity: number; maxUid: number; messages: FetchedMail[] }> {
     const lock = await this.#imap.getMailboxLock(mailbox)
     try {
       const opened = this.#imap.mailbox
       const uidValidity = Number(opened === false ? 0 : opened.uidValidity)
-      const start = cursor !== undefined && cursor.uidValidity === uidValidity && cursor.uid > 0 ? cursor.uid + 1 : 1
+      const maxUid = opened === false ? 0 : Math.max(0, Number(opened.uidNext) - 1)
+      if (cursor === undefined) return { uidValidity, maxUid, messages: [] }
+      const start = cursor.uidValidity === uidValidity && cursor.uid > 0 ? cursor.uid + 1 : maxUid + 1
       const messages: FetchedMail[] = []
       for await (const message of this.#imap.fetch(`${start}:*`, { uid: true, source: true })) {
         const source = message.source
@@ -73,7 +75,7 @@ export class ImapSmtpTransport implements MailTransport {
         messages.push({ uid: Number(message.uid), raw: Buffer.from(source) })
       }
       messages.sort((left, right) => left.uid - right.uid)
-      return { uidValidity, messages }
+      return { uidValidity, maxUid, messages }
     } finally {
       lock.release()
     }

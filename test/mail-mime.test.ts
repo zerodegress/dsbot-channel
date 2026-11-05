@@ -135,6 +135,29 @@ describe('the body a reader gets', () => {
     expect(mail.text).not.toContain('html body')
   })
 
+  test('an attachment is recorded, never handed to the model', () => {
+    const mail = mapMail({ mail: parseMail(withAttachment), config, receivedAt: 1 })
+    expect(mail.body.media).toEqual([])
+    expect(mail.body.text).toBe('see the file')
+    expect((mail.adapter.attachments as { name: string }[])[0]?.name).toBe('report.pdf')
+  })
+
+  test('a latin-1 body is read with its own charset', () => {
+    const mail = parseMail(
+      raw(
+        [
+          'From: Seal <seal@example.test>',
+          'To: bot@example.test',
+          'Subject: latin',
+          'Message-ID: <latin-1@example.test>',
+          'Content-Type: text/plain; charset=iso-8859-1',
+        ],
+        'caf\xe9',
+      ),
+    )
+    expect(mail.text).toBe('café')
+  })
+
   test('an attachment is a media item, never body text', () => {
     const mail = parseMail(withAttachment)
     expect(mail.text).toBe('see the file')

@@ -185,9 +185,14 @@ export function htmlToText(html: string): string {
     .trim()
 }
 
+export function charsetOf(headers: MailHeaders): BufferEncoding {
+  const matched = /charset="?([^";]+)"?/i.exec(contentTypeOf(headers))
+  return matched === null ? 'utf8' : charsetName(matched[1]!)
+}
+
 function textOf(part: MailPart): string {
   const type = part.contentType.toLowerCase()
-  const body = part.body.toString('utf8')
+  const body = part.body.toString(charsetOf(part.headers))
   if (type.startsWith('text/html')) return htmlToText(body)
   return body
 }
@@ -253,7 +258,8 @@ function attachmentsOf(part: MailPart, depth = 0): MailAttachment[] {
 }
 
 /** Reads the headers a thread and a reply need, then the body and attachments. */
-export function parseMail(raw: string, maxAttachmentBytes = MAX_ATTACHMENT_BYTES): ParsedMail {
+export function parseMail(input: Buffer | string, maxAttachmentBytes = MAX_ATTACHMENT_BYTES): ParsedMail {
+  const raw = Buffer.isBuffer(input) ? input.toString('latin1') : input
   const root = splitMessage(raw)
   const top: MailPart = { headers: root.headers, contentType: contentTypeOf(root.headers), body: Buffer.from(root.body, 'binary') }
   const text = chooseBody(top).trimEnd()

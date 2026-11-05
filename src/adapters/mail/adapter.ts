@@ -49,6 +49,7 @@ interface Origin {
 }
 
 const ORIGINS_MAX = 200
+const DELIVERED_MAX = 1024
 
 const CAPABILITIES: CapabilitySet = {
   text: true,
@@ -74,7 +75,7 @@ export function composeReply(input: {
   signature?: string | undefined
   listUnsubscribe?: string | undefined
   date: Date
-}): string {
+}): { data: string; messageId: string } {
   const headers = [
     `From: ${input.from}`,
     `To: ${input.to}`,
@@ -88,7 +89,7 @@ export function composeReply(input: {
     ...(input.listUnsubscribe === undefined ? [] : [`List-Unsubscribe: <${input.listUnsubscribe}>`]),
   ]
   const body = input.signature === undefined ? input.text : `${input.text}\n\n-- \n${input.signature}`
-  return `${headers.join('\r\n')}\r\n\r\n${body.replace(/\r?\n/g, '\r\n')}\r\n`
+  return { data: `${headers.join('\r\n')}\r\n\r\n${body.replace(/\r?\n/g, '\r\n')}\r\n`, messageId: input.messageId }
 }
 
 export class MailAdapter implements ChannelAdapter {
@@ -104,6 +105,7 @@ export class MailAdapter implements ChannelAdapter {
   readonly #now: () => number
   readonly #stats = new ChannelStats()
   readonly #origins = new Map<string, Origin>()
+  readonly #delivered = new Map<string, true>()
   #transport: MailTransport | undefined
   #cursor: Cursor | undefined
   #timer: ReturnType<typeof setInterval> | undefined
@@ -133,7 +135,7 @@ export class MailAdapter implements ChannelAdapter {
   }
 
   describeTargets(): string {
-    return 'mail:<address>'
+    return '<user@host>'
   }
 
   status(): AdapterStatus {
@@ -191,7 +193,7 @@ export class MailAdapter implements ChannelAdapter {
     if (!/^[^@\s]+@[^@\s]+$/.test(input.target)) {
       return { ok: false, code: 'no_url', reason: `"${input.target}" is not a mail address`, retryable: false }
     }
-    const origin = this.#origins.get(input.eventId)
+    const origin = this.#origins.get(input.inReplyTo ?? '')
     const subject = origin === undefined ? `Re: ${input.body.split('\n')[0]?.slice(0, 60) ?? ''}` : `${origin.subject}`
     const data = composeReply({
       from: this.#config.from,
@@ -205,11 +207,13 @@ export class MailAdapter implements ChannelAdapter {
       date: new Date(this.#now()),
     })
     try {
-      await transport.send({ from: this.#config.from, to: [input.target] }, Buffer.from(data))
-      return { ok: true, messageId: `mail:${this.#now()}`, duplicate: false }
+      await transport.send({ from: this.#config.from, to: [input.target] }, Buffer.from(data.data))
+      return { ok: true, messageId: data.messageId, duplicate: false }
     } catch (error) {
-      this.#stats.sendFailed('unreachable')
-      return { ok: false, code: 'unreachable', reason: String(error), retryable: true }
+      const code = (error as { code?: string }).code
+      const mapped = code === 'EAUTH' || code === 'EAUTHENTICATION' ? 'credential' : code === 'ETIMEDOUT' ? 'timeout' : 'unreachable'
+      this.#stats.sendFailed(mapped)
+      return { ok: false, code: mapped, reason: String(error), retryable: mapped !== 'credential' }
     }
   }
 
@@ -221,20 +225,46 @@ export class MailAdapter implements ChannelAdapter {
       const batch = await this.#transport.fetch(mailbox, this.#cursor)
       this.#lastPollAt = this.#now()
       this.#stats.authenticated()
+      if (this.#cursor === undefined) {
+        this.#cursor = { uidValidity: batch.uidValidity, uid: batch.maxUid }
+        return
+      }
       for (const item of batch.messages) {
         if (this.#stopped) break
-        const mail = parseMail(item.raw.toString('utf8'), this.#config.maxAttachmentBytes)
-        const message = mapMail({
-          mail,
-          config: { channel: this.#config.channel, from: this.#config.from, bots: this.#config.bots, lists: this.#config.lists },
-          receivedAt: this.#now(),
-        })
+        let message = undefined
+        let mail: ParsedMail | undefined = undefined
+        try {
+          mail = parseMail(item.raw.toString('utf8'), this.#config.maxAttachmentBytes)
+          message = mapMail({
+            mail,
+            config: { channel: this.#config.channel, from: this.#config.from, bots: this.#config.bots, lists: this.#config.lists },
+            receivedAt: this.#now(),
+          })
+        } catch (error) {
+          this.#stats.rejected(`mail ${item.uid} could not be read: ${String(error)}`)
+          this.#warn(`dsbot-channel: mail ${item.uid} could not be read and was skipped: ${String(error)}`)
+          this.#cursor = { uidValidity: batch.uidValidity, uid: item.uid }
+          continue
+        }
+        if (this.#delivered.has(message.requestId)) {
+          this.#cursor = { uidValidity: batch.uidValidity, uid: item.uid }
+          continue
+        }
+        if (mail.attachments.length > 0) {
+          this.#warn(`dsbot-channel: mail ${message.requestId} carries ${mail.attachments.length} attachment(s) that are not delivered`)
+        }
         this.#remember(message.requestId, mail)
         this.#stats.event(`mail.${message.source.scope}`)
         const verdict = await ports.onMessage(message)
         if (!verdict.ok && verdict.code === 'busy') {
           this.#warn(`dsbot-channel: mail ${message.requestId} was not taken while busy; it stays for the next poll`)
           break
+        }
+        this.#delivered.set(message.requestId, true)
+        while (this.#delivered.size > DELIVERED_MAX) {
+          const oldest = this.#delivered.keys().next()
+          if (oldest.done === true) break
+          this.#delivered.delete(oldest.value)
         }
         if (verdict.ok) {
           await this.#transport.markSeen(mailbox, [item.uid]).catch((error: unknown) => {
@@ -243,7 +273,6 @@ export class MailAdapter implements ChannelAdapter {
         }
         this.#cursor = { uidValidity: batch.uidValidity, uid: item.uid }
       }
-      this.#cursor = { uidValidity: batch.uidValidity, uid: this.#cursor?.uid ?? 0 }
     } catch (error) {
       this.#stats.rejected(`poll failed: ${String(error)}`)
       this.#warn(`dsbot-channel: mail poll failed: ${String(error)}`)
