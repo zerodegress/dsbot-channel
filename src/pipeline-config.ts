@@ -1,4 +1,6 @@
 import type { NodeType, SkipTarget } from './pipeline.js'
+import type { JudgeContext, JudgeQuestion } from './judge-question.js'
+import { questionProblems } from './judge-question.js'
 import { DEFAULT_MAX_TURN_MS, NODE_TYPES, SKIP_TARGETS } from './pipeline.js'
 
 export interface PipelineNodeSpec {
@@ -8,6 +10,10 @@ export interface PipelineNodeSpec {
   mayRestrict?: boolean
   /** A judge at or above this score allows the message, below it denies; absent keeps it a scorer. */
   allowAtLeast?: number
+  /** What this judge node asks; the provider no longer carries one. */
+  question?: JudgeQuestion
+  /** Static material for this judge node; never conversation history. */
+  context?: JudgeContext
 }
 
 export interface PipelineSettings {
@@ -46,6 +52,28 @@ export function checkPipeline(nodes: readonly PipelineNodeSpec[]): CheckReport {
     }
     if (node.mayRestrict && node.type !== 'budget') {
       fatal.push(`node "${node.id}": only a budget node may return restrict`)
+    }
+    if (node.question !== undefined) {
+      if (node.type !== 'judge') {
+        fatal.push(`node "${node.id}": only a judge node may declare question`)
+      } else {
+        for (const problem of questionProblems(node.question)) fatal.push(`node "${node.id}": ${problem}`)
+      }
+    }
+    if (node.context !== undefined) {
+      if (node.type !== 'judge') {
+        fatal.push(`node "${node.id}": only a judge node may declare context`)
+      } else if (typeof node.context !== 'string') {
+        const body = node.context as Record<string, unknown>
+        if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+          fatal.push(`node "${node.id}": context must be a string or a mapping of name to string`)
+        } else {
+          for (const [key, value] of Object.entries(body)) {
+            if (key.trim().length === 0) fatal.push(`node "${node.id}": context names must not be empty`)
+            if (typeof value !== 'string') fatal.push(`node "${node.id}": context.${key} must be a string`)
+          }
+        }
+      }
     }
     if (node.allowAtLeast !== undefined) {
       if (node.type !== 'judge') {

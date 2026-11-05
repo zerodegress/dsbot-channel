@@ -12,6 +12,9 @@ export interface InsertSpec {
   before?: string
   /** A judge inserted by a layer may carry its threshold like one declared in the profile. */
   allowAtLeast?: number
+  /** A judge inserted by a layer may ask its own question with its own material. */
+  question?: unknown
+  context?: unknown
 }
 
 /** What a bot or a session adds to the layer above it: a difference, never a whole pipeline. */
@@ -41,7 +44,7 @@ export const OVERRIDABLE_BY_TYPE: Record<NodeType, readonly string[]> = {
   budget: COMMON,
   allow: COMMON,
   score: COMMON,
-  judge: [...COMMON, 'allowAtLeast'],
+  judge: [...COMMON, 'allowAtLeast', 'question', 'context'],
   prepare: COMMON,
 }
 
@@ -92,6 +95,8 @@ function applyLayer(
       id: spec.id,
       type: spec.type as PipelineNodeSpec['type'],
       ...(spec.allowAtLeast === undefined ? {} : { allowAtLeast: spec.allowAtLeast }),
+      ...(spec.question === undefined ? {} : { question: spec.question as NonNullable<PipelineNodeSpec['question']> }),
+      ...(spec.context === undefined ? {} : { context: spec.context as NonNullable<PipelineNodeSpec['context']> }),
     })
     ids.add(spec.id)
   }

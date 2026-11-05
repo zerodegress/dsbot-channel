@@ -93,7 +93,11 @@ export function buildPipeline(
           id: spec.id,
           type: 'judge',
           run: async (context) => {
-            const verdict = await judge(context.event, context)
+            const verdict = await judge(context.event, {
+              ...context,
+              ...(spec.question === undefined ? {} : { question: spec.question }),
+              ...(spec.context === undefined ? {} : { judgeContext: spec.context }),
+            })
             const score = verdict.score
             if (typeof score !== 'number' || !Number.isFinite(score) || score < 0 || score > 1) {
               throw new Error(`judge returned a score outside 0..1: ${String(score)}`)

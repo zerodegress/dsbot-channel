@@ -38,6 +38,7 @@ import type { ModelRoute, SessionControllerLike, SessionEventLike } from './peer
 import type { PipelineEvent } from './pipeline.js'
 import { unboundReason, unboundRuleReason } from './pipeline-bindable.js'
 import type { PipelineNodeSpec, PipelineSettings } from './pipeline-config.js'
+import { contextProblems } from './judge-question.js'
 import { DEFAULT_PIPELINE } from './pipeline-config.js'
 import type { PipelineLayer, PipelineScopes } from './pipeline-scopes.js'
 import { resolveAndCheck, resolvePipeline } from './pipeline-scopes.js'
@@ -158,6 +159,8 @@ const nodeSpecSchema = Schema.object({
   type: Schema.string().required(),
   restrictSkip: Schema.any(),
   mayRestrict: Schema.boolean(),
+  question: Schema.any(),
+  context: Schema.any(),
   allowAtLeast: Schema.number(),
 })
 
@@ -258,6 +261,19 @@ function declaredNodes(config: ChannelConfig, adapter: AdapterConfig): PipelineN
     ...(adapter.pipeline === undefined ? {} : { bot: adapter.pipeline }),
   }
   return resolvePipeline(scopes).nodes
+}
+
+/** Every pipeline a profile can run: the global one, or each bot's layer over it. */
+function pipelineScopesOf(config: ChannelConfig): PipelineScopes[] {
+  const layers = new Map<string, PipelineLayer>()
+  for (const adapter of config.adapters) {
+    const layer = adapter.pipeline
+    if (layer === undefined) continue
+    if (!layers.has(adapter.botName)) layers.set(adapter.botName, layer)
+  }
+  return layers.size === 0
+    ? [{ global: config.pipeline.global }]
+    : [...layers.values()].map((bot) => ({ global: config.pipeline.global, bot }))
 }
 
 /** Fills the turn block from its defaults and refuses a window nothing can honour. */
@@ -775,16 +791,46 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   const pipelines = new SessionPipelines({ bots })
   const channels = mountAdapters(config, settings, warn, registry, (index) => writtenAdapters[index], rawProfile.policy)
   const judgeService = ctx.get('dsbot-channel/judge') as
-    | { judge?: (event: PipelineEvent, context: unknown) => Promise<{ score: number; reason?: string }> }
+    | {
+        judge?: (event: PipelineEvent, context: unknown) => Promise<{ score: number; reason?: string }>
+        needsQuestion?: boolean
+        maxChars?: number
+      }
     | undefined
-  const declaresJudge = channels.some(({ config: adapter }) =>
-    (declaredNodes(config, adapter) ?? []).some((node) => node.type === 'judge'),
-  )
+  const declaredPipelines = pipelineScopesOf(config).map((scopes) => resolvePipeline(scopes).nodes)
+  const declaresJudge = declaredPipelines.some((nodes) => nodes.some((node) => node.type === 'judge'))
   if (declaresJudge && (judgeService === undefined || typeof judgeService.judge !== 'function')) {
     throw new ConfigError(
       'a judge node needs the "dsbot-channel/judge" service: mount a plugin that provides it',
       ['pipeline'],
     )
+  }
+  if (declaresJudge && judgeService !== undefined) {
+    const needsQuestion = judgeService.needsQuestion === true
+    const contextMax = typeof judgeService.maxChars === 'number' ? judgeService.maxChars : 2000
+    for (const nodes of declaredPipelines) {
+      for (const node of nodes) {
+        if (node.type !== 'judge') continue
+        if (needsQuestion && node.question === undefined) {
+          throw new ConfigError(
+            `judge node "${node.id}" names no question, which this provider needs`,
+            ['pipeline'],
+          )
+        }
+        if (!needsQuestion && node.question !== undefined) {
+          throw new ConfigError(
+            `judge node "${node.id}" carries a question this provider does not read`,
+            ['pipeline'],
+          )
+        }
+        if (node.context !== undefined) {
+          const problems = contextProblems(node.context, contextMax)
+          if (problems.length > 0) {
+            throw new ConfigError(`judge node "${node.id}": ${problems[0]}`, ['pipeline'])
+          }
+        }
+      }
+    }
   }
   // Parsed after the adapters so a binding can be checked against instances that really exist.
   const identity = buildIdentity(config.identity, accountSpaces(channels), warn)

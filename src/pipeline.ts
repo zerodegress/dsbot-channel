@@ -1,4 +1,5 @@
 import type { Mentioned, Scope } from './event-types.js'
+import type { JudgeContext, JudgeQuestion } from './judge-question.js'
 
 export const NODE_TYPES = ['deny', 'budget', 'allow', 'score', 'judge', 'prepare'] as const
 export type NodeType = (typeof NODE_TYPES)[number]
@@ -60,6 +61,10 @@ export interface NodeContext {
   runtime: RuntimeView
   score: number
   skip: ReadonlySet<SkipTarget>
+  /** The question this judge node asks, when it is one. */
+  question?: JudgeQuestion
+  /** The static material this judge node carries, when it carries one. */
+  judgeContext?: JudgeContext
 }
 
 export interface PipelineNode {

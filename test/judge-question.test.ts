@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { checkPipeline } from '../src/pipeline-config.js'
+import type { JudgeQuestion } from '../src/judge-question.js'
 import { buildPipeline } from '../src/build-pipeline.js'
+import { resolvePipeline } from '../src/pipeline-scopes.js'
 import { registryPlugin } from '../src/registry-plugin.js'
 import entry from '../src/index.js'
 import systemOne from '../src/system-one.js'
@@ -9,7 +11,7 @@ import llm from '../src/llm.js'
 import type { PipelineEvent } from '../src/pipeline.js'
 
 const REF = '{{SECRET_judge_question}}'
-const question = {
+const question: JudgeQuestion = {
   type: 'noul',
   instructions: 'Is it spam?',
   criteria: { true: 'it is spam', false: 'it is not' },
@@ -66,9 +68,23 @@ describe('a judge node carries what to ask', () => {
     expect(checkPipeline([{ id: 'j', type: 'judge', question, context: { a: 1 } } as never]).fatal.length).toBeGreaterThan(0)
   })
 
+  test('a bot layer may insert and override them', () => {
+    const inserted = resolvePipeline({
+      global: [{ id: 'base', type: 'deny' }],
+      bot: { insert: [{ id: 'j', type: 'judge', after: 'base', question, context: 'be strict' }] },
+    }).nodes
+    expect(inserted.find((node) => node.id === 'j')).toMatchObject({ question, context: 'be strict' })
+
+    const overridden = resolvePipeline({
+      global: [{ id: 'j', type: 'judge', question }],
+      bot: { override: { j: { question: { ...question, instructions: 'Other?' } } } },
+    }).nodes
+    expect(overridden.find((node) => node.id === 'j')?.question?.instructions).toBe('Other?')
+  })
+
   test('the pipeline hands both to the judge', async () => {
     const seen: { question?: unknown; context?: unknown }[] = []
-    const pipeline = buildPipeline([{ id: 'j', type: 'judge', question, context: 'be strict' } as never, { id: 'a', type: 'allow' }], {
+    const pipeline = buildPipeline([{ id: 'j', type: 'judge', question, context: 'be strict' } as never], {
       judge: async (_event, context) => {
         seen.push({ question: (context as { question?: unknown }).question, context: (context as { judgeContext?: unknown }).judgeContext })
         return { score: 0.8 }
