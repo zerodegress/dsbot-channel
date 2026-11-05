@@ -8,7 +8,7 @@ import { signEnvelope } from '../src/adapters/p2p/p2p-auth.js'
 import type { Envelope } from '../src/adapters/p2p/p2p-auth.js'
 import type { Listener } from '../src/adapters/p2p/p2p-listener.js'
 
-const secret = '{{SECRET_qp8mzt4c}}'
+const secret = 'p2p-secret-model-selection'
 const secretRef = 'PEER_SHARED_SECRET'
 const route = 'deepseek/deepseek-chat'
 
