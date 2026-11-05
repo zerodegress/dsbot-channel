@@ -17,7 +17,7 @@ import type { AdapterMount } from '../src/adapter-registry.js'
 import { parseP2PConfig } from '../src/adapters/p2p/index.js'
 import { logName } from '../src/adapters/p2p/p2p-mapping.js'
 
-const REF = '{{SECRET_7k3mwq8t}}'
+const REF = 'p2p-secret-adapter'
 const credentials = staticCredentials({ [REF]: 'shared-value' })
 
 async function waitFor(check: () => boolean, timeoutMs = 3000): Promise<void> {

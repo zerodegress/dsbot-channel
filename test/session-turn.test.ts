@@ -6,7 +6,7 @@ import entry from '../src/index.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
 import { sendToPeer } from '../src/adapters/p2p/p2p-send.js'
 
-const REF = '{{SECRET_9m2xr7qd}}'
+const REF = 'p2p-secret-session-turn'
 const credentials = staticCredentials({ [REF]: 'shared-value' })
 
 const forks: { dispose(): Promise<void> }[] = []

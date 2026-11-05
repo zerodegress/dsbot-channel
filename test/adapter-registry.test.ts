@@ -11,7 +11,7 @@ import type { AdapterStatus } from '../src/adapter-status.js'
 import type { ChannelAdapter, SendResult } from '../src/contract.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
 
-const REF = '{{SECRET_registry}}'
+const REF = 'p2p-secret-registry'
 const credentials = staticCredentials({ [REF]: 'shared-value' })
 
 class StubAdapter implements ChannelAdapter {

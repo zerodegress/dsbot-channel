@@ -10,7 +10,7 @@ import type { Envelope } from '../src/adapters/p2p/p2p-auth.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
 import type { InboundRequest } from '../src/adapters/p2p/p2p-wire.js'
 
-const secret = '{{SECRET_delivery}}'
+const secret = 'p2p-secret-delivery-semantics'
 const SECRET_REF = 'PEER_SHARED_SECRET'
 const credentials = staticCredentials({ [SECRET_REF]: secret })
 
