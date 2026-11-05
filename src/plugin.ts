@@ -71,6 +71,7 @@ export interface PolicySettings extends PolicyConfig {
 }
 
 /** The non-message classes a profile may let start a turn; a meta event or a self echo never can. */
+/** The transport classes core knows how to turn on; an action class is the adapter's own. */
 export const TURNABLE_EVENTS = [
   'notice.group_recall',
   'notice.friend_recall',
@@ -848,6 +849,15 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   checkPrepareSupport(bots, channels)
   const replyOf = (adapter: AdapterConfig): ReturnType<typeof compileReply> =>
     compileReply(mergeLayer(rawProfile.reply, written(adapter)?.reply, 'reply').merged)
+  for (const channel of channels) {
+    if (channel.adapter.capabilities.outbound !== false) continue
+    if ((channel.config.events?.turn ?? []).length === 0) continue
+    if (replyOf(channel.config).alwaysTool) continue
+    throw new ConfigError(
+      `adapter "${channel.config.channel}" writes no replies and starts turns, so its reply block must always choose "tool"; it can also choose "auto"`,
+      ['adapters', String(channel.index), 'reply'],
+    )
+  }
   // A guard against a future edit to the notice text, not profile validation: the block is core-owned.
   if (TOOL_MODE_NOTICE.length > TOOL_MODE_NOTICE_MAX) {
     throw new ConfigError(`the tool-mode block is longer than ${TOOL_MODE_NOTICE_MAX} characters`, ['reply'])
@@ -1071,6 +1081,14 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         warn(`dsbot-channel: the turn for ${message.requestId} from ${message.replyTarget} ended without an answer`)
         turns.empty()
         ended('empty')
+        runtime.billing.reject(hold)
+        hold = undefined
+        return
+      }
+      if (transport.capabilities.outbound === false) {
+        warn(`dsbot-channel: the turn for ${message.requestId} cannot be answered: the adapter does not write back`)
+        turns.dropped()
+        ended('dropped')
         runtime.billing.reject(hold)
         hold = undefined
         return
@@ -1345,7 +1363,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         const sessionId = await sessions.sessionFor(message.sessionKey)
         sources.set(sessionId, {
           channel: adapter.channel,
-          replyTarget: message.replyTarget,
+          ...(transport.capabilities.outbound === false ? {} : { replyTarget: message.replyTarget }),
           sender: message.author.senderId,
         })
         const runBatch = (batch: readonly InboundMessage[]): void => {
@@ -1431,6 +1449,14 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
       },
       send: async (delivery) => {
         const channel = byChannel.get(delivery.channel)
+        if (channel !== undefined && channel.adapter.capabilities.outbound === false) {
+          return {
+            ok: false,
+            code: 'unsupported',
+            retryable: false,
+            reason: `channel "${delivery.channel}" does not write back`,
+          }
+        }
         if (channel === undefined) {
           return {
             ok: false,
@@ -1481,6 +1507,9 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         const channel = byChannel.get(turn.channel)
         if (channel === undefined) {
           return { ok: false, code: 'no_url', reason: `channel "${turn.channel}" is gone` }
+        }
+        if (channel.adapter.capabilities.outbound === false) {
+          return { ok: false, supported: false, code: 'unsupported', reason: 'this channel does not write back' }
         }
         const refuse = channel.adapter.refuse?.bind(channel.adapter)
         if (refuse === undefined) {
@@ -1574,9 +1603,11 @@ function mountAdapters(
         : ['adapters', String(index), 'policy', field],
     )
     for (const name of adapter.events?.turn ?? []) {
-      if (!(TURNABLE_EVENTS as readonly string[]).includes(name)) {
+      const [classKind, classType, ...rest] = name.split('.')
+      const action = classKind === 'action' && classType !== undefined && classType.length > 0 && rest.length === 0
+      if (!action && !(TURNABLE_EVENTS as readonly string[]).includes(name)) {
         throw new ConfigError(
-          `events.turn names "${name}", which is not an event class that may start a turn`,
+          `events.turn names "${name}", which is not an event class that may start a turn; an action names its own, e.g. "action.push"`,
           ['adapters', String(index), 'events', 'turn'],
         )
       }

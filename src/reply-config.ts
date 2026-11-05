@@ -61,6 +61,8 @@ export interface ReplyFacts {
 export interface ReplyPlan {
   /** Whether any path through this config can choose `tool`, so a host without tools fails at load. */
   readonly possibleTool: boolean
+  /** Whether every path chooses `tool`, so a turn can answer without writing to its own adapter. */
+  readonly alwaysTool: boolean
   modeFor(facts: ReplyFacts): ReplyMode
 }
 
@@ -277,8 +279,14 @@ export function compileReply(raw: unknown, path: readonly (string | number)[] = 
     }
   }
 
+  const alwaysTool =
+    fallback === 'tool' &&
+    [...byScope.values()].every((mode) => mode === 'tool') &&
+    factsToMode.every((rule) => rule.mode === 'tool')
+
   return {
     possibleTool,
+    alwaysTool,
     modeFor(facts: ReplyFacts): ReplyMode {
       for (const rule of factsToMode) {
         if (rule.matcher(facts)) return rule.mode

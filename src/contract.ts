@@ -16,7 +16,7 @@ export const INBOUND_REJECTIONS = [
 ] as const
 export type InboundRejection = (typeof INBOUND_REJECTIONS)[number]
 
-export const MESSAGE_KINDS = ['message', 'notice', 'request', 'meta'] as const
+export const MESSAGE_KINDS = ['message', 'notice', 'request', 'action', 'meta'] as const
 export type MessageKind = (typeof MESSAGE_KINDS)[number]
 
 /** What a non-message event is, in the transport's own class names, never the raw payload. */

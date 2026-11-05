@@ -18,8 +18,8 @@ export interface PushChannel {
 
 export interface PushSource {
   channel: string
-  /** The address this session answers on; the adapter gave it to core unparsed. */
-  replyTarget: string
+  /** The address this session answers on; absent when the adapter does not write back. */
+  replyTarget?: string | undefined
   /** The bot identity that last messaged this session, when the transport reported one. */
   sender?: string | undefined
 }
