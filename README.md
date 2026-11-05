@@ -222,9 +222,9 @@ A node is `{ id, type }` plus the fields its type reads. The chain runs in order
 | `type` | One of the four above. |
 | `allowAtLeast` | `judge` only: a score from 0 to 1. |
 
-`score` and `budget` are declared in the schema but cannot bind in this version: a score node needs a scoring function the pipeline does not supply, and a budget node needs a session-scoped verdict it cannot carry yet. Declaring either fails the mount and names the reason; the gateway's own hard window is what limits spending.
+`score` and `budget` are declared in the schema but cannot bind in this version: a score node needs a scoring function the pipeline does not supply, and a budget node needs a session-scoped verdict it cannot carry yet. Declaring either fails the mount and names the reason; the gateway's own hard window is what limits spending, and only a profile that writes `policy.budget` has one.
 
-An adapter changes the chain it starts from with four keys: `inherit` names the layer it starts from, `remove` drops nodes by id, `insert` adds a node after or before a named node, and `override` replaces fields of a node by id. `insert` sets exactly one of `after` or `before` and cannot reuse an existing id; `override` writes only fields the node's type reads; `remove` or `override` naming an id that is not there fails the mount.
+An adapter changes the chain it starts from with four keys: `inherit` names the layer it starts from, which for an adapter is `global`; `remove` drops nodes by id, `insert` adds a node after or before a named node, and `override` replaces fields of a node by id. `insert` sets exactly one of `after` or `before` and cannot reuse an existing id; `override` writes only fields the node's type reads; `remove` or `override` naming an id that is not there fails the mount.
 
 ```yaml
 config:
@@ -244,7 +244,7 @@ config:
         insert: [{ id: extra, type: deny, after: guard }]
 ```
 
-`override` replaces fields by id and is what a judge node uses to change `allowAtLeast`; a judge node also needs one provider mounted.
+`override` replaces fields by id and is what a judge node uses to change `allowAtLeast`; a judge node also needs one provider mounted. The chain above has no `allow` node and no judge threshold, so it refuses every message; it shows the layer operations only.
 
 ## Identity and impressions
 

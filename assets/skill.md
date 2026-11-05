@@ -159,9 +159,9 @@ A node is `{ id, type }` plus the fields its type reads. The chain runs in order
 | `judge` | scores through the host judge service; its threshold is `allowAtLeast` |
 | `prepare` | runs the host prepare hook, then passes; every adapter for the bot needs the hook |
 
-`score` and `budget` are declared in the schema but cannot bind in this version: a score node needs a scoring function, a budget node needs a session-scoped verdict. Declaring either fails the mount; the gateway's hard window limits spending. `allowAtLeast` is read by `judge` only, 0 to 1.
+`score` and `budget` are declared in the schema but cannot bind in this version: a score node needs a scoring function, a budget node needs a session-scoped verdict. Declaring either fails the mount; the gateway's hard window limits spending, and only a profile with `policy.budget` has one. `allowAtLeast` is read by `judge` only, 0 to 1.
 
-An adapter changes the chain it starts from with `inherit`, `remove`, `insert` and `override`: `inherit` names the layer, `remove` drops nodes by id, `insert` adds a node after or before a named node (one of the two, no reused id), `override` replaces fields by id and only those the type reads; an unknown id fails the mount.
+An adapter changes the chain it starts from with `inherit`, `remove`, `insert` and `override`: `inherit` names the layer (an adapter takes `global`), `remove` drops nodes by id, `insert` adds a node after or before a named node (one of the two, no reused id), `override` replaces fields by id and only those the type reads; an unknown id fails the mount.
 
 ```yaml
 config:
@@ -181,4 +181,4 @@ config:
         insert: [{ id: extra, type: deny, after: guard }]
 ```
 
-`override` replaces fields by id; a judge node uses it for `allowAtLeast` and needs one provider mounted.
+`override` replaces fields by id; a judge node uses it for `allowAtLeast` and needs one provider mounted. A chain with no `allow` node and no judge threshold refuses every message.

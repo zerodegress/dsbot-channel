@@ -222,9 +222,9 @@ config:
 | `type` | 上面四种之一。 |
 | `allowAtLeast` | 仅 `judge`：0 到 1 的分数。 |
 
-`score` 与 `budget` 在 schema 里有声明，但这一版绑不上：score 节点需要的评分函数没有提供，budget 节点需要的会话级判定管道带不了。声明它们会在挂载期失败并给出原因；真正的花费限制由网关自己的硬窗口执行。
+`score` 与 `budget` 在 schema 里有声明，但这一版绑不上：score 节点需要的评分函数没有提供，budget 节点需要的会话级判定管道带不了。声明它们会在挂载期失败并给出原因；真正的花费限制由网关自己的硬窗口执行，且只有写了 `policy.budget` 的 profile 才有这个窗口。
 
-adapter 用四个键调整它继承到的链条：`inherit` 指定从哪一层开始，`remove` 按 id 删节点，`insert` 把节点插到某个 id 之前或之后，`override` 按 id 替换节点字段。`insert` 的 `after` 与 `before` 只能写一个、不能复用已有的 id；`override` 只写该节点类型拥有的字段；`remove` 或 `override` 指向不存在的 id 会让挂载失败。
+adapter 用四个键调整它继承到的链条：`inherit` 指定从哪一层开始（adapter 层只能是 `global`），`remove` 按 id 删节点，`insert` 把节点插到某个 id 之前或之后，`override` 按 id 替换节点字段。`insert` 的 `after` 与 `before` 只能写一个、不能复用已有的 id；`override` 只写该节点类型拥有的字段；`remove` 或 `override` 指向不存在的 id 会让挂载失败。
 
 ```yaml
 config:
@@ -244,7 +244,7 @@ config:
         insert: [{ id: extra, type: deny, after: guard }]
 ```
 
-`override` 按 id 替换节点字段，judge 节点用它改 `allowAtLeast`；judge 节点还需要先挂上一个 provider。
+`override` 按 id 替换节点字段，judge 节点用它改 `allowAtLeast`；judge 节点还需要先挂上一个 provider。上面的链条没有 `allow` 节点也没有 judge 阈值，因此会拒绝每一条消息，只用于演示层操作。
 
 ## 身份与印象库
 
