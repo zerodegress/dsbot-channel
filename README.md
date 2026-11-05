@@ -58,7 +58,7 @@ config:
 
 `channel`, `botName` and `transport` are required, and `channel` must be unique. `reply`, `turn` and `policy` may also be written at the top level as defaults; an adapter replaces the keys it writes whole, so an object or an array is taken as written and not merged field by field. The plugin-level status names the level that supplied each key under `config[].layers`. Two adapters that answer for the same bot and session key still share that session, but each keeps its own coalescing window and context buffer. `channel` is the adapter's only name; peers see it on the wire too. `kind` defaults to `p2p`; `onebot` is the other built-in, and a third-party transport registers as `x-[a-z0-9-]+`, at most 32 characters. `secret` and `accessToken` are reference names in the host credentials service, not the secrets themselves. Paths in a profile are read as POSIX paths; Windows is not supported.
 
-Two entries of one peer instance must reference different secrets; the same reference twice is refused at mount.
+`peers[].instance` is the peer's name, not this link's: it is the one place a name is not this adapter's `channel`. Two entries of one peer instance must reference different secrets; the same reference twice is refused at mount.
 
 An OneBot adapter speaks one protocol: `transport.protocol` is `http` (the default), `ws-forward` or `ws-reverse`. A field that belongs to another protocol is refused when the profile loads. Each adapter is one link: an implementation reached over one protocol gets one OneBot adapter, not two.
 
@@ -77,6 +77,8 @@ The impression library is off until a top-level `impressions` block names an abs
 | --- | --- | --- |
 | `policy.requireMention` | `false` | groups must mention |
 | `policy.groupBots` | `whenMentioned` | bot messages in groups |
+| `policy.relayLimit` | `3` | rounds one peer may hold |
+| `policy.relayResetMs` | `300000` | idle time that resets the count |
 | `policy.budget.capacity` | off | points per window |
 | `policy.budget.hardLimit` | `1` | ratio that refuses |
 | `reply.default` | `auto` | how a turn answers |
@@ -97,6 +99,20 @@ The impression library is off until a top-level `impressions` block names an abs
 | `pipeline.judgePoints` | `1` | points a verdict costs |
 | `allowAtLeast` (judge node) | off | score that allows the message |
 | `impressions.dir` | off | notes root |
+| `session` / `cwd` / `agentPreset` / `model` | — | one session, its directory, preset and model |
+| `transport.listen.host` | `127.0.0.1` | concrete address only |
+| `transport.listen.port` | `7123` / `7331` | p2p / OneBot |
+| `transport.listen.path` | `/onebot/event`, `/onebot/ws` | OneBot: event path |
+| `transport.dedupe.ttlMs` / `transport.dedupe.limit` | — | p2p: replay window and size |
+| `transport.inflightTtlMs` | `300000` | p2p: stale claim reclaimed after |
+| `transport.sentAtWindowMs` | `300000` | p2p: signature freshness window |
+| `transport.maxBodyBytes` | — | p2p: request body limit |
+| `transport.waitMs` | — | p2p: how long a duplicate waits |
+| `transport.api.url` | required | OneBot `http`/`ws-forward`: action endpoint |
+| `transport.event.url` | same as `api.url` | OneBot `ws-forward`: event socket |
+| `transport.selfId` | from the event | OneBot: expected account id |
+| `transport.bots` | empty | OneBot: accepted bot ids |
+| `transport.sendTimeoutMs` | `10000` | OneBot: one action |
 | `transport.protocol` | `http` | OneBot: how it connects |
 | `transport.heartbeat` | off | OneBot on a socket: liveness |
 | `transport.reconnect` | backoff | OneBot `ws-forward`: backoff, `false` to stay offline |
@@ -104,6 +120,7 @@ The impression library is off until a top-level `impressions` block names an abs
 | `transport.history.private` | `false` | OneBot: private history |
 | `transport.fileFromUrl` | `false` | OneBot: file from a url |
 | `status` | `true` | status route |
+| `skill` | `true` | register the packaged skill with the host |
 
 An answer that is empty, or that holds nothing but whitespace, is not sent: it is counted as an empty turn like any other answer with no text, so no empty message reaches the conversation.
 

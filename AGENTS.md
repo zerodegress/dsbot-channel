@@ -2,7 +2,7 @@
 
 A message gateway for ds-bot: events from several external platforms reach one bot, and answers go back to the conversation they came from. Read `README.md` first; it is the only document a user of this package gets. This file is for agents that change the repository.
 
-This file is the one exception to the rule that the repository holds no documents beyond `README.md`, `README_ZH.md` and `CHANGELOG.md`: it is agent instructions, not user documentation.
+This file is agent instructions, not user documentation. `assets/skill.md` is the configuration skill the package ships, not a document either. The rule that the repository holds no documents beyond `README.md`, `README_ZH.md` and `CHANGELOG.md` therefore holds unchanged.
 
 ## Layout
 
@@ -12,6 +12,7 @@ test/               unit and end-to-end tests
 CHANGELOG.md        changelog, English only
 README.md           the only user-facing document
 README_ZH.md        the same document in Chinese
+assets/skill.md     the configuration skill the package ships
 ```
 
 Anything a person needs in order to use or change the package lives here. Everything else stays out of the repository.
