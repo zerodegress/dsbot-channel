@@ -205,7 +205,7 @@ export class MailAdapter implements ChannelAdapter {
       date: new Date(this.#now()),
     })
     try {
-      await transport.send({ from: this.#config.from, to: [input.target] }, data)
+      await transport.send({ from: this.#config.from, to: [input.target] }, Buffer.from(data))
       return { ok: true, messageId: `mail:${this.#now()}`, duplicate: false }
     } catch (error) {
       this.#stats.sendFailed('unreachable')

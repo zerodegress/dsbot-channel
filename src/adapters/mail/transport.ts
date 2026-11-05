@@ -34,7 +34,7 @@ export interface MailTransport {
   fetch(mailbox: string, cursor: Cursor | undefined): Promise<{ uidValidity: number; messages: FetchedMail[] }>
   markSeen(mailbox: string, uids: readonly number[]): Promise<void>
   append(mailbox: string, raw: Buffer): Promise<void>
-  send(envelope: { from: string; to: readonly string[] }, raw: string): Promise<void>
+  send(envelope: { from: string; to: readonly string[] }, raw: Buffer): Promise<void>
   close(): Promise<void>
 }
 
@@ -93,7 +93,7 @@ export class ImapSmtpTransport implements MailTransport {
     await this.#imap.append(mailbox, raw, ['\\Seen'])
   }
 
-  async send(envelope: { from: string; to: readonly string[] }, raw: string): Promise<void> {
+  async send(envelope: { from: string; to: readonly string[] }, raw: Buffer): Promise<void> {
     await this.#smtp.sendMail({ envelope: { from: envelope.from, to: [...envelope.to] }, raw })
   }
 

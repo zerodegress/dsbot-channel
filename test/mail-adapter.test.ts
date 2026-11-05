@@ -52,7 +52,7 @@ function fakeTransport(state: FakeState): MailTransport {
     },
     async append() {},
     async send(envelope, raw) {
-      state.sent.push({ from: envelope.from, to: envelope.to, raw })
+      state.sent.push({ from: envelope.from, to: envelope.to, raw: raw.toString('utf8') })
     },
     async close() {
       state.closed = true
