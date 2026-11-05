@@ -66,7 +66,17 @@ export function parseVerdict(content: string): JudgeVerdictLike {
   return { score, ...(reason === undefined ? {} : { reason }) }
 }
 
+const FIELDS = new Set(['credential', 'baseUrl', 'model', 'maxChars'])
+
+/** Refuses a key this provider never reads, so a typo cannot look configured. */
+export function checkFields(config: LlmConfig): void {
+  for (const key of Object.keys(config)) {
+    if (!FIELDS.has(key)) throw new Error(`judge names a field this provider does not read: ${key}`)
+  }
+}
+
 export function apply(ctx: Context, config: LlmConfig): void {
+  checkFields(config)
   const credential = checkText(config.credential, 'judge.credential')
   const baseUrl = checkBaseUrl(checkText(config.baseUrl, 'judge.baseUrl'), 'judge')
   const model = checkText(config.model, 'judge.model')

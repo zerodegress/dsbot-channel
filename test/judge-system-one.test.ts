@@ -213,5 +213,9 @@ describe('the system-one provider', () => {
     await expect(
       mount(config('http://127.0.0.1:1', { type: 'choice', instructions: 'q', options: ['a', 'b'], target: 'c' })),
     ).rejects.toThrow(/target/)
+    await expect(mount({ ...config('http://127.0.0.1:1', noul), surprise: true })).rejects.toThrow(/does not read/)
+    await expect(
+      mount(config('http://127.0.0.1:1', { ...noul, surprise: true } as never)),
+    ).rejects.toThrow(/does not read/)
   })
 })

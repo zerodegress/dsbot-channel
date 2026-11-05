@@ -138,7 +138,21 @@ function scoreFor(question: Question, answer: Record<string, unknown>): number {
   throw new Error('judge answer carried no probability for the target option')
 }
 
+const FIELDS = new Set(['credential', 'baseUrl', 'model', 'maxChars', 'question'])
+const QUESTION_FIELDS = new Set(['type', 'instructions', 'criteria', 'options', 'target', 'min', 'max'])
+
+/** Refuses a key this provider never reads, so a typo cannot look configured. */
+export function checkFields(config: SystemOneConfig): void {
+  for (const key of Object.keys(config)) {
+    if (!FIELDS.has(key)) throw new Error(`judge names a field this provider does not read: ${key}`)
+  }
+  for (const key of Object.keys(config.question ?? {})) {
+    if (!QUESTION_FIELDS.has(key)) throw new Error(`judge.question names a field this provider does not read: ${key}`)
+  }
+}
+
 export function apply(ctx: Context, config: SystemOneConfig): void {
+  checkFields(config)
   const credential = checkText(config.credential, 'judge.credential')
   const baseUrl = checkBaseUrl(checkText(config.baseUrl, 'judge.baseUrl'), 'judge')
   const model = checkText(config.model, 'judge.model')

@@ -168,5 +168,6 @@ describe('the llm provider', () => {
   test('checks its own configuration at mount', async () => {
     await expect(mount({ ...config('http://127.0.0.1:1'), baseUrl: 'ftp://x' })).rejects.toThrow(/baseUrl/)
     await expect(mount({ ...config('http://127.0.0.1:1'), credential: '' })).rejects.toThrow(/credential/)
+    await expect(mount({ ...config('http://127.0.0.1:1'), surprise: true })).rejects.toThrow(/does not read/)
   })
 })
