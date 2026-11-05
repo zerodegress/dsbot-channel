@@ -199,7 +199,7 @@ Both entries send the body, the scope, the author id and whether the bot was nam
 
 ## How a message is decided
 
-An inbound message goes through three steps: the adapter drops a duplicate, the policy gate decides whether it may become a turn at all, and the pipeline decides whether the turn is allowed. A refusal at any step names its reason in the status.
+An inbound message goes through three steps: the adapter drops a duplicate, the policy gate decides whether it may become a turn at all, and the pipeline decides whether the turn is allowed. A refusal is recorded in the turns snapshot as `outcome: rejected` with the gate's code, and its detail goes to the log.
 
 | Policy key | Default | What it decides |
 | --- | --- | --- |
@@ -207,12 +207,12 @@ An inbound message goes through three steps: the adapter drops a duplicate, the 
 | `policy.groupBots` | `whenMentioned` | how another bot's group message is treated: `whenMentioned`, `silent` or `answer` |
 | `policy.relayLimit` / `policy.relayResetMs` | `3` / `300000` | how many turns in a row one peer may hold, and the idle time that resets it |
 | `policy.deny.words` / `policy.deny.regexes` | `[]` | substrings and regular expressions that refuse a message; matching is case-insensitive |
-| `policy.allow.peers` | `[]` | `source.peer` values that are allowed before the rest of the chain runs |
+| `policy.allow.peers` | `[]` | `source.peer` values an `allow` node matches; a match allows the message and ends the chain |
 | `policy.budget.capacity` / `policy.budget.hardLimit` | required once `budget` is written / `1` | points per window and the ratio at which the gateway refuses, set as a hard window |
 
-An empty word, an invalid pattern or an empty peer name fails the mount. Any of the three lists that is not empty adds a `deny` or `allow` node, and a match refuses or allows the message.
+An empty word, an invalid pattern or an empty peer name fails the mount. `policy.deny` and `policy.allow` only take effect through a node: a profile that declares no `pipeline` gets the node added for it, and a profile that declares one has to add the node itself, or the rule silently does nothing.
 
-A judge enters as one node of the pipeline, not as a gate: mount a provider first, then declare the node. Without `allowAtLeast` the node only adds its score; with it, a score at or above the threshold allows the message and one below refuses it.
+A judge enters as one node of the pipeline, not as a gate: mount a provider first, then declare the node. Without `allowAtLeast` the node only adds its score, and a chain that ends without an allow still refuses; with it, a score at or above the threshold allows the message and one below refuses it.
 
 Three starting points:
 
@@ -223,13 +223,14 @@ config:
 ```
 
 ```yaml
-# refuse spam words before any judge runs
+# refuse spam words, then let a judge decide (provider mounted first)
 config:
   policy:
-    deny: { words: [spam], regexes: ['^\\s*$'] }
+    deny: { words: [spam], regexes: ['^\s*$'] }
   pipeline:
     global:
       - { id: guard, type: deny }
+      - { id: verdict, type: judge, allowAtLeast: 0.6 }
 ```
 
 ```yaml

@@ -150,7 +150,7 @@ The provider sets no timer of its own; `pipeline.judgeTimeoutMs` bounds the call
 
 ## How a message is decided
 
-An inbound message is deduplicated by the adapter, then the policy keys in the table above decide whether it may become a turn, then the pipeline decides whether the turn is allowed; each refusal names its reason. A judge is a pipeline node: mount a provider, then declare the node; `allowAtLeast` makes it decide, without it the node only scores.
+An inbound message is deduplicated by the adapter, then the policy keys in the table above decide whether it may become a turn, then the pipeline decides whether the turn is allowed. A refusal is recorded as `outcome: rejected` with the gate's code, with the detail in the log. `policy.deny` and `policy.allow` need a `deny` or `allow` node: a profile that declares no `pipeline` gets it added, one that declares a pipeline must add it. A judge is a pipeline node: mount a provider, then declare the node; `allowAtLeast` makes it decide, without it the node only scores and the chain still refuses at its end.
 
 ## Pipeline nodes
 

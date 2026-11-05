@@ -199,7 +199,7 @@ config:
 
 ## 一条消息怎么被判定
 
-入站消息走三步：adapter 先去重，policy 关卡决定它能不能成为回合，pipeline 再决定这个回合放不放行。任何一步拒绝都会在状态里写明原因。
+入站消息走三步：adapter 先去重，policy 关卡决定它能不能成为回合，pipeline 再决定这个回合放不放行。被拒绝的回合会以 `outcome: rejected` 加 gate 的 code 记进 turns 快照，具体原因写日志。
 
 | policy 键 | 默认 | 决定什么 |
 | --- | --- | --- |
@@ -207,12 +207,12 @@ config:
 | `policy.groupBots` | `whenMentioned` | 另一个机器人的群消息怎么处理：`whenMentioned`、`silent` 或 `answer` |
 | `policy.relayLimit` / `policy.relayResetMs` | `3` / `300000` | 一个对端最多连续占几轮，以及重置这个计数的空闲时间 |
 | `policy.deny.words` / `policy.deny.regexes` | `[]` | 拒绝消息的子串与正则，匹配不区分大小写 |
-| `policy.allow.peers` | `[]` | 命中 `source.peer` 就放行，不再走后面的链条 |
+| `policy.allow.peers` | `[]` | `allow` 节点匹配的 `source.peer`；命中即放行并结束链条 |
 | `policy.budget.capacity` / `policy.budget.hardLimit` | 写了 `budget` 就必填 / `1` | 每个窗口的点数，以及网关据此拒绝的比例，按硬窗口执行 |
 
-空词、非法正则、空对端名都会让挂载失败。三者任一非空就自动加上 `deny` 或 `allow` 节点，命中即拒绝或放行。
+空词、非法正则、空对端名都会让挂载失败。`policy.deny` 与 `policy.allow` 要靠节点才生效：没声明 `pipeline` 的 profile 会自动补上节点，声明了就得自己加，否则规则静默失效。
 
-judge 是**管道里的一个节点**，不是关卡：先挂 provider，再声明节点。不带 `allowAtLeast` 时它只加分；带了就按阈值判定，达到放行、低于拒绝。
+judge 是**管道里的一个节点**，不是关卡：先挂 provider，再声明节点。不带 `allowAtLeast` 时它只加分，链条走到末尾没有放行仍然拒绝；带了就按阈值判定，达到放行、低于拒绝。
 
 三种常见起点：
 
@@ -223,13 +223,14 @@ config:
 ```
 
 ```yaml
-# 在 judge 运行前先挡住垃圾词
+# 先挡垃圾词，再由 judge 判定（需先挂 provider）
 config:
   policy:
-    deny: { words: [spam], regexes: ['^\\s*$'] }
+    deny: { words: [spam], regexes: ['^\s*$'] }
   pipeline:
     global:
       - { id: guard, type: deny }
+      - { id: verdict, type: judge, allowAtLeast: 0.6 }
 ```
 
 ```yaml
