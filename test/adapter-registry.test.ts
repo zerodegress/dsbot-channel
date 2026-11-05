@@ -92,11 +92,11 @@ async function services(ctx: Context): Promise<void> {
 }
 
 describe('the registry a context owns', () => {
-  test('the registry plugin registers the two built-in kinds', async () => {
+  test('the registry plugin registers the built-in kinds', async () => {
     const ctx = new Context()
     await ctx.plugin(registryPlugin)
     const registry = ctx.get(REGISTRY_SERVICE) as AdapterRegistry
-    expect(registry.known().sort()).toEqual(['onebot', 'p2p'])
+    expect(registry.known().sort()).toEqual(['onebot', 'p2p', 'webhook'])
     expect(typeof registry.factory('p2p')).toBe('function')
   })
 
@@ -126,7 +126,7 @@ describe('the registry a context owns', () => {
     await ctx.plugin(registryPlugin)
     await ctx.plugin(registryPlugin)
     expect(said.some((line) => line.includes('already exists'))).toBe(true)
-    expect((ctx.get(REGISTRY_SERVICE) as AdapterRegistry).known().sort()).toEqual(['onebot', 'p2p'])
+    expect((ctx.get(REGISTRY_SERVICE) as AdapterRegistry).known().sort()).toEqual(['onebot', 'p2p', 'webhook'])
   })
 
   test('two contexts never see each other', async () => {

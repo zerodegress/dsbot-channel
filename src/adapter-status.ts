@@ -88,6 +88,8 @@ export interface AdapterCounters {
   lastFailure: { at: number; reason: string } | null
   /** Non-message events this transport read, by its own class. */
   events?: Record<string, number> | undefined
+  /** Webhook requests whose dialect had to be guessed from the payload. */
+  dialectFallback?: number | undefined
   /** Chance nodes that ran over this adapter's messages, by node id. */
   chance?: Record<string, { hit: number; miss: number }> | undefined
 }
@@ -198,6 +200,7 @@ export function buildStatus(input: StatusInput): AdapterStatus {
           ? null
           : { at: input.counters.lastFailure.at, reason: input.counters.lastFailure.reason },
       ...(input.counters.events === undefined ? {} : { events: { ...input.counters.events } }),
+      ...(input.counters.dialectFallback === undefined ? {} : { dialectFallback: input.counters.dialectFallback }),
     },
     capabilities: {
       text: input.capabilities.text,
