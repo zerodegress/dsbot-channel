@@ -1,5 +1,6 @@
 import type { LimitLevel } from './budget-ledger.js'
 import { Pipeline } from './pipeline.js'
+import { chanceBucket } from './chance.js'
 import type { NodeContext, PipelineEvent, PipelineNode, PipelineOptions } from './pipeline.js'
 import { DEFAULT_PIPELINE } from './pipeline-config.js'
 import type { PipelineNodeSpec } from './pipeline-config.js'
@@ -134,6 +135,21 @@ export function buildPipeline(
             const verdict = budget()
             if (verdict.state === 'hard') return { kind: 'deny', reason: `hard limit: ${verdict.triggeredBy.join(', ')}` }
             return { kind: 'pass' }
+          },
+        }
+      }
+      case 'chance': {
+        const probability = spec.probability ?? 0
+        const outcome = spec.outcome ?? 'deny'
+        return {
+          id: spec.id,
+          type: 'chance',
+          run: (context) => {
+            const hit = chanceBucket(context.event.eventKey, spec.id) < probability
+            options.onChance?.(hit ? outcome : 'miss', spec.id, context.event)
+            const reason = `chance_${hit ? outcome : 'miss'} (p=${probability})`
+            if (!hit) return { kind: 'pass', reason }
+            return outcome === 'allow' ? { kind: 'allow', reason } : { kind: 'deny', reason }
           },
         }
       }

@@ -2,6 +2,8 @@ import { describe, expect, test } from 'vitest'
 import { checkPipeline } from '../src/pipeline-config.js'
 import { buildPipeline } from '../src/build-pipeline.js'
 import type { PipelineEvent } from '../src/pipeline.js'
+import { resolvePipeline } from '../src/pipeline-scopes.js'
+import { SessionPipelines } from '../src/session-pipeline.js'
 
 function event(eventKey: string): PipelineEvent {
   return {
@@ -36,6 +38,45 @@ describe('the chance node declaration', () => {
 
   test('only a chance node may declare them', () => {
     expect(checkPipeline([{ id: 'd', type: 'deny', probability: 0.5, outcome: 'allow' } as never]).fatal.length).toBeGreaterThan(0)
+  })
+})
+
+describe('where a chance node may be declared', () => {
+  test('a bot layer may insert or override one', () => {
+    const inserted = resolvePipeline({
+      global: [{ id: 'd', type: 'deny' }],
+      bot: { insert: [{ id: 'c', type: 'chance', after: 'd', probability: 0.25, outcome: 'deny' }] },
+    }).nodes
+    expect(inserted.find((node) => node.id === 'c')).toMatchObject({ probability: 0.25, outcome: 'deny' })
+
+    const overridden = resolvePipeline({
+      global: [{ id: 'c', type: 'chance', probability: 0.5, outcome: 'allow' }],
+      bot: { override: { c: { probability: 0.1 } } },
+    }).nodes
+    expect(overridden.find((node) => node.id === 'c')?.probability).toBe(0.1)
+  })
+
+  test('a session insert cannot carry the odds, but a session override can', () => {
+    const bots = new Map([
+      [
+        'orca',
+        {
+          base: [{ id: 'c', type: 'chance', probability: 0.5, outcome: 'allow' } as never],
+          denyRules: true,
+          allowRules: true,
+          prepare: false,
+          peers: ['seal'],
+        },
+      ],
+    ])
+    const sessions = new SessionPipelines({ bots })
+    expect(() =>
+      sessions.forSession('orca', 'peer:u1', {
+        insert: [{ id: 'c2', type: 'chance', after: 'c', probability: 0.5 } as never],
+      }),
+    ).toThrow(/no insert has/)
+    sessions.forSession('orca', 'peer:u1', { override: { c: { probability: 1 } } })
+    expect(sessions.pipelineFor('orca', 'peer:u1').find((node) => node.id === 'c')?.probability).toBe(1)
   })
 })
 
@@ -103,12 +144,12 @@ describe('what a chance node decides', () => {
 
   test('counts each outcome it takes', async () => {
     const seen: string[] = []
-    const pipeline = buildPipeline([chance(0, 'allow')], {}, { onChance: (hit) => seen.push(hit) } as never)
+    const pipeline = buildPipeline([chance(0, 'allow')], {}, { onChance: (hit: string) => seen.push(hit) } as never)
     await pipeline.run(event('evt-4'))
-    expect(seen).toEqual(['pass'])
+    expect(seen).toEqual(['miss'])
 
-    const hit = buildPipeline([chance(1, 'allow')], {}, { onChance: (one) => seen.push(one) } as never)
+    const hit = buildPipeline([chance(1, 'allow')], {}, { onChance: (one: string) => seen.push(one) } as never)
     await hit.run(event('evt-5'))
-    expect(seen).toEqual(['pass', 'allow'])
+    expect(seen).toEqual(['miss', 'allow'])
   })
 })

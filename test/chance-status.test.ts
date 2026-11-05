@@ -10,6 +10,10 @@ const ports: AdapterPorts[] = []
 
 class ChanceAdapter implements ChannelAdapter {
   readonly kind = 'x-chance'
+  readonly #channel: string
+  constructor(channel: string) {
+    this.#channel = channel
+  }
   readonly guidance = { peer: 'peer guidance', group: 'group guidance' }
   readonly capabilities = {
     text: true,
@@ -35,9 +39,9 @@ class ChanceAdapter implements ChannelAdapter {
   }
   status() {
     return buildStatus({
-      channel: 'x',
-      account: 'x',
-      bot: 'x',
+      channel: this.#channel,
+      account: this.#channel,
+      bot: 'bot-a',
       health: buildListenerHealth({ listenState: 'stopped', boundPort: null, lastAuthenticatedAt: null, queueDepth: 0 }),
       counters: { authFailures: 0, unknownInstance: 0, unknownPaths: 0, underruns: 0, protocolMismatches: 0, staleSentAt: {}, sendFailures: {}, lastFailure: null },
       capabilities: this.capabilities,
@@ -87,7 +91,7 @@ async function mount(pipeline?: Record<string, unknown>): Promise<Context> {
     },
   })
   await ctx.plugin(registryPlugin)
-  await ctx.plugin(defineAdapterPlugin({ kind: 'x-chance', create: () => new ChanceAdapter() }))
+  await ctx.plugin(defineAdapterPlugin({ kind: 'x-chance', create: (mount) => new ChanceAdapter(mount.channel) }))
   await ctx.plugin(entry, {
     ...(pipeline === undefined ? {} : { pipeline }),
     adapters: [

@@ -15,6 +15,9 @@ export interface InsertSpec {
   /** A judge inserted by a layer may ask its own question with its own material. */
   question?: unknown
   context?: unknown
+  /** A chance node inserted by a layer may carry its own odds. */
+  probability?: unknown
+  outcome?: unknown
 }
 
 /** What a bot or a session adds to the layer above it: a difference, never a whole pipeline. */
@@ -45,6 +48,7 @@ export const OVERRIDABLE_BY_TYPE: Record<NodeType, readonly string[]> = {
   allow: COMMON,
   score: COMMON,
   judge: [...COMMON, 'allowAtLeast', 'question', 'context'],
+  chance: [...COMMON, 'probability', 'outcome'],
   prepare: COMMON,
 }
 
@@ -97,6 +101,8 @@ function applyLayer(
       ...(spec.allowAtLeast === undefined ? {} : { allowAtLeast: spec.allowAtLeast }),
       ...(spec.question === undefined ? {} : { question: spec.question as NonNullable<PipelineNodeSpec['question']> }),
       ...(spec.context === undefined ? {} : { context: spec.context as NonNullable<PipelineNodeSpec['context']> }),
+      ...(spec.probability === undefined ? {} : { probability: spec.probability as number }),
+      ...(spec.outcome === undefined ? {} : { outcome: spec.outcome as 'allow' | 'deny' }),
     })
     ids.add(spec.id)
   }

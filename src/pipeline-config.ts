@@ -14,7 +14,13 @@ export interface PipelineNodeSpec {
   question?: JudgeQuestion
   /** Static material for this judge node; never conversation history. */
   context?: JudgeContext
+  /** A chance node: the probability its outcome fires, 0 to 1. */
+  probability?: number
+  /** A chance node: what a hit decides. */
+  outcome?: 'allow' | 'deny'
 }
+
+export const CHANCE_OUTCOMES = ['allow', 'deny'] as const
 
 export interface PipelineSettings {
   maxTurnMs: number
@@ -74,6 +80,16 @@ export function checkPipeline(nodes: readonly PipelineNodeSpec[]): CheckReport {
           }
         }
       }
+    }
+    if (node.type === 'chance') {
+      if (typeof node.probability !== 'number' || !Number.isFinite(node.probability) || node.probability < 0 || node.probability > 1) {
+        fatal.push(`node "${node.id}": chance needs probability between 0 and 1`)
+      }
+      if (node.outcome === undefined || !(CHANCE_OUTCOMES as readonly string[]).includes(node.outcome)) {
+        fatal.push(`node "${node.id}": chance needs outcome allow or deny`)
+      }
+    } else if (node.probability !== undefined || node.outcome !== undefined) {
+      fatal.push(`node "${node.id}": only a chance node may declare probability and outcome`)
     }
     if (node.allowAtLeast !== undefined) {
       if (node.type !== 'judge') {

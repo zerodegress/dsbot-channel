@@ -161,6 +161,8 @@ const nodeSpecSchema = Schema.object({
   mayRestrict: Schema.boolean(),
   question: Schema.any(),
   context: Schema.any(),
+  probability: Schema.number(),
+  outcome: Schema.string(),
   allowAtLeast: Schema.number(),
 })
 
@@ -1129,6 +1131,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
 
   const ledgers: BotLedger[] = []
   const reporting = new Set(channels.map((channel) => channel.adapter))
+  const chanceCounts = new Map<string, Map<string, { hit: number; miss: number }>>()
   const selections = new Map<string, PeerSessions>()
   const started: AdapterHandle[] = []
   const runtimes: PeerSessions[] = []
@@ -1139,6 +1142,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     for (const sessions of runtimes.splice(0)) sessions.dispose()
     await flushSessions('shutdown')
     reporting.clear()
+    chanceCounts.clear()
     selections.clear()
     started.length = 0
   }, 'dsbot-channel: peer listeners')
@@ -1264,6 +1268,14 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
                   judgeFailures.count += 1
                   warn(`dsbot-channel: judge for ${message.source.instance} failed: ${code}`)
                 },
+                onChance: (hit, nodeId) => {
+                  const byNode = chanceCounts.get(adapter.channel) ?? new Map()
+                  const one = byNode.get(nodeId) ?? { hit: 0, miss: 0 }
+                  if (hit === 'miss') one.miss += 1
+                  else one.hit += 1
+                  byNode.set(nodeId, one)
+                  chanceCounts.set(adapter.channel, byNode)
+                },
               })
             : undefined
         const kind = message.kind ?? 'message'
@@ -1376,7 +1388,16 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
       adapters: [...reporting].map((adapter) => {
         const status = adapter.status()
         const selection = selections.get(status.channel)?.modelSelection
-        return selection === undefined ? status : { ...status, modelSelection: selection }
+        const chance = chanceCounts.get(status.channel)
+        const counters =
+          chance === undefined
+            ? status.counters
+            : { ...status.counters, chance: Object.fromEntries([...chance].map(([id, one]) => [id, { ...one }])) }
+        return {
+          ...status,
+          counters,
+          ...(selection === undefined ? {} : { modelSelection: selection }),
+        }
       }),
       config: configLayers.map((entry) => ({ channel: entry.channel, layers: { ...entry.layers } })),
       flushFailures: flushFailures.count,
