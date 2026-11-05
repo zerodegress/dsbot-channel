@@ -149,7 +149,7 @@ config:
 | `transport.bots` | `[]` | 计入 bot 发言的 login |
 | `transport.repos` | `[]` | 可选的 `owner/repo` 白名单 |
 
-issue 评论或 review 评论会起一个回合，回复作为评论发回同一个 issue。评论之外的事件，例如 `issues`、`pull_request`、`push`、`release` 与 CI 运行，是 `action` 事件：只带一行摘要，除非类的名字写进 `events.turn`（`action.push`、`action.ci`、`action.issues` 等），否则不起回合。ping 与 installation 事件直接回 200，在进网关前丢掉。签名校验不通过的请求直接 401，不进网关；同一次投递、或同一条评论换个 delivery 重投，只跑一次。这个 adapter 只写评论，不编辑、不关闭任何东西。
+issue 评论、review 评论，或带正文的 pull request review 会起一个回合，回复作为评论发回同一个 issue。评论之外的事件，例如 `issues`、`pull_request`、`push`、`release` 与 CI 运行，是 `action` 事件：只带一行摘要，除非类的名字写进 `events.turn`（`action.push`、`action.ci`、`action.issues` 等），否则不起回合。ping 与 installation 事件直接回 200，在进网关前丢掉。签名校验不通过的请求直接 401，不进网关；签名通过但没有事件头的请求回 400；同一次投递、或同一条评论换个 delivery 重投，只跑一次。这个 adapter 只写评论，不编辑、不关闭任何东西。
 
 ## 回合与切段
 

@@ -149,7 +149,7 @@ config:
 | `transport.bots` | `[]` | logins counted as bot speech |
 | `transport.repos` | `[]` | optional `owner/repo` allow list |
 
-An issue comment or a review comment runs a turn, and the answer is posted as a comment on the same issue. Events that are not comments, such as `issues`, `pull_request`, `push`, `release` and CI runs, are `action` events: each carries a one line summary and starts no turn unless its class is listed in `events.turn` (`action.push`, `action.ci`, `action.issues`, …). A ping or installation event is answered with 200 and dropped before the gateway. A request whose signature does not verify is refused with 401 and never reaches the gateway; a repeated delivery, or the same comment under a new delivery, runs once. The answer is the only thing this adapter writes: it never edits or closes anything.
+An issue comment, a review comment, or a pull request review that carries a body runs a turn, and the answer is posted as a comment on the same issue. Events that are not comments, such as `issues`, `pull_request`, `push`, `release` and CI runs, are `action` events: each carries a one line summary and starts no turn unless its class is listed in `events.turn` (`action.push`, `action.ci`, `action.issues`, …). A ping or installation event is answered with 200 and dropped before the gateway. A request whose signature does not verify is refused with 401 and never reaches the gateway; one that verifies but names no event header is refused with 400; a repeated delivery, or the same comment under a new delivery, runs once. The answer is the only thing this adapter writes: it never edits or closes anything.
 
 ## Turns and delivery
 

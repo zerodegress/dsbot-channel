@@ -80,7 +80,7 @@ An adapter whose `capabilities.outbound` is `false` is never written back: core 
 | `bots` | `[]` | logins counted as bot speech |
 | `repos` | `[]` | optional `owner/repo` allow list |
 
-An issue comment or a review comment runs a turn and the answer is posted as a comment on the issue. Events that are not comments, such as `issues`, `pull_request`, `push`, `release` and CI runs, are `action` events with a one line summary; they start no turn unless `events.turn` names the class (`action.push`, `action.ci`, …). A failed signature is a 401 and never reaches the gateway; a repeated delivery runs once.
+An issue comment, a review comment, or a pull request review that carries a body runs a turn and the answer is posted as a comment on the issue. Events that are not comments, such as `issues`, `pull_request`, `push`, `release` and CI runs, are `action` events with a one line summary; they start no turn unless `events.turn` names the class (`action.push`, `action.ci`, …). A failed signature is a 401 and never reaches the gateway, and a request that verifies but names no event header is a 400; a repeated delivery runs once.
 
 ### Behaviour blocks
 
