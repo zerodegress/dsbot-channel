@@ -107,7 +107,7 @@ The impression library is off until a top-level `impressions` block names an abs
 
 Mount one of two entries. Both provide `dsbot-channel/judge`, so a profile mounts one; a second mount fails at load with `one judge service per instance`. Mount the provider before the gateway: the gateway reads the service while it mounts.
 
-A provider holds the connection; what to ask is written on the judge node, in the fields `Pipeline nodes` lists.
+A provider holds the connection; what to ask is written on the judge node, in the fields listed under `Pipeline nodes`.
 
 `system-one` asks the question its node names and reads a probability.
 
