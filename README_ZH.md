@@ -62,6 +62,8 @@ config:
 
 一条 OneBot adapter 只用一种协议：`transport.protocol` 取 `http`（默认）、`ws-forward` 或 `ws-reverse`。属于另一种协议的字段会在加载配置时报错。每个 adapter 是一条链路：同一个实现只走一种协议，就只声明一个 OneBot adapter。
 
+`events.turn` 列出允许触发回合的非消息事件类，例如 `notice.group_recall` 或 `request.friend`；默认为空，通知与请求只记入回合上下文并按类计入 `counters.events`，不产生回合。`meta_event` 与自身回声永远不触发回合，写了 OneBot 不发的事件类名会在挂载时被拒绝；非消息事件不检查提及要求，因为它没有这个字段。
+
 adapter 可以用 `session` 指定每回合都跑在某个已有会话里，用 `cwd`、`agentPreset`、`model` 指定它创建的会话；`model` 写成 `provider/model`。宿主的会话控制器通过 `selectModel` 设置该模型；宿主没有这个方法时只 warn，会话保持自己的模型。适配器状态在 `modelSelection` 下报告结果，含 `requested` 与取值 `applied`、`unsupported`、`rejected` 的 `state`；未指定模型、或宿主尚未作出决定时不出现该字段。
 
 `delivery` 块可以写在顶层或单个 adapter 上，把回合回复切成多段并按节奏发送。只有回合回复会被切：`send_text`、拒绝与 `decline` 的说明都整段发出。`split.byBlankLine`（默认 `true`）在空行处切，`split.maxParts`（默认 `4`）把超出的部分并进最后一段、不丢弃，`split.maxChars`（默认 `0`，关闭）按码点硬切且不拆代理对与 CRLF。`pacing` 在发送下一段前等待「该段码点数 ÷ `charsPerSecond`（默认 `14`）」，夹在 `minMs`（默认 `700`）与 `maxMs`（默认 `5000`）之间；最后一段发完不等。某段失败就停掉后续段，整条回复按失败上报并带上已发出的段数。正文首尾的空行会被丢弃，段与段之间的空行也不会随消息发出。顶层和 adapter 都没有 `delivery` 块时回复整段发送；adapter 上的空块不添加任何键，顶层的值照旧生效。

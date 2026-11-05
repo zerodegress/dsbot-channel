@@ -84,6 +84,8 @@ export interface AdapterCounters {
   sendFailures: Record<string, number>
   /** The last failure this transport saw, or null when it has none. */
   lastFailure: { at: number; reason: string } | null
+  /** Non-message events this transport read, by its own class. */
+  events?: Record<string, number> | undefined
 }
 
 export type Health = ConnectionHealth | ListenerHealth
@@ -191,6 +193,7 @@ export function buildStatus(input: StatusInput): AdapterStatus {
         input.counters.lastFailure === null
           ? null
           : { at: input.counters.lastFailure.at, reason: input.counters.lastFailure.reason },
+      ...(input.counters.events === undefined ? {} : { events: { ...input.counters.events } }),
     },
     capabilities: {
       text: input.capabilities.text,

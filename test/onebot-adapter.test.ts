@@ -117,9 +117,17 @@ describe('the onebot listener', () => {
     expect(seen[0]).toMatchObject({ sessionKey: 'group:12345', rawText: 'hi' })
   })
 
-  test('answers a non-message event with 204 and never hands it over', async () => {
+  test('answers a non-message event with 204 and hands it over with its own kind', async () => {
     const { port, seen } = await startAdapter()
     expect(await post(port, '/onebot/event', { post_type: 'notice' })).toEqual({ status: 204 })
+    await waitFor(() => seen.length === 1)
+    expect(seen[0]!.kind).toBe('notice')
+    expect(seen[0]!.event).toEqual({ postType: 'notice', type: 'unknown' })
+  })
+
+  test('drops an unknown post type without handing it over', async () => {
+    const { port, seen } = await startAdapter()
+    expect(await post(port, '/onebot/event', { post_type: 'not_onebot' })).toEqual({ status: 204 })
     await drain()
     expect(seen).toHaveLength(0)
   })
@@ -136,9 +144,9 @@ describe('the onebot listener', () => {
     const { port, seen, warns } = await startAdapter()
     await post(port, '/onebot/event', event())
     await post(port, '/onebot/event', event())
-    await waitFor(() => warns.some((line) => line.includes('repeated onebot message')))
+    await waitFor(() => warns.some((line) => line.includes('repeated onebot event')))
     expect(seen).toHaveLength(1)
-    expect(warns.some((line) => line.includes('repeated onebot message'))).toBe(true)
+    expect(warns.some((line) => line.includes('repeated onebot event'))).toBe(true)
   })
 
   test('an unknown path answers 404', async () => {
@@ -403,5 +411,27 @@ describe('the onebot adapter names the scope of a session key', () => {
     expect(adapter.sessionScope('group:123')).toBe('group')
     expect(adapter.sessionScope('peer:123')).toBe('c2c')
     expect(adapter.sessionScope('p2p:peer-a')).toBeUndefined()
+  })
+})
+
+describe('the events a listener counts', () => {
+  test('a repeated event is handed over once and counted once', async () => {
+    const { adapter, port, seen, warns } = await startAdapter()
+    const recall = {
+      post_type: 'notice',
+      notice_type: 'group_recall',
+      self_id: 10001,
+      group_id: 12345,
+      user_id: 20002,
+      message_id: '30003',
+      time: 1_700_000_100,
+    }
+    expect(await post(port, '/onebot/event', recall)).toEqual({ status: 204 })
+    expect(await post(port, '/onebot/event', recall)).toEqual({ status: 204 })
+    await waitFor(() => warns.some((line) => line.includes('repeated onebot event')))
+    await drain()
+
+    expect(seen).toHaveLength(1)
+    expect(adapter.status().counters.events).toEqual({ 'notice.group_recall': 1 })
   })
 })

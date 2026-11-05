@@ -39,6 +39,8 @@ export interface AdmitInput {
   session: string
   /** The pipeline this turn runs, when the caller resolves one per session. */
   pipeline?: Pipeline | undefined
+  /** A non-message event carries no mention; naming its class in the profile is the permission. */
+  skipMention?: boolean | undefined
 }
 
 export type GateReason =
@@ -132,7 +134,13 @@ export class InboundGate {
         }
       }
     }
-    if (this.options.requireMention === true && event.scope === 'group' && !event.mentioned.self && !event.mentioned.all) {
+    if (
+      this.options.requireMention === true &&
+      input.skipMention !== true &&
+      event.scope === 'group' &&
+      !event.mentioned.self &&
+      !event.mentioned.all
+    ) {
       return {
         allow: false,
         reason: 'not_addressed',

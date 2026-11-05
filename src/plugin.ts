@@ -68,6 +68,22 @@ export interface PolicySettings extends PolicyConfig {
   budget?: BudgetConfig | undefined
 }
 
+/** The non-message classes a profile may let start a turn; a meta event or a self echo never can. */
+export const TURNABLE_EVENTS = [
+  'notice.group_recall',
+  'notice.friend_recall',
+  'notice.group_ban',
+  'notice.group_lift_ban',
+  'notice.group_increase',
+  'notice.group_decrease',
+  'notice.group_admin',
+  'notice.group_upload',
+  'notice.group_card',
+  'notice.notify',
+  'request.friend',
+  'request.group',
+] as const
+
 export interface AdapterConfig {
   kind?: string
   channel: string
@@ -88,6 +104,8 @@ export interface AdapterConfig {
   delivery?: unknown
   policy: PolicySettings
   pipeline?: PipelineLayer | undefined
+  /** Which non-message event classes may start a turn; empty by default, and adapter-level only: the names come from one transport. */
+  events?: { turn?: string[] | undefined } | undefined
   status?: boolean
   /** The transport block; only the adapter of this kind reads it. */
   transport?: Record<string, unknown>
@@ -210,6 +228,7 @@ export const Config: any = Schema.object({
           }).default(undefined as never),
         }).default({}),
         pipeline: (layerSchema as any).default(undefined),
+        events: Schema.object({ turn: Schema.array(Schema.string()).default([]) }).default({}),
         status: Schema.boolean().default(true),
         transport: Schema.any(),
       }),
@@ -1195,6 +1214,23 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
                 },
               })
             : undefined
+        const kind = message.kind ?? 'message'
+        if (kind === 'meta') return { ok: true }
+        if (kind !== 'message') {
+          const eventClass = `${kind}.${message.event?.type ?? 'unknown'}`
+          const mayTurn = adapter.events?.turn?.includes(eventClass) === true
+          if (message.event?.postType !== 'message_sent') {
+            runtime.context.record(`${adapter.botName}|${message.sessionKey}`, {
+              eventKey: message.eventKey,
+              senderId: message.author.senderId,
+              nickname: message.declared.nickname,
+              text: message.rawText,
+              media: message.body.media.map((one) => one.type),
+            })
+          }
+          const verdict = mayTurn && pipeline !== undefined ? await pipeline.run(event) : undefined
+          if (!mayTurn || (verdict !== undefined && verdict.decision !== 'allow')) return { ok: true }
+        }
         if (
           runtime.mentionFallback.pending &&
           !runtime.mentionFallback.warned &&
@@ -1214,9 +1250,10 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
           botId: adapter.botName,
           author: message.author.kind,
           session: message.sessionKey,
-          ...(pipeline === undefined ? {} : { pipeline }),
+          ...(pipeline === undefined || kind !== 'message' ? {} : { pipeline }),
+          ...(kind === 'message' ? {} : { skipMention: true }),
         })
-        if (message.source.scope === 'group') {
+        if (kind === 'message' && message.source.scope === 'group') {
           runtime.context.record(`${adapter.botName}|${message.sessionKey}`, {
             eventKey: message.eventKey,
             senderId: message.author.senderId,
@@ -1459,6 +1496,14 @@ function mountAdapters(
         ? ['policy', field]
         : ['adapters', String(index), 'policy', field],
     )
+    for (const name of adapter.events?.turn ?? []) {
+      if (!(TURNABLE_EVENTS as readonly string[]).includes(name)) {
+        throw new ConfigError(
+          `events.turn names "${name}", which is not an event class that may start a turn`,
+          ['adapters', String(index), 'events', 'turn'],
+        )
+      }
+    }
     const kind = adapter.kind ?? 'p2p'
     checkAdapterKind(kind)
     const mount: AdapterMount = {
