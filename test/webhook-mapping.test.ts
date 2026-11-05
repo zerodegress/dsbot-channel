@@ -117,6 +117,47 @@ describe('a webhook action becomes a one line event', () => {
     expect(classOf(mapped.message)).toBe('action.fork')
   })
 
+  test('a comment edit is not the comment creation', () => {
+    const created = map('issue_comment', {
+      action: 'created',
+      repository: repo,
+      issue,
+      comment: comment(),
+      sender: { login: 'seal', type: 'User' },
+    })
+    const edited = map('issue_comment', {
+      action: 'edited',
+      repository: repo,
+      issue,
+      comment: comment(),
+      sender: { login: 'seal', type: 'User' },
+    })
+    if (!('message' in created) || !('message' in edited)) throw new Error('expected messages')
+    expect(created.message.eventKey).toBe('comment:77')
+    expect(edited.message.eventKey).toBe('comment:77:edited')
+  })
+
+  test('two ci runs of one repo keep their own identity', () => {
+    const one = map('status', {
+      repository: repo,
+      sha: 'aaa',
+      context: 'ci/build',
+      state: 'success',
+      sender: { login: 'seal', type: 'User' },
+    })
+    const two = map('status', {
+      repository: repo,
+      sha: 'bbb',
+      context: 'ci/build',
+      state: 'success',
+      sender: { login: 'seal', type: 'User' },
+    })
+    if (!('message' in one) || !('message' in two)) throw new Error('expected messages')
+    expect(one.message.eventKey).not.toBe(two.message.eventKey)
+    expect(one.message.eventKey).toContain('aaa')
+    expect(one.message.eventKey).toContain('ci/build')
+  })
+
   test('a ping carries no event', () => {
     expect(map('ping', { zen: 'hi', repository: repo })).toEqual({ skip: 'ping' })
   })

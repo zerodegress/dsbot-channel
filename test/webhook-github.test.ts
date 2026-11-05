@@ -268,11 +268,12 @@ describe('the dialect a profile names is enforced', () => {
     expect(response.status).toBe(200)
   })
 
-  test('an unlabelled request counts as a dialect fallback', async () => {
+  test('an unlabelled request counts as a fallback and is refused without an event', async () => {
     const api = await apiStub()
-    const { ctx, port } = await mount(api.url)
+    const { ctx, port, judged } = await mount(api.url)
     const response = await post(port, commentPayload, { 'x-hub-signature-256': sign(commentPayload) })
-    expect(response.status).toBe(200)
+    expect(response.status).toBe(400)
+    expect(judged()).toBe(0)
     expect(statusOf(ctx).adapters[0]?.counters.dialectFallback).toBe(1)
   })
 })

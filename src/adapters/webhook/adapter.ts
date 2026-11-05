@@ -326,6 +326,10 @@ export class WebhookAdapter implements ChannelAdapter {
     }
     if (picked.fallback) this.#dialectFallback += 1
     const event = headerOf(request, 'x-github-event') ?? headerOf(request, 'x-forgejo-event') ?? headerOf(request, 'x-gitea-event') ?? ''
+    if (event === '') {
+      this.#answer(response, 400, 'cannot tell the event class')
+      return
+    }
     const delivery = headerOf(request, 'x-github-delivery') ?? headerOf(request, 'x-forgejo-delivery') ?? headerOf(request, 'x-gitea-delivery') ?? ''
     if (this.#config.repos.length > 0) {
       const repo = record.repository as Record<string, unknown> | undefined
@@ -354,8 +358,11 @@ export class WebhookAdapter implements ChannelAdapter {
     }
     this.#remember(key)
     this.#remember(mapped.message.eventKey)
+    const at = this.#now()
     const message: InboundMessage = {
       ...mapped.message,
+      transport: { ...mapped.message.transport, timestamp: mapped.message.transport.timestamp === 0 ? at : mapped.message.transport.timestamp },
+      receivedAt: at,
       adapter: fitAdapterMeta(mapped.message.adapter, ADAPTER_META_MAX_BYTES),
     }
     this.#stats.event(`${message.kind ?? 'message'}.${message.event?.postType ?? 'unknown'}`)

@@ -169,7 +169,8 @@ function eventKeyOf(input: {
         ? whole(record(input.payload.comment)?.id)
         : undefined
   if (id !== undefined) {
-    return input.event === 'issue_comment' ? `comment:${id}` : `review_comment:${id}`
+    const base = input.event === 'issue_comment' ? `comment:${id}` : `review_comment:${id}`
+    return input.action === 'created' ? base : `${base}:${input.action}`
   }
   const review = whole(record(input.payload.review)?.id)
   if (input.event === 'pull_request_review' && review !== undefined) return `review:${review}`
@@ -180,18 +181,31 @@ function eventKeyOf(input: {
       text(record(input.payload.discussion)?.updated_at) ??
       ''
     const prefix = input.event === 'pull_request' ? 'pr' : 'issue'
-    return `${prefix}:${input.entity.full}#${input.entity.number}:${input.action}:${stamp}`
+    return stamp === ''
+      ? `${prefix}:${input.entity.full}#${input.entity.number}:${input.action}:${input.delivery}`
+      : `${prefix}:${input.entity.full}#${input.entity.number}:${input.action}:${stamp}`
   }
   if (input.event === 'push') {
     const after = text(input.payload.after) ?? text(record(input.payload.head_commit)?.id) ?? ''
     return `push:${input.entity.full}:${after}`
   }
-  if (CI_EVENTS.has(input.event)) {
-    const run = record(input.payload.workflow_run) ?? record(input.payload.check_run) ?? record(input.payload.check_suite) ?? input.payload
-    const id = whole(run.id) ?? ''
-    const attempt = whole(run.run_attempt) ?? 1
-    const conclusion = text(run.conclusion) ?? text(input.payload.state) ?? ''
-    return `run:${input.entity.full}:${id}:${attempt}:${conclusion}`
+  if (input.event === 'workflow_run') {
+    const run = record(input.payload.workflow_run) ?? {}
+    return `run:${input.entity.full}:${whole(run.id) ?? ''}:${whole(run.run_attempt) ?? 1}:${text(run.conclusion) ?? ''}`
+  }
+  if (input.event === 'check_run') {
+    const run = record(input.payload.check_run) ?? {}
+    return `check:${input.entity.full}:${whole(run.id) ?? ''}:${text(run.status) ?? ''}:${text(run.conclusion) ?? ''}`
+  }
+  if (input.event === 'check_suite') {
+    const run = record(input.payload.check_suite) ?? {}
+    return `suite:${input.entity.full}:${whole(run.id) ?? ''}:${text(run.status) ?? ''}:${text(run.conclusion) ?? ''}`
+  }
+  if (input.event === 'status') {
+    const sha = text(input.payload.sha) ?? ''
+    const context = text(input.payload.context) ?? ''
+    const state = text(input.payload.state) ?? ''
+    return `status:${input.entity.full}:${sha}:${context}:${state}`
   }
   return `delivery:${input.delivery}`
 }
