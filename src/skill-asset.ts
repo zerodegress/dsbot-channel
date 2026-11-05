@@ -30,7 +30,7 @@ export function registerSkill(ctx: Context, enabled: boolean, warn: (message: st
   try {
     content = readFileSync(skillPath(), 'utf8')
   } catch {
-    warn(`dsbot-channel: the packaged skill was not read from ${skillPath()}; the plugin mounts without it`)
+    warn('dsbot-channel: the packaged skill was not read from assets/skill.md; the plugin mounts without it')
     return
   }
   ctx.effect(() => skills.register({ name: SKILL_NAME, description: SKILL_DESCRIPTION, content }), 'dsbot-channel: skill')
