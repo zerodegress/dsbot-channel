@@ -122,7 +122,7 @@ config:
 
 ## Webhook
 
-GitHub 或 Forgejo 的 webhook，房间就是 issue：`gh:<owner>/<repo>#<number>`。
+评论所在的房间按 issue 或 pull request 命名：`gh:<owner>/<repo>#<number>`；只属于仓库的事件（如 push、release）所在房间是 `gh:<owner>/<repo>`。
 
 ```yaml
 config:
@@ -143,13 +143,13 @@ config:
 | `transport.listen.host` / `.port` / `.path` | `127.0.0.1` / `8463` / `/github/webhook` | 调用到达的位置 |
 | `transport.secret` | required | 凭据引用：原始请求体的 HMAC-SHA256 密钥 |
 | `transport.token` | required | 凭据引用，用来发评论 |
-| `transport.dialect` | `auto` | `github`、`forgejo` 或 `auto` |
+| `transport.dialect` | `auto` | `github`、`forgejo`，或由请求头判断的 `auto`；请求写了另一种方言时返回 400 |
 | `transport.api` | `https://api.github.com` | 评论 API 的基地址 |
 | `transport.login` | required | 本 bot 的 login，用于解析 `@` |
 | `transport.bots` | `[]` | 计入 bot 发言的 login |
 | `transport.repos` | `[]` | 可选的 `owner/repo` 白名单 |
 
-issue 评论或 review 评论会起一个回合，回复作为评论发回同一个 issue。`issues`、`pull_request`、`push`、`release` 与 CI 事件是 `action` 事件：只带一行摘要，除非类的名字写进 `events.turn`（`action.push`、`action.ci`、`action.issues` 等），否则不起回合。ping 与 installation 事件是 `meta`，什么都不跑。签名校验不通过的请求直接 401，不进网关；同一次投递、或同一条评论换个 delivery 重投，只跑一次。这个 adapter 只写评论，不编辑、不关闭任何东西。
+issue 评论或 review 评论会起一个回合，回复作为评论发回同一个 issue。评论之外的事件，例如 `issues`、`pull_request`、`push`、`release` 与 CI 运行，是 `action` 事件：只带一行摘要，除非类的名字写进 `events.turn`（`action.push`、`action.ci`、`action.issues` 等），否则不起回合。ping 与 installation 事件直接回 200，在进网关前丢掉。签名校验不通过的请求直接 401，不进网关；同一次投递、或同一条评论换个 delivery 重投，只跑一次。这个 adapter 只写评论，不编辑、不关闭任何东西。
 
 ## 回合与切段
 

@@ -122,7 +122,7 @@ One adapter speaks one protocol; a field of another protocol is refused at load.
 
 ## Webhook
 
-A GitHub or Forgejo webhook is a room whose address is the issue: `gh:<owner>/<repo>#<number>`.
+A comment lives in a room named for its issue or pull request: `gh:<owner>/<repo>#<number>`. An event that belongs to the repository alone, such as a push or a release, lives in `gh:<owner>/<repo>`.
 
 ```yaml
 config:
@@ -143,13 +143,13 @@ config:
 | `transport.listen.host` / `.port` / `.path` | `127.0.0.1` / `8463` / `/github/webhook` | where the calls arrive |
 | `transport.secret` | required | credential reference: the HMAC-SHA256 key of the raw body |
 | `transport.token` | required | credential reference used to post a comment |
-| `transport.dialect` | `auto` | `github`, `forgejo` or `auto` |
+| `transport.dialect` | `auto` | `github`, `forgejo`, or `auto` to read it from the request headers; a request naming the other dialect gets 400 |
 | `transport.api` | `https://api.github.com` | base URL of the comment api |
 | `transport.login` | required | the bot's own login, used for `@` mentions |
 | `transport.bots` | `[]` | logins counted as bot speech |
 | `transport.repos` | `[]` | optional `owner/repo` allow list |
 
-An issue comment or a review comment runs a turn, and the answer is posted as a comment on the same issue. `issues`, `pull_request`, `push`, `release` and CI events are `action` events: each carries a one line summary and starts no turn unless its class is listed in `events.turn` (`action.push`, `action.ci`, `action.issues`, …). A ping or installation event is `meta` and runs nothing. A request whose signature does not verify is refused with 401 and never reaches the gateway; a repeated delivery, or the same comment under a new delivery, runs once. The answer is the only thing this adapter writes: it never edits or closes anything.
+An issue comment or a review comment runs a turn, and the answer is posted as a comment on the same issue. Events that are not comments, such as `issues`, `pull_request`, `push`, `release` and CI runs, are `action` events: each carries a one line summary and starts no turn unless its class is listed in `events.turn` (`action.push`, `action.ci`, `action.issues`, …). A ping or installation event is answered with 200 and dropped before the gateway. A request whose signature does not verify is refused with 401 and never reaches the gateway; a repeated delivery, or the same comment under a new delivery, runs once. The answer is the only thing this adapter writes: it never edits or closes anything.
 
 ## Turns and delivery
 
