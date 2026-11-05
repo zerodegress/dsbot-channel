@@ -28,6 +28,10 @@ export {
   defineAdapterPlugin,
 } from './adapter-registry.js'
 export { registryPlugin } from './registry-plugin.js'
+export { default as systemOneJudge, Config as systemOneJudgeConfig } from './system-one.js'
+export { default as llmJudge, Config as llmJudgeConfig } from './llm.js'
+export { JUDGE_SERVICE } from './judge-providers.js'
+export type { JudgeFn, JudgeVerdictLike } from './judge-providers.js'
 export type { AdapterFactory, AdapterMount, AdapterOptions } from './adapter-registry.js'
 export { CHAIN_ID_MAX, GUIDANCE_MAX, INBOUND_REJECTIONS, MESSAGE_KINDS, REFUSE_REASONS, REPLY_TARGET_MAX, REQUEST_ID_MAX, SESSION_KEY_MAX, tokenProblem } from './contract.js'
 export type {

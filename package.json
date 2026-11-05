@@ -31,6 +31,14 @@
     "./registry": {
       "types": "./dist/registry.d.ts",
       "default": "./dist/registry.js"
+    },
+    "./system-one": {
+      "types": "./dist/system-one.d.ts",
+      "default": "./dist/system-one.js"
+    },
+    "./llm": {
+      "types": "./dist/llm.d.ts",
+      "default": "./dist/llm.js"
     }
   },
   "files": [

@@ -69,6 +69,8 @@ adapter 可以用 `session` 指定每回合都跑在某个已有会话里，用 
 `delivery` 块可以写在顶层或单个 adapter 上，把回合回复切成多段并按节奏发送。只有回合回复会被切：`send_text`、拒绝与 `decline` 的说明都整段发出。`split.byBlankLine`（默认 `true`）在空行处切，`split.maxParts`（默认 `4`）把超出的部分并进最后一段、不丢弃，`split.maxChars`（默认 `0`，关闭）按码点硬切且不拆代理对与 CRLF。`pacing` 在发送下一段前等待「该段码点数 ÷ `charsPerSecond`（默认 `14`）」，夹在 `minMs`（默认 `700`）与 `maxMs`（默认 `5000`）之间；最后一段发完不等。某段失败就停掉后续段，整条回复按失败上报并带上已发出的段数。正文首尾的空行会被丢弃，段与段之间的空行也不会随消息发出。顶层和 adapter 都没有 `delivery` 块时回复整段发送；adapter 上的空块不添加任何键，顶层的值照旧生效。
 `pipeline` 块声明节点链。`judge` 节点需要宿主提供 `dsbot-channel/judge` 服务，它以 `judge(event, context)` 返回 `{ score, reason? }`；声明了节点却没有这个服务会挂载失败，判定超时或抛错时按 `judge_timeout` / `judge_failed` 拒绝这条消息。`judge` 节点还可以带 `allowAtLeast`（0 到 1）：判定分达到或超过它就放行，低于它则以 `judge_below_threshold` 连同分数拒绝；不配则只计分。bot/session 层可以在 judge 节点上插入或覆盖 `allowAtLeast`。判定分必须是 0 到 1 之间的有限数，否则无论是否配阈值都按 `judge_failed` 处理。
 
+这个服务有两个可挂载入口：`dsbot-channel/system-one` 按 systemone schema 问一个类型化问题，把 `noul`、`score` 或 `choice` 的返回读成分数；`dsbot-channel/llm` 调 OpenAI 兼容的 `chat/completions`，只接受裸 JSON 判定。两者都取 `credential`（宿主任凭服务里的引用名）、`baseUrl`、`model` 与可选的 `maxChars`（`system-one` 默认 `2000`、`llm` 默认 `6000`）；`system-one` 另需 `question`，含 `type`（`noul`、`score` 或 `choice`）、`instructions` 与该类型用到的 `criteria`、`options`、`target`、`min`、`max`。provider 要排在网关之前：网关在挂载时读取这个服务，写在网关之后会在加载期失败。两者都发送正文、作用域、作者 id 与是否被点名——不带历史、不带工具；`429` / `529` 重试一次，整次调用受 `pipeline.judgeTimeoutMs` 约束。`llm` 只接受裸 JSON。
+
 印象库默认关闭，配置顶层的 `impressions` 块给出绝对路径的 `dir` 才启用。它存放关于本回合对端或本群的短笔记，用 `impression_put`、`impression_get`、`impression_forget` 读写。
 
 | 字段 | 默认值 | 作用 |

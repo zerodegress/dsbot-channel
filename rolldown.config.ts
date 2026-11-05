@@ -1,7 +1,12 @@
 import { defineConfig } from 'rolldown'
 
 export default defineConfig({
-  input: { index: 'src/index.ts', registry: 'src/registry.ts' },
+  input: {
+    index: 'src/index.ts',
+    registry: 'src/registry.ts',
+    'system-one': 'src/system-one.ts',
+    llm: 'src/llm.ts',
+  },
   output: {
     dir: 'dist',
     format: 'esm',
