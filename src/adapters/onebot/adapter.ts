@@ -24,6 +24,7 @@ import type {
   SendResult,
 } from '../../contract.js'
 import type { AuthorKind, MediaInput, MediaRef, Mentioned, Scope } from '../../event-types.js'
+import type { MessageKind } from '../../contract.js'
 import { buildEvent, handleProblem } from '../../event-build.js'
 import { ADAPTER_META_MAX_BYTES } from '../../adapter-meta.js'
 
@@ -64,6 +65,16 @@ export interface OneBotEvent {
   raw_message?: unknown
   message?: unknown
   sender?: { nickname?: unknown; card?: unknown }
+  notice_type?: unknown
+  request_type?: unknown
+  meta_event_type?: unknown
+  operator_id?: unknown
+  target_id?: unknown
+  flag?: unknown
+  comment?: unknown
+  interval?: unknown
+  status?: unknown
+  file?: { name?: unknown; size?: unknown }
 }
 
 export const ONEBOT_PEER_GUIDANCE =
@@ -148,8 +159,7 @@ function replyIdOf(segments: unknown): string | undefined {
   return undefined
 }
 
-/** Maps one OneBot event onto the inbound message core takes; returns undefined for a non-message event. */
-export function mapOneBotEvent(
+function mapOneBotMessage(
   event: OneBotEvent,
   config: OneBotAdapterConfig,
   chainOf: (messageId: string) => string | undefined,
@@ -227,6 +237,163 @@ export function mapOneBotEvent(
     adapter: built.meta.adapter,
     receivedAt: now(),
   }
+}
+
+/** The class a status counts an event under; undefined for a message, 'unknown' for a post_type we do not read. */
+export function oneBotEventClass(event: OneBotEvent): string | undefined {
+  const postType = typeof event.post_type === 'string' ? event.post_type : ''
+  if (postType === 'message') return undefined
+  if (postType === 'message_sent') return 'message_sent'
+  if (postType === 'notice') {
+    return `notice.${typeof event.notice_type === 'string' && event.notice_type.length > 0 ? event.notice_type : 'unknown'}`
+  }
+  if (postType === 'request') {
+    return `request.${typeof event.request_type === 'string' && event.request_type.length > 0 ? event.request_type : 'unknown'}`
+  }
+  if (postType === 'meta_event') {
+    return `meta.${typeof event.meta_event_type === 'string' && event.meta_event_type.length > 0 ? event.meta_event_type : 'unknown'}`
+  }
+  return 'unknown'
+}
+
+/** One line of peer text, bounded: control characters flattened, whitespace collapsed. */
+function wireText(value: unknown, limit = 120): string {
+  if (typeof value !== 'string') return ''
+  let out = ''
+  for (const char of value) {
+    const code = char.codePointAt(0) ?? 0
+    out += code < 0x20 || (code >= 0x7f && code <= 0x9f) ? ' ' : char
+  }
+  return Array.from(out.replace(/\s+/g, ' ').trim()).slice(0, limit).join('')
+}
+
+/** A field kept token-shaped, so an event key never carries whitespace or control characters. */
+function tokenPart(value: unknown, limit = 48): string {
+  const text =
+    typeof value === 'string' ? value : typeof value === 'number' && Number.isFinite(value) ? String(value) : ''
+  return Array.from(text)
+    .map((char) => (/[A-Za-z0-9_.-]/.test(char) ? char : '_'))
+    .join('')
+    .slice(0, limit)
+}
+
+function summaryOf(event: OneBotEvent, postType: string, type: string, subType: string | undefined, groupId: string | undefined, userId: string | undefined): string {
+  const id = (value: unknown): string => idOf(value) ?? 'unknown'
+  if (postType === 'message_sent') {
+    const kind = typeof event.message_type === 'string' ? event.message_type : 'unknown'
+    return `[onebot sent: ${kind}] message ${id(event.message_id)} in ${groupId ?? userId ?? 'unknown'}`
+  }
+  if (postType === 'meta_event') {
+    return `[onebot meta: ${type}] account ${id(event.self_id)}${subType === undefined ? '' : ` ${subType}`}`
+  }
+  if (postType === 'request') {
+    const comment = wireText(event.comment)
+    const head = `[onebot request: ${type}] user ${id(event.user_id)}`
+    if (type === 'group') return `${head} asked to join group ${groupId ?? 'unknown'}${comment.length === 0 ? '' : `: ${comment}`}`
+    return `${head} asked to be a friend${comment.length === 0 ? '' : `: ${comment}`}`
+  }
+  const head = `[onebot notice: ${type}]`
+  const who = id(event.user_id)
+  switch (type) {
+    case 'group_recall':
+      return `${head} user ${who} recalled message ${id(event.message_id)} in group ${groupId ?? 'unknown'}`
+    case 'friend_recall':
+      return `${head} user ${who} recalled a message`
+    case 'group_ban':
+      return `${head} operator ${id(event.operator_id)} banned user ${id(event.target_id)} in group ${groupId ?? 'unknown'}`
+    case 'group_lift_ban':
+      return `${head} operator ${id(event.operator_id)} lifted a ban in group ${groupId ?? 'unknown'}`
+    case 'group_increase':
+      return `${head} user ${who} joined group ${groupId ?? 'unknown'}`
+    case 'group_decrease':
+      return `${head} user ${who} left group ${groupId ?? 'unknown'}`
+    case 'group_admin':
+      return `${head} user ${who} ${subType === 'unset' ? 'lost' : 'gained'} admin in group ${groupId ?? 'unknown'}`
+    case 'group_upload':
+      return `${head} user ${who} uploaded ${wireText(event.file?.name) || 'a file'} to group ${groupId ?? 'unknown'}`
+    case 'group_card':
+      return `${head} user ${who} changed card in group ${groupId ?? 'unknown'}`
+    case 'notify':
+      return `${head} ${subType ?? 'notice'} from user ${who}`
+    default:
+      return `${head} from user ${who}`
+  }
+}
+
+/** Maps a notice, request, meta event or a self echo onto the same inbound shape, marked by kind. */
+function mapOneBotOther(event: OneBotEvent, config: OneBotAdapterConfig, now: () => number): InboundMessage | undefined {
+  const postType = typeof event.post_type === 'string' ? event.post_type : ''
+  if (postType !== 'notice' && postType !== 'request' && postType !== 'meta_event' && postType !== 'message_sent') {
+    return undefined
+  }
+  const selfId = idOf(event.self_id)
+  if (config.selfId !== undefined && selfId !== undefined && selfId !== config.selfId) return undefined
+  const groupId = idOf(event.group_id)
+  const userId = idOf(event.user_id) ?? idOf(event.target_id) ?? selfId
+  const observedAt = typeof event.time === 'number' && Number.isFinite(event.time) ? event.time * 1000 : now()
+  const kind: MessageKind = postType === 'meta_event' ? 'meta' : postType === 'request' ? 'request' : 'notice'
+  const type =
+    postType === 'notice'
+      ? (typeof event.notice_type === 'string' && event.notice_type.length > 0 ? event.notice_type : 'unknown')
+      : postType === 'request'
+        ? (typeof event.request_type === 'string' && event.request_type.length > 0 ? event.request_type : 'unknown')
+        : postType === 'meta_event'
+          ? (typeof event.meta_event_type === 'string' && event.meta_event_type.length > 0 ? event.meta_event_type : 'unknown')
+          : 'sent'
+  const subType = typeof event.sub_type === 'string' && event.sub_type.length > 0 ? event.sub_type : undefined
+  const identity = [
+    tokenPart(groupId),
+    tokenPart(userId),
+    tokenPart(idOf(event.message_id)),
+    tokenPart(idOf(event.target_id)),
+    tokenPart(event.flag),
+    typeof event.time === 'number' && Number.isFinite(event.time) ? String(event.time) : '',
+  ]
+    .filter((part) => part.length > 0)
+    .join('-')
+  const eventKey = `onebot:${tokenPart(config.channel, 40)}:${kind}.${tokenPart(type)}:${identity.length === 0 ? 'event' : identity}`.slice(0, 256)
+  const scope: Scope = groupId === undefined ? 'c2c' : 'group'
+  const sessionKey = groupId === undefined ? `peer:${userId ?? selfId ?? 'unknown'}` : `group:${groupId}`
+  const summary = summaryOf(event, postType, type, subType, groupId, userId)
+  return {
+    eventKey,
+    kind,
+    event: { postType, ...(subType === undefined ? {} : { subType }) },
+    chainId: eventKey,
+    sessionKey,
+    replyTarget: sessionKey,
+    requestId: eventKey,
+    source: { kind: 'onebot', instance: config.channel, peer: groupId ?? userId ?? null, scope },
+    author: {
+      senderId: userId ?? selfId ?? 'unknown',
+      kind: config.bots.includes(userId ?? '') ? 'bot' : 'person',
+      personId: null,
+    },
+    rawText: summary,
+    body: { text: summary, media: [], replyTo: null },
+    transport: {
+      messageId: eventKey,
+      timestamp: observedAt,
+      mentioned: { self: false, others: false, all: false },
+      isReply: false,
+      signature: null,
+    },
+    declared: { nickname: '', avatar: '' },
+    adapter: {},
+    receivedAt: now(),
+  }
+}
+
+/** Maps one OneBot event onto the inbound message core takes; returns undefined for an event we do not read. */
+export function mapOneBotEvent(
+  event: OneBotEvent,
+  config: OneBotAdapterConfig,
+  chainOf: (messageId: string) => string | undefined,
+  warn?: (message: string) => void,
+  now: () => number = Date.now,
+): InboundMessage | undefined {
+  if (event.post_type === 'message') return mapOneBotMessage(event, config, chainOf, warn, now)
+  return mapOneBotOther(event, config, now)
 }
 
 class Seen {
@@ -904,6 +1071,8 @@ export class OneBotAdapter implements ChannelAdapter {
 
   /** Turns one OneBot event into a message and hands it to core, whatever carried it. */
   async #acceptEvent(event: OneBotEvent): Promise<void> {
+    const code = oneBotEventClass(event)
+    if (code !== undefined) this.#stats.event(code)
     const message = mapOneBotEvent(
       event,
       this.#config,
@@ -912,6 +1081,7 @@ export class OneBotAdapter implements ChannelAdapter {
       this.#now,
     )
     if (message === undefined) return
+    if ((message.kind ?? 'message') !== 'message') return
     if (this.#dedupe.claim(`${message.source.scope}:${message.replyTarget}:${message.requestId}`)) {
       this.#warn?.(`dsbot-channel: kept a repeated onebot message ${message.requestId} from ${message.replyTarget} out of a turn`)
       return

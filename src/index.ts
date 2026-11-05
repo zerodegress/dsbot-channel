@@ -29,13 +29,15 @@ export {
 } from './adapter-registry.js'
 export { registryPlugin } from './registry-plugin.js'
 export type { AdapterFactory, AdapterMount, AdapterOptions } from './adapter-registry.js'
-export { CHAIN_ID_MAX, GUIDANCE_MAX, INBOUND_REJECTIONS, REFUSE_REASONS, REPLY_TARGET_MAX, REQUEST_ID_MAX, SESSION_KEY_MAX, tokenProblem } from './contract.js'
+export { CHAIN_ID_MAX, GUIDANCE_MAX, INBOUND_REJECTIONS, MESSAGE_KINDS, REFUSE_REASONS, REPLY_TARGET_MAX, REQUEST_ID_MAX, SESSION_KEY_MAX, tokenProblem } from './contract.js'
 export type {
   AdapterCheckSettings,
   AdapterHandle,
   AdapterPorts,
   ChannelAdapter,
+  EventDescriptor,
   InboundMessage,
+  MessageKind,
   InboundRejection,
   InboundVerdict,
   PrepareInput,

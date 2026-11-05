@@ -33,6 +33,8 @@ export interface ChannelSnapshot {
   authFailures: number
   /** Messages from an instance the roster does not name. */
   unknownInstance: number
+  /** Non-message events by the transport's own class, before core sees them. */
+  events?: Record<string, number> | undefined
   /** Peers that spoke a protocol version this build does not sign. */
   protocolMismatches: number
   lastProtocolMismatchAt: number | null
@@ -62,6 +64,7 @@ export class ChannelStats {
   readonly #unknownWarned = new Set<string>()
   #emptyTurns = 0
   readonly #sendFailures = new Map<string, number>()
+  readonly #events = new Map<string, number>()
 
   constructor(now: () => number = Date.now) {
     this.#now = now
@@ -133,6 +136,11 @@ export class ChannelStats {
     return true
   }
 
+  /** Counts one non-message event by class; a message is not one of these. */
+  event(code: string): void {
+    this.#events.set(code, (this.#events.get(code) ?? 0) + 1)
+  }
+
   sendFailed(code: string): void {
     this.#sendFailures.set(code, (this.#sendFailures.get(code) ?? 0) + 1)
   }
@@ -165,6 +173,7 @@ export class ChannelStats {
       lastProtocolMismatchAt: this.#lastProtocolMismatchAt,
       staleSentAt: Object.fromEntries(this.#staleSentAt),
       health: { emptyTurns: this.#emptyTurns, sendFailures: Object.fromEntries(this.#sendFailures) },
+      events: Object.fromEntries(this.#events),
       sampledAt: this.#now(),
     }
   }
@@ -184,6 +193,7 @@ export function countersOf(snapshot: ChannelSnapshot): AdapterCounters {
     protocolMismatches: snapshot.protocolMismatches,
     staleSentAt: { ...snapshot.staleSentAt },
     sendFailures: { ...snapshot.health.sendFailures },
+    ...(Object.keys(snapshot.events ?? {}).length === 0 ? {} : { events: { ...snapshot.events } }),
     lastFailure:
       snapshot.lastFailure === null ? null : { at: snapshot.lastFailure.at, reason: snapshot.lastFailure.reason },
   }

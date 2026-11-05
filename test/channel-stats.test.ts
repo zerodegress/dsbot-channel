@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { ChannelStats } from '../src/channel-stats.js'
+import { ChannelStats, countersOf } from '../src/channel-stats.js'
 
 function stats(start = 1_000): { stats: ChannelStats; clock: (value: number) => void } {
   let now = start
@@ -46,6 +46,7 @@ describe('a channel reports its own state', () => {
       staleSentAt: {},
       lastProtocolMismatchAt: null,
       health: { emptyTurns: 0, sendFailures: {} },
+      events: {},
       sampledAt: 1_000,
     })
   })
@@ -151,6 +152,16 @@ describe('a snapshot is a copy', () => {
     snapshot.lastFailure!.reason = 'tampered'
     snapshot.state = 'listening'
     expect(channel.snapshot()).toMatchObject({ state: 'failed', lastFailure: { reason: 'EADDRINUSE' } })
+  })
+})
+
+describe('the events a transport reads', () => {
+  test('counts each class apart and leaves messages out', () => {
+    const { stats: channel } = stats()
+    channel.event('notice.group_recall')
+    channel.event('notice.group_recall')
+    channel.event('meta.heartbeat')
+    expect(countersOf(channel.snapshot()).events).toEqual({ 'notice.group_recall': 2, 'meta.heartbeat': 1 })
   })
 })
 

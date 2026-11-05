@@ -16,9 +16,22 @@ export const INBOUND_REJECTIONS = [
 ] as const
 export type InboundRejection = (typeof INBOUND_REJECTIONS)[number]
 
+export const MESSAGE_KINDS = ['message', 'notice', 'request', 'meta'] as const
+export type MessageKind = (typeof MESSAGE_KINDS)[number]
+
+/** What a non-message event is, in the transport's own class names, never the raw payload. */
+export interface EventDescriptor {
+  postType: string
+  subType?: string | undefined
+}
+
 export interface InboundMessage {
   /** Built by the adapter; core only consumes it. */
   eventKey: string
+  /** What this event is; an adapter that does not say carries a message. */
+  kind?: MessageKind | undefined
+  /** The transport's class for a non-message event. */
+  event?: EventDescriptor | undefined
   /** Opaque dictionary key; core never parses it. */
   sessionKey: string
   /** The address of the conversation this message came from; core never parses it. */
