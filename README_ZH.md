@@ -104,7 +104,7 @@ adapter 可以用 `session` 指定每回合都跑在某个已有会话里，用 
 | `transport.sentAtWindowMs` | `300000` | p2p：签名新鲜度窗口 |
 | `transport.maxBodyBytes` | — | p2p：请求体上限 |
 | `transport.waitMs` | — | p2p：重复消息的等待时长 |
-| `transport.api.url` | — | OneBot `http`/`ws-forward`：动作端点 |
+| `transport.api.url` | 必填 | OneBot `http`/`ws-forward`：动作端点 |
 | `transport.event.url` | 同 `api.url` | OneBot `ws-forward`：事件 socket |
 | `transport.selfId` | 取事件里的值 | OneBot：期望的账号 id |
 | `transport.bots` | 空 | OneBot：接受的 Bot id |

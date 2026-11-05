@@ -104,7 +104,7 @@ The impression library is off until a top-level `impressions` block names an abs
 | `transport.sentAtWindowMs` | `300000` | p2p: signature freshness window |
 | `transport.maxBodyBytes` | — | p2p: request body limit |
 | `transport.waitMs` | — | p2p: how long a duplicate waits |
-| `transport.api.url` | — | OneBot `http`/`ws-forward`: action endpoint |
+| `transport.api.url` | required | OneBot `http`/`ws-forward`: action endpoint |
 | `transport.event.url` | same as `api.url` | OneBot `ws-forward`: event socket |
 | `transport.selfId` | from the event | OneBot: expected account id |
 | `transport.bots` | empty | OneBot: accepted bot ids |
