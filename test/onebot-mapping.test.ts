@@ -182,7 +182,7 @@ describe('the non-message events a link reads', () => {
   test('a recall becomes a notice with a one-line summary and no raw payload', () => {
     const notice = mapOneBotEvent(recall(), config, noChain)!
     expect(notice.kind).toBe('notice')
-    expect(notice.event).toEqual({ postType: 'notice' })
+    expect(notice.event).toEqual({ postType: 'notice', type: 'group_recall' })
     expect(notice.sessionKey).toBe('group:12345')
     expect(notice.rawText).toBe('[onebot notice: group_recall] user 20002 recalled message 30003 in group 12345')
     expect(notice.body).toEqual({ text: notice.rawText, media: [], replyTo: null })
@@ -214,8 +214,8 @@ describe('the non-message events a link reads', () => {
       noChain,
     )!
     expect(ban.kind).toBe('notice')
-    expect(ban.event).toEqual({ postType: 'notice', subType: 'ban' })
-    expect(ban.rawText).toBe('[onebot notice: group_ban] operator 10001 banned user 40004 in group 12345')
+    expect(ban.event).toEqual({ postType: 'notice', type: 'group_ban', subType: 'ban' })
+    expect(ban.rawText).toBe('[onebot notice: group_ban] operator 10001 banned user 20002 in group 12345')
   })
 
   test('a friend request keeps its comment on one bounded line', () => {
@@ -251,7 +251,7 @@ describe('the non-message events a link reads', () => {
       noChain,
     )!
     expect(sent.kind).toBe('notice')
-    expect(sent.event).toEqual({ postType: 'message_sent' })
+    expect(sent.event).toEqual({ postType: 'message_sent', type: 'sent' })
     expect(sent.rawText).toBe('[onebot sent: group] message 50005 in 12345')
   })
 
@@ -289,5 +289,59 @@ describe('the non-message events a link reads', () => {
     expect(oneBotEventClass(event({ post_type: 'meta_event', meta_event_type: 'lifecycle' }))).toBe('meta.lifecycle')
     expect(oneBotEventClass(event({ post_type: 'message_sent' }))).toBe('message_sent')
     expect(oneBotEventClass(event({ post_type: 'notice', notice_type: undefined }))).toBe('notice.unknown')
+    expect(oneBotEventClass(event({ post_type: 'notice', notice_type: 'x'.repeat(5000) }))).toBe('notice.other')
+  })
+})
+
+describe('the key a notice is filed under', () => {
+  test('a ban and a lift in the same second are different events', () => {
+    const base = {
+      post_type: 'notice',
+      notice_type: 'group_ban',
+      operator_id: 10001,
+      user_id: 20002,
+      group_id: 12345,
+      time: 1_700_000_600,
+    }
+    const banned = mapOneBotEvent(event({ ...base, sub_type: 'ban' }), config, noChain)!
+    const lifted = mapOneBotEvent(event({ ...base, sub_type: 'lift_ban' }), config, noChain)!
+    expect(banned.eventKey).not.toBe(lifted.eventKey)
+  })
+})
+
+describe('the actor a notice names', () => {
+  test('a ban is authored by the operator, not by the banned user', () => {
+    const ban = mapOneBotEvent(
+      event({
+        post_type: 'notice',
+        notice_type: 'group_ban',
+        sub_type: 'ban',
+        operator_id: 10001,
+        user_id: 20002,
+        group_id: 12345,
+        time: 1_700_000_700,
+      }),
+      config,
+      noChain,
+    )!
+    expect(ban.author.senderId).toBe('10001')
+    expect(ban.rawText).toContain('20002')
+  })
+
+  test('long ids cannot push the time out of the key', () => {
+    const long = 'x'.repeat(48)
+    const shape = {
+      post_type: 'notice',
+      notice_type: 'group_recall',
+      group_id: long,
+      user_id: long,
+      message_id: long,
+      target_id: long,
+      flag: long,
+    }
+    const first = mapOneBotEvent(event({ ...shape, time: 1_700_000_001 }), config, noChain)!
+    const second = mapOneBotEvent(event({ ...shape, time: 1_700_000_002 }), config, noChain)!
+    expect(first.eventKey).not.toBe(second.eventKey)
+    expect(first.eventKey.length).toBeLessThanOrEqual(256)
   })
 })
