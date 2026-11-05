@@ -6,6 +6,8 @@ English | [中文](./README_ZH.md)
 
 A message gateway for ds-bot: events from several external platforms reach one bot, and answers go back to the conversation they came from.
 
+Default column: a value is that default, `required` means the key must be set, and `off` means nothing is set: the feature does not happen until the key is written.
+
 ## Requirements
 
 - Node.js `^20.19.0` or `>=22.12.0`, and pnpm
@@ -27,6 +29,37 @@ From source: `pnpm install`, then `pnpm build`.
 
 Mount it in a profile through its bundle patch. It ships enabled with no adapters, so it stays idle until a profile declares one.
 
+## Adapt
+
+```yaml
+config:
+  adapters:
+    - kind: onebot
+      channel: onebot:self
+      botName: self-bot
+      transport:
+        listen: { host: 127.0.0.1, port: 7331 }
+        api: { url: "http://127.0.0.1:3000" }
+        accessToken: ONEBOT_TOKEN
+```
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `kind` | `p2p` | `p2p`, `onebot`, or `x-[a-z0-9-]+` for a third-party transport |
+| `channel` | required | unique link name; peers see it on the wire |
+| `botName` | required | the bot this link answers for |
+| `transport` | required | per-kind block; see Peers and OneBot |
+| `session` | off | run every turn in one existing session |
+| `cwd` | off | directory for the sessions this adapter creates |
+| `agentPreset` | off | preset for the sessions it creates |
+| `model` | off | `provider/model` for those sessions |
+| `status` | `true` | register the read-only status route |
+| `skill` | `true` | register the packaged skill when the host has a skills service |
+
+`channel` is the adapter's only name. `reply`, `turn`, `policy` and `delivery` may also be written at the top level; an adapter inherits every key it does not write and replaces the whole value of each key it does write, so an array is taken as written and not merged item by item. `pipeline` is a layer of its own: `global` nodes, `maxTurnMs`, `judgeTimeoutMs` and `judgePoints` at the top level, and `inherit`, `remove`, `insert` and `override` on an adapter. `events` is read on the adapter only; `impressions` and `identity` only at the top level. The plugin status names the level behind each key under `config[].layers`. `secret` and `accessToken` are reference names in the host credentials service, not secrets. Paths are POSIX; Windows is not supported.
+
+## Peers
+
 ```yaml
 config:
   adapters:
@@ -35,16 +68,27 @@ config:
       botName: self-bot
       transport:
         listen: { host: 127.0.0.1, port: 7123 }
-        peers:
-          - instance: peer-a
-            secret: PEER_A_REFERENCE
-    - kind: onebot
-      channel: onebot:self
-      botName: self-bot
-      transport:
-        listen: { host: 127.0.0.1, port: 7331 }
-        api: { url: "http://127.0.0.1:3000" }
-        accessToken: ONEBOT_TOKEN
+        peers: { peer-a: PEER_A_REFERENCE }
+```
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `transport.listen.host` | `127.0.0.1` | concrete address only |
+| `transport.listen.port` | `7123` | |
+| `transport.peers` | required | list or mapping of peer instance to secret reference |
+| `transport.dedupe.ttlMs` / `.limit` | `604800000` / `100000` | replay window and size |
+| `transport.inflightTtlMs` | `300000` | a stale claim is reclaimed after this |
+| `transport.sentAtWindowMs` | `300000` | signature freshness window |
+| `transport.maxBodyBytes` | `65536` | request body limit |
+| `transport.waitMs` | `10000` | how long a duplicate waits |
+
+A peer written as a list entry also carries `url`, `host` and `botName`; a mapping value is only a secret reference. Mixing the two forms is refused at mount. `peers[].instance` is the peer's name, not this link's — the one place a name is not this adapter's `channel`. Two entries of one peer instance must use different secrets. `transport.inflightTtlMs` must be above `pipeline.maxTurnMs`.
+
+## OneBot
+
+```yaml
+config:
+  adapters:
     - kind: onebot
       channel: onebot:ws
       botName: self-bot
@@ -54,75 +98,129 @@ config:
         accessToken: ONEBOT_TOKEN
 ```
 
-`transport.peers` takes either a list or a mapping of peer instance to secret reference, `peers: { peer-a: PEER_A_REFERENCE }`. The list form also carries `url`, `host` and `botName`; a mapping value is only a secret reference, so a peer that needs one of the other fields stays in the list form. A profile that mixes the two forms, or maps an instance to something that is not a secret reference, is refused at mount.
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `transport.protocol` | `http` | `http`, `ws-forward` or `ws-reverse` |
+| `transport.listen.host` | `127.0.0.1` | concrete address only |
+| `transport.listen.port` | `7331` | |
+| `transport.listen.path` | `http`: `/onebot/event`; `ws-reverse`: `/onebot/ws` | event path |
+| `transport.api.url` | required | `http(s)` for `http`, `ws(s)` for `ws-forward`: action endpoint |
+| `transport.event.url` | same as `api.url` | `ws-forward`: event socket |
+| `transport.reconnect` | `{ initialMs: 500, maxMs: 30000, factor: 2 }` | `ws-forward`: `false` keeps the link offline |
+| `transport.heartbeat` | off | socket liveness; `timeoutMs` must exceed `intervalMs` |
+| `transport.accessToken` | off | reference name |
+| `transport.selfId` | from the event | a mismatched event is dropped |
+| `transport.bots` | `[]` | ids treated as bots, not as people |
+| `transport.sendTimeoutMs` | `10000` | one action |
+| `transport.history.group` / `.private` | `false` | allow `read_history` per address kind |
+| `transport.fileFromUrl` | `false` | allow `send_file` from an http(s) url |
+| `events.turn` | `[]` | non-message classes that may start a turn |
 
-`channel`, `botName` and `transport` are required, and `channel` must be unique. `reply`, `turn` and `policy` may also be written at the top level as defaults; an adapter replaces the keys it writes whole, so an object or an array is taken as written and not merged field by field. The plugin-level status names the level that supplied each key under `config[].layers`. Two adapters that answer for the same bot and session key still share that session, but each keeps its own coalescing window and context buffer. `channel` is the adapter's only name; peers see it on the wire too. `kind` defaults to `p2p`; `onebot` is the other built-in, and a third-party transport registers as `x-[a-z0-9-]+`, at most 32 characters. `secret` and `accessToken` are reference names in the host credentials service, not the secrets themselves. Paths in a profile are read as POSIX paths; Windows is not supported.
+One adapter speaks one protocol; a field of another protocol is refused at load. One implementation reaches one adapter, not two. `events.turn` names classes such as `notice.group_recall` or `request.friend`; every other non-message event is recorded and counted without starting a turn, `meta_event` or a self echo never starts one, a name outside the classes OneBot sends fails the load, and a named class skips the mention requirement.
 
-`peers[].instance` is the peer's name, not this link's: it is the one place a name is not this adapter's `channel`. Two entries of one peer instance must reference different secrets; the same reference twice is refused at mount.
-
-An OneBot adapter speaks one protocol: `transport.protocol` is `http` (the default), `ws-forward` or `ws-reverse`. A field that belongs to another protocol is refused when the profile loads. Each adapter is one link: an implementation reached over one protocol gets one OneBot adapter, not two.
-
-`events.turn` lists the non-message event classes that may start a turn, such as `notice.group_recall` or `request.friend`; the default is none, so a notice or a request is recorded in the turn context and counted under `counters.events` without starting a turn. A `meta_event` and a self echo never start a turn, and a name outside the classes OneBot sends fails the mount; a non-message event also skips the mention requirement, which it has no field for.
-
-An adapter may name `session` to run every turn in one existing session, and `cwd`, `agentPreset` and `model` for the sessions it creates; `model` is written `provider/model`. The host's session controller selects that model through `selectModel`; a host without it warns and the session keeps its own model. The adapter status reports the outcome under `modelSelection`, as `requested` and a `state` of `applied`, `unsupported` or `rejected`; the field is absent when no model is named and until the host has decided.
-
-A `delivery` block, at the top level or on one adapter, splits a turn reply into parts and paces them. Only a turn reply is split: `send_text`, decline and refusal messages go out whole. `split.byBlankLine` (default `true`) cuts at blank lines, `split.maxParts` (default `4`) merges what exceeds it into the last part instead of dropping it, and `split.maxChars` (default `0`, off) hard-cuts by code point without splitting a surrogate pair or a CRLF. `pacing` waits before each next part for its code points ÷ `charsPerSecond` (default `14`), kept inside `minMs` (default `700`) and `maxMs` (default `5000`); the last part is not followed by a wait. A part that fails stops the rest, and the reply is reported as failed with the parts already sent. Leading and trailing blank lines are dropped, and the blank lines that separate two parts are not sent. Without a `delivery` block anywhere, a reply is sent whole; an empty block on an adapter adds no keys, so the top level's values stay.
-A `pipeline` block declares the node chain. A `judge` node needs the host service `dsbot-channel/judge`, which answers `judge(event, context)` with `{ score, reason? }`; a profile that declares the node without the service fails the mount, and a judge that times out or throws refuses the message with `judge_timeout` or `judge_failed`. A judge node may also carry `allowAtLeast` (0 to 1): a verdict at or above it allows the message, one below it refuses with `judge_below_threshold` and the score, and without it the node only scores. A bot or session layer may insert or override `allowAtLeast` on a judge node. A verdict score must be a finite number between 0 and 1; anything else fails the judge as `judge_failed`, whether or not a threshold is set.
-
-Two entries fill that service: `dsbot-channel/system-one` asks a typed question over the systemone schema and reads a `noul`, `score` or `choice` answer as a score; `dsbot-channel/llm` posts an OpenAI-compatible `chat/completions` request and accepts only a bare JSON verdict. Each takes `credential` (a reference name in the host credentials service), `baseUrl`, `model` and optional `maxChars` (default `2000` for `system-one`, `6000` for `llm`), plus, for `system-one`, a `question` with `type` (`noul`, `score` or `choice`), `instructions` and the `criteria`, `options`, `target`, `min` and `max` that type needs. Mount one of them before the gateway: the gateway reads the service while it mounts, and a provider listed after it fails at load. Both send the body, the scope, the author id and whether the bot was named, with no history and no tools, and both retry once on `429` or `529` inside `pipeline.judgeTimeoutMs`. `llm` accepts bare JSON only.
-
-The impression library is off until a top-level `impressions` block names an absolute `dir`. It keeps short notes about the person a turn answers or about its group; `impression_put`, `impression_get` and `impression_forget` read and write them.
+## Turns and delivery
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `policy.requireMention` | `false` | groups must mention |
-| `policy.groupBots` | `whenMentioned` | bot messages in groups |
-| `policy.relayLimit` | `3` | rounds one peer may hold |
-| `policy.relayResetMs` | `300000` | idle time that resets the count |
-| `policy.budget.capacity` | off | points per window |
-| `policy.budget.hardLimit` | `1` | ratio that refuses |
-| `reply.default` | `auto` | how a turn answers |
-| `reply.byScope` | — | mode per scope |
-| `reply.rules` | — | ordered overrides |
-| `turn.coalesceMs` | `0` | merge window |
+| `reply.default` | `auto` | `auto` or `tool` |
+| `reply.byScope` | off | mode per scope: `c2c`, `group`, `p2p` |
+| `reply.rules` | off | ordered rules; first match wins |
+| `turn.coalesceMs` | `0` | merge window; `0` keeps one message per turn |
 | `turn.maxBatch` | `10` | messages per batch |
 | `turn.maxChars` | `8000` | batch budget |
-| `turn.context.messages` | `0` | earlier messages |
+| `turn.context.messages` | `0` | earlier messages put before the turn |
 | `turn.context.chars` | `2000` | context budget |
+| `turn.impressions.chars` | `400` | notes injected into a turn; `0` injects none |
 | `delivery.split.byBlankLine` | `true` | split a reply at blank lines |
 | `delivery.split.maxParts` | `4` | parts per reply, tail merged |
-| `delivery.split.maxChars` | `0` | code points per part, off |
+| `delivery.split.maxChars` | `0` | code points per part |
 | `delivery.pacing.charsPerSecond` | `14` | reading speed for the wait |
 | `delivery.pacing.minMs` | `700` | shortest wait between parts |
 | `delivery.pacing.maxMs` | `5000` | longest wait between parts |
-| `pipeline.judgeTimeoutMs` | `8000` | one judge call |
+| `policy.requireMention` | `false` | group messages must name the bot or everyone; needs a transport that can tell mentions apart, so `p2p` is refused at mount |
+| `policy.groupBots` | `whenMentioned` | `whenMentioned`, `silent` or `answer` |
+| `policy.relayLimit` | `3` | rounds one peer may hold in a row |
+| `policy.relayResetMs` | `300000` | idle time that resets the count |
+| `policy.budget.capacity` | off | points per window |
+| `policy.budget.hardLimit` | `1` | ratio that refuses |
+| `policy.deny.words` / `regexes` | `[]` | refuse a message whose text matches |
+| `policy.allow.peers` | `[]` | matches `source.peer`: a peer instance on p2p, or the group or user id of a OneBot event |
+
+Only a turn reply is split; `send_text`, decline and refusal messages go out whole. Without a `delivery` block anywhere a reply is sent whole. A batch is charged and recorded once; `policy.budget.capacity` is required once `policy.budget` is written. `policy.deny.words` matches case-insensitively as a substring and an empty word is refused at mount; `policy.deny.regexes` compiles case-insensitively and an invalid pattern is refused at mount; `policy.allow.peers` matches `source.peer` and an empty name is refused. Any of the three that is not empty adds a `deny` or `allow` node, a match refusing or allowing the message. Each wait before a part is the part's code points divided by `charsPerSecond`, kept inside `minMs` and `maxMs`; the last part is not followed by a wait. `maxChars: 0` turns the hard cut off, and an empty `delivery` block adds no keys. A part that fails stops the rest and the reply is reported failed with the parts already sent.
+
+## Judge
+
+```yaml
+config:
+  pipeline:
+    global:
+      - { id: score, type: judge, allowAtLeast: 0.6 }
+```
+
+A `judge` node needs the host service `dsbot-channel/judge`, which answers `judge(event, context)` with `{ score, reason? }`. A profile that declares the node without the service fails the mount; a judge that times out or throws refuses the message with `judge_timeout` or `judge_failed`, and a score that is not a finite number from 0 to 1 fails it the same way. `allowAtLeast` may also be inserted or overridden on a bot or session layer. `judgeTimeoutMs` must not exceed `maxTurnMs`.
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `pipeline.maxTurnMs` | `120000` | one turn's budget |
+| `pipeline.judgeTimeoutMs` | `8000` | one judge call, retries included |
 | `pipeline.judgePoints` | `1` | points a verdict costs |
 | `allowAtLeast` (judge node) | off | score that allows the message |
-| `impressions.dir` | off | notes root |
-| `session` / `cwd` / `agentPreset` / `model` | — | one session, its directory, preset and model |
-| `transport.listen.host` | `127.0.0.1` | concrete address only |
-| `transport.listen.port` | `7123` / `7331` | p2p / OneBot |
-| `transport.listen.path` | `/onebot/event`, `/onebot/ws` | OneBot: event path |
-| `transport.dedupe.ttlMs` / `transport.dedupe.limit` | — | p2p: replay window and size |
-| `transport.inflightTtlMs` | `300000` | p2p: stale claim reclaimed after |
-| `transport.sentAtWindowMs` | `300000` | p2p: signature freshness window |
-| `transport.maxBodyBytes` | — | p2p: request body limit |
-| `transport.waitMs` | — | p2p: how long a duplicate waits |
-| `transport.api.url` | required | OneBot `http`/`ws-forward`: action endpoint |
-| `transport.event.url` | same as `api.url` | OneBot `ws-forward`: event socket |
-| `transport.selfId` | from the event | OneBot: expected account id |
-| `transport.bots` | empty | OneBot: accepted bot ids |
-| `transport.sendTimeoutMs` | `10000` | OneBot: one action |
-| `transport.protocol` | `http` | OneBot: how it connects |
-| `transport.heartbeat` | off | OneBot on a socket: liveness |
-| `transport.reconnect` | backoff | OneBot `ws-forward`: backoff, `false` to stay offline |
-| `transport.history.group` | `false` | OneBot: group history |
-| `transport.history.private` | `false` | OneBot: private history |
-| `transport.fileFromUrl` | `false` | OneBot: file from a url |
-| `status` | `true` | status route |
-| `skill` | `true` | register the packaged skill with the host |
 
-An answer that is empty, or that holds nothing but whitespace, is not sent: it is counted as an empty turn like any other answer with no text, so no empty message reaches the conversation.
+Two entries fill that service; mount one of them **before** the gateway.
+
+```yaml
+- id: dsbot-channel/system-one
+  name: dsbot-channel/system-one
+  config:
+    credential: JUDGE_KEY
+    baseUrl: https://api.typesafe.ai/v1/systemone
+    model: jev-latest
+    question:
+      type: noul
+      instructions: Is this message worth answering?
+```
+
+```yaml
+- id: dsbot-channel/llm
+  name: dsbot-channel/llm
+  config:
+    credential: JUDGE_KEY
+    baseUrl: https://openrouter.ai/api/v1
+    model: vendor/model
+```
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `credential` | required | reference name |
+| `baseUrl` | required | absolute http(s) URL; `llm` posts to `{baseUrl}/chat/completions` |
+| `model` | required | model id |
+| `maxChars` | `2000` (`system-one`), `6000` (`llm`) | body is truncated to this |
+| `question` | required | the typed question, for `system-one` |
+| `question.type` | required | `noul`, `score` or `choice` |
+| `question.instructions` | required | one question or statement |
+| `question.criteria` | `noul`: `{ true, false }`; `score`: 2 to 10 ordered levels | |
+| `question.options` | required | options, for `choice` |
+| `question.target` | required | for `choice`: the option whose probability becomes the score |
+| `question.min` / `.max` | off | `score` only: convert a raw score; equal values fail the verdict |
+
+Both entries send the body, the scope, the author id and whether the bot was named — no history, no tools — and retry once on `429` or `529` inside `pipeline.judgeTimeoutMs`. `llm` accepts bare JSON only. A second provider on one profile fails at load.
+
+## Identity and impressions
+
+`identity` is a top-level block with `people` and `bots` lists. Each node is `{ id, accounts: [{ kind, instance, accountId }] }`. A node id and an account may each appear once; `accounts` may not be empty. A built-in account must name an instance that is mounted, and a configured p2p peer counts; a third-party kind is only warned about. An account that resolves fills `author.personId`.
+
+`impressions.dir` is an absolute notes root; the library is off without it. `impressions.import` runs once per bot at mount: `{ path, as: { personId } }` or `{ path, as: { groupKey } }`, where `path` is absolute, `personId` must be a declared person and not a bot, and `groupKey` is `<channel>|<sessionKey>` for a group session on a mounted channel. It reads bullet lines only, warns about what it cannot place without blocking the mount, and a second run adds nothing.
+
+`turn.impressions.chars` caps the notes put before a turn: `400` by default, `0` to `2000`, and `0` turns injection off. Notes are injected for `c2c` and `group` turns only, never for `p2p`, where the three tools answer `unsupported` as well. `impression_put` writes about the turn's counterpart, which needs a `personId`, or with `about: "group"` about its group; `impression_get` reads one scope of `c2c`, `group` or `cross` for that counterpart or, with `about: "group"`, the group archive; `impression_forget` removes one id, or with `all: true` everything about that counterpart, or with `about: "group"` about its group.
+
+## Layers
+
+| Block | Where it may be written |
+| --- | --- |
+| `reply`, `turn`, `policy`, `delivery` | top level and each adapter, key by key |
+| `pipeline` | top level: `global` nodes, `maxTurnMs`, `judgeTimeoutMs`, `judgePoints`; adapter: `inherit`, `remove`, `insert`, `override` |
+| `events` | adapter only |
+| `impressions`, `identity` | top level only |
 
 ## License
 

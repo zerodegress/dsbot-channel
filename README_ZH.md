@@ -6,10 +6,12 @@
 
 ds-bot 的消息网关：多个外部平台的事件进到同一个 Bot，回答投回它来的那个会话。
 
+默认值列：写具体值就是默认值，`required` 表示必须设置，`off` 表示什么都没设——不写这个键就不会发生。
+
 ## 环境要求
 
 - Node.js `^20.19.0` 或 `>=22.12.0`，以及 pnpm
-- 宿主的服务：凭据（解析密钥）、会话控制（跑回合）、tools（tool 模式）。宿主提供 session persistence 时，每条回复投递成功后经它 flush 会话日志。
+- 宿主的服务：凭据（适配器密钥）、会话控制（跑回合）、tools（tool 模式）。宿主提供 session persistence 时，每条回复投递成功后经它 flush 会话日志。
 
 已在 DS-Bot 0.2.x 上测试；不保证与后续版本兼容。
 
@@ -27,6 +29,37 @@ dsh plugin --profile ds-bot add dsbot-channel
 
 通过 bundle patch 在 profile 里挂载。出厂启用但没有 adapter，不配就一直空闲。
 
+## 适配
+
+```yaml
+config:
+  adapters:
+    - kind: onebot
+      channel: onebot:self
+      botName: self-bot
+      transport:
+        listen: { host: 127.0.0.1, port: 7331 }
+        api: { url: "http://127.0.0.1:3000" }
+        accessToken: ONEBOT_TOKEN
+```
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `kind` | `p2p` | `p2p`、`onebot`，第三方传输用 `x-[a-z0-9-]+` |
+| `channel` | required | 链路唯一名字，对端在线上也看到它 |
+| `botName` | required | 这条链路服务的 Bot |
+| `transport` | required | 按 kind 的配置块，见「对端」与「OneBot」 |
+| `session` | off | 所有回合都跑在同一个已有会话里 |
+| `cwd` | off | 它创建的会话所在目录 |
+| `agentPreset` | off | 它创建的会话所用 preset |
+| `model` | off | 这些会话的模型，写作 `provider/model` |
+| `status` | `true` | 注册只读状态路由 |
+| `skill` | `true` | 宿主有 skills 服务时注册包内技能 |
+
+`channel` 是 adapter 唯一的名字。`reply`、`turn`、`policy`、`delivery` 也可以写在顶层；adapter 没写的键一律继承，写了的键整值替换，数组按原样生效、不逐项合并。`pipeline` 自成一层：顶层写 `global` 节点、`maxTurnMs`、`judgeTimeoutMs` 与 `judgePoints`，adapter 上写 `inherit`、`remove`、`insert`、`override`。`events` 只在 adapter 上读；`impressions` 与 `identity` 只能写在顶层。插件状态在 `config[].layers` 里标出每个键来自哪一层。`secret` 与 `accessToken` 是宿主任凭服务里的引用名，不是密钥。路径按 POSIX 解释，不支持 Windows。
+
+## 对端
+
 ```yaml
 config:
   adapters:
@@ -35,16 +68,27 @@ config:
       botName: self-bot
       transport:
         listen: { host: 127.0.0.1, port: 7123 }
-        peers:
-          - instance: peer-a
-            secret: PEER_A_REFERENCE
-    - kind: onebot
-      channel: onebot:self
-      botName: self-bot
-      transport:
-        listen: { host: 127.0.0.1, port: 7331 }
-        api: { url: "http://127.0.0.1:3000" }
-        accessToken: ONEBOT_TOKEN
+        peers: { peer-a: PEER_A_REFERENCE }
+```
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `transport.listen.host` | `127.0.0.1` | 只接受具体地址 |
+| `transport.listen.port` | `7123` | |
+| `transport.peers` | required | 对端 instance 到 secret 引用的列表或映射 |
+| `transport.dedupe.ttlMs` / `.limit` | `604800000` / `100000` | 重放窗口与条数 |
+| `transport.inflightTtlMs` | `300000` | 超过它仍未完成的 claim 视为残留 |
+| `transport.sentAtWindowMs` | `300000` | 签名新鲜度窗口 |
+| `transport.maxBodyBytes` | `65536` | 请求体上限 |
+| `transport.waitMs` | `10000` | 重复消息等待多久 |
+
+写成列表条目的对端还可以带 `url`、`host`、`botName`；映射的值只能是 secret 引用。两种形态混用会在挂载期被拒。`peers[].instance` 是对端的名字，不是本链路的——这是唯一一处不是本 adapter `channel` 的名字。同一对端 instance 的两条条目必须用不同 secret。`transport.inflightTtlMs` 必须大于 `pipeline.maxTurnMs`。
+
+## OneBot
+
+```yaml
+config:
+  adapters:
     - kind: onebot
       channel: onebot:ws
       botName: self-bot
@@ -54,75 +98,129 @@ config:
         accessToken: ONEBOT_TOKEN
 ```
 
-`transport.peers` 可以写成列表，也可以写成「对端 instance → 密钥引用」的映射，如 `peers: { peer-a: PEER_A_REFERENCE }`。列表写法还能带 `url`、`host` 与 `botName`；映射的值只能是密钥引用，需要这几项的对端仍用列表写法。同一份 `peers` 里混写两种写法，或映射的值不是密钥引用，都会在挂载期被拒绝。
-
-`channel`、`botName`、`transport` 必填，`channel` 不能重复。`reply`、`turn`、`policy` 也可以写在顶层作为默认值；adapter 写哪个键就整块替换那个键，对象和数组按写的那样整体生效，不逐项合并。插件级状态里的 `config[].layers` 标明每个键来自哪一层。两个 adapter 服务同一个 bot、落在同一个会话键时，会话仍然共享，但合并窗口与上下文缓冲各有一份。`channel` 是 adapter 唯一的名字，对端在线路上看到的也是它。`kind` 默认 `p2p`；另一个内置是 `onebot`，第三方传输用 `x-[a-z0-9-]+` 的名字，最长 32 字符。`secret` 与 `accessToken` 填的是宿主任凭服务里的引用名，不是密钥本身。配置里的路径按 POSIX 解释，暂不支持 Windows。
-
-`peers[].instance` 是对端的名字，不是这条链路的名字：这是唯一一处名字不是该 adapter 的 `channel` 的地方。同一个 peer instance 的两个条目必须引用不同的 secret；同一引用写两次会在挂载时被拒绝。
-
-一条 OneBot adapter 只用一种协议：`transport.protocol` 取 `http`（默认）、`ws-forward` 或 `ws-reverse`。属于另一种协议的字段会在加载配置时报错。每个 adapter 是一条链路：同一个实现只走一种协议，就只声明一个 OneBot adapter。
-
-`events.turn` 列出允许触发回合的非消息事件类，例如 `notice.group_recall` 或 `request.friend`；默认为空，通知与请求只记入回合上下文并按类计入 `counters.events`，不产生回合。`meta_event` 与自身回声永远不触发回合，写了 OneBot 不发的事件类名会在挂载时被拒绝；非消息事件不检查提及要求，因为它没有这个字段。
-
-adapter 可以用 `session` 指定每回合都跑在某个已有会话里，用 `cwd`、`agentPreset`、`model` 指定它创建的会话；`model` 写成 `provider/model`。宿主的会话控制器通过 `selectModel` 设置该模型；宿主没有这个方法时只 warn，会话保持自己的模型。适配器状态在 `modelSelection` 下报告结果，含 `requested` 与取值 `applied`、`unsupported`、`rejected` 的 `state`；未指定模型、或宿主尚未作出决定时不出现该字段。
-
-`delivery` 块可以写在顶层或单个 adapter 上，把回合回复切成多段并按节奏发送。只有回合回复会被切：`send_text`、拒绝与 `decline` 的说明都整段发出。`split.byBlankLine`（默认 `true`）在空行处切，`split.maxParts`（默认 `4`）把超出的部分并进最后一段、不丢弃，`split.maxChars`（默认 `0`，关闭）按码点硬切且不拆代理对与 CRLF。`pacing` 在发送下一段前等待「该段码点数 ÷ `charsPerSecond`（默认 `14`）」，夹在 `minMs`（默认 `700`）与 `maxMs`（默认 `5000`）之间；最后一段发完不等。某段失败就停掉后续段，整条回复按失败上报并带上已发出的段数。正文首尾的空行会被丢弃，段与段之间的空行也不会随消息发出。顶层和 adapter 都没有 `delivery` 块时回复整段发送；adapter 上的空块不添加任何键，顶层的值照旧生效。
-`pipeline` 块声明节点链。`judge` 节点需要宿主提供 `dsbot-channel/judge` 服务，它以 `judge(event, context)` 返回 `{ score, reason? }`；声明了节点却没有这个服务会挂载失败，判定超时或抛错时按 `judge_timeout` / `judge_failed` 拒绝这条消息。`judge` 节点还可以带 `allowAtLeast`（0 到 1）：判定分达到或超过它就放行，低于它则以 `judge_below_threshold` 连同分数拒绝；不配则只计分。bot/session 层可以在 judge 节点上插入或覆盖 `allowAtLeast`。判定分必须是 0 到 1 之间的有限数，否则无论是否配阈值都按 `judge_failed` 处理。
-
-这个服务有两个可挂载入口：`dsbot-channel/system-one` 按 systemone schema 问一个类型化问题，把 `noul`、`score` 或 `choice` 的返回读成分数；`dsbot-channel/llm` 调 OpenAI 兼容的 `chat/completions`，只接受裸 JSON 判定。两者都取 `credential`（宿主任凭服务里的引用名）、`baseUrl`、`model` 与可选的 `maxChars`（`system-one` 默认 `2000`、`llm` 默认 `6000`）；`system-one` 另需 `question`，含 `type`（`noul`、`score` 或 `choice`）、`instructions` 与该类型用到的 `criteria`、`options`、`target`、`min`、`max`。provider 要排在网关之前：网关在挂载时读取这个服务，写在网关之后会在加载期失败。两者都发送正文、作用域、作者 id 与是否被点名——不带历史、不带工具；`429` / `529` 重试一次，整次调用受 `pipeline.judgeTimeoutMs` 约束。`llm` 只接受裸 JSON。
-
-印象库默认关闭，配置顶层的 `impressions` 块给出绝对路径的 `dir` 才启用。它存放关于本回合对端或本群的短笔记，用 `impression_put`、`impression_get`、`impression_forget` 读写。
-
-| 字段 | 默认值 | 作用 |
+| 字段 | 默认值 | 说明 |
 | --- | --- | --- |
-| `policy.requireMention` | `false` | 群消息必须点名 |
-| `policy.groupBots` | `whenMentioned` | 群内 Bot 消息 |
-| `policy.relayLimit` | `3` | 单个对端连续占用的回合数 |
-| `policy.relayResetMs` | `300000` | 空闲多久重置计数 |
-| `policy.budget.capacity` | 关闭 | 每窗口点数 |
-| `policy.budget.hardLimit` | `1` | 拒绝比例 |
-| `reply.default` | `auto` | 回合怎么答 |
-| `reply.byScope` | — | 按作用域 |
-| `reply.rules` | — | 有序覆盖规则 |
-| `turn.coalesceMs` | `0` | 合并窗口 |
+| `transport.protocol` | `http` | `http`、`ws-forward` 或 `ws-reverse` |
+| `transport.listen.host` | `127.0.0.1` | 只接受具体地址 |
+| `transport.listen.port` | `7331` | |
+| `transport.listen.path` | `http`：`/onebot/event`；`ws-reverse`：`/onebot/ws` | 事件路径 |
+| `transport.api.url` | required | `http` 用 `http(s)`、`ws-forward` 用 `ws(s)`：动作端点 |
+| `transport.event.url` | 同 `api.url` | `ws-forward`：事件 socket |
+| `transport.reconnect` | `{ initialMs: 500, maxMs: 30000, factor: 2 }` | `ws-forward`：`false` 表示不重连 |
+| `transport.heartbeat` | off | socket 存活检查；`timeoutMs` 必须大于 `intervalMs` |
+| `transport.accessToken` | off | 引用名 |
+| `transport.selfId` | 取自事件 | 与本机不符的事件被丢弃 |
+| `transport.bots` | `[]` | 这些 id 按 bot 计，不按人计 |
+| `transport.sendTimeoutMs` | `10000` | 单次动作超时 |
+| `transport.history.group` / `.private` | `false` | 按地址种类允许 `read_history` |
+| `transport.fileFromUrl` | `false` | 允许 `send_file` 用 http(s) url |
+| `events.turn` | `[]` | 允许开回合的非消息事件类 |
+
+一个 adapter 只用一种协议；属于另一种协议的字段在加载期被拒。一个实现只对应一个 adapter，不是两个。`events.turn` 填 `notice.group_recall`、`request.friend` 这类类名；其余非消息事件只被记录与计数、不开回合，`meta_event` 与自己的回声永不开回合，写了 OneBot 不发的事件类会在加载期报错，被点名的类跳过提及要求。
+
+## 回合与切段
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `reply.default` | `auto` | `auto` 或 `tool` |
+| `reply.byScope` | off | 按作用域指定模式：`c2c`、`group`、`p2p` |
+| `reply.rules` | off | 有序规则，首个命中生效 |
+| `turn.coalesceMs` | `0` | 合并窗口；`0` 表示一条消息一个回合 |
 | `turn.maxBatch` | `10` | 每批条数 |
 | `turn.maxChars` | `8000` | 批次预算 |
-| `turn.context.messages` | `0` | 历史条数 |
+| `turn.context.messages` | `0` | 放在回合前的历史条数 |
 | `turn.context.chars` | `2000` | 上下文预算 |
-| `delivery.split.byBlankLine` | `true` | 在空行处切分回复 |
-| `delivery.split.maxParts` | `4` | 每回复段数，超出并入末段 |
-| `delivery.split.maxChars` | `0` | 每段码点数，关闭 |
+| `turn.impressions.chars` | `400` | 注入回合的笔记上限；`0` 表示不注入 |
+| `delivery.split.byBlankLine` | `true` | 按空行切段 |
+| `delivery.split.maxParts` | `4` | 每回复段数，超出并入最后一段 |
+| `delivery.split.maxChars` | `0` | 每段字符数上限 |
 | `delivery.pacing.charsPerSecond` | `14` | 计算等待的阅读速度 |
 | `delivery.pacing.minMs` | `700` | 段间最短等待 |
 | `delivery.pacing.maxMs` | `5000` | 段间最长等待 |
-| `pipeline.judgeTimeoutMs` | `8000` | 单次判定上限 |
-| `pipeline.judgePoints` | `1` | 一次判定扣的点数 |
-| `allowAtLeast`（judge 节点） | 关闭 | 达到该分数才放行 |
-| `impressions.dir` | 关闭 | 笔记根目录 |
-| `session` / `cwd` / `agentPreset` / `model` | — | 固定会话、其目录、预设与模型 |
-| `transport.listen.host` | `127.0.0.1` | 只接受具体地址 |
-| `transport.listen.port` | `7123` / `7331` | p2p / OneBot |
-| `transport.listen.path` | `/onebot/event`、`/onebot/ws` | OneBot：事件路径 |
-| `transport.dedupe.ttlMs` / `transport.dedupe.limit` | — | p2p：重放窗口与容量 |
-| `transport.inflightTtlMs` | `300000` | p2p：在途占用的回收时限 |
-| `transport.sentAtWindowMs` | `300000` | p2p：签名新鲜度窗口 |
-| `transport.maxBodyBytes` | — | p2p：请求体上限 |
-| `transport.waitMs` | — | p2p：重复消息的等待时长 |
-| `transport.api.url` | 必填 | OneBot `http`/`ws-forward`：动作端点 |
-| `transport.event.url` | 同 `api.url` | OneBot `ws-forward`：事件 socket |
-| `transport.selfId` | 取事件里的值 | OneBot：期望的账号 id |
-| `transport.bots` | 空 | OneBot：接受的 Bot id |
-| `transport.sendTimeoutMs` | `10000` | OneBot：单次动作 |
-| `transport.protocol` | `http` | OneBot：连接方式 |
-| `transport.heartbeat` | 关闭 | OneBot 走 socket：存活检查 |
-| `transport.reconnect` | 退避重试 | OneBot `ws-forward`：退避重试，`false` 表示不重连 |
-| `transport.history.group` | `false` | OneBot：读群历史 |
-| `transport.history.private` | `false` | OneBot：读私聊历史 |
-| `transport.fileFromUrl` | `false` | OneBot：用 url 发文件 |
-| `status` | `true` | 状态路由 |
-| `skill` | `true` | 向宿主注册包内技能 |
+| `policy.requireMention` | `false` | 群消息必须点名本 Bot 或所有人；需要能分辨提及的通道，`p2p` 写了会在挂载期被拒 |
+| `policy.groupBots` | `whenMentioned` | `whenMentioned`、`silent` 或 `answer` |
+| `policy.relayLimit` | `3` | 同一对端连续占用的轮数 |
+| `policy.relayResetMs` | `300000` | 空闲多久复位计数 |
+| `policy.budget.capacity` | off | 每窗口点数 |
+| `policy.budget.hardLimit` | `1` | 拒绝比例 |
+| `policy.deny.words` / `regexes` | `[]` | 正文命中即拒 |
+| `policy.allow.peers` | `[]` | 匹配 `source.peer`：p2p 上是对端实例名，OneBot 上是群号或用户号 |
 
-空回答不发送：内容为空、或者只有空白的回答，按「没有文字的回合」计数，不会把一条空消息发进对话。
+只有回合回复会被切段；`send_text`、拒绝与婉拒消息整条发出。任何地方都没写 `delivery` 时回复整条发出。一批只计费一次、只留一条记录；写了 `policy.budget` 后 `policy.budget.capacity` 就是必填。`policy.deny.words` 按大小写不敏感的子串匹配，空词在挂载期被拒；`policy.deny.regexes` 按大小写不敏感编译，非法正则在挂载期被拒；`policy.allow.peers` 匹配 `source.peer`，空名被拒。三者任一非空就自动加上 `deny` 或 `allow` 节点，命中即拒绝或放行。每段前的等待是「该段码点数 ÷ `charsPerSecond`」，夹在 `minMs` 与 `maxMs` 之间，最后一段之后不等待。`maxChars: 0` 关闭硬切，空的 `delivery` 块不添加任何键。某段失败即停止，回复按失败记录已发出的段数。
+
+## 判定
+
+```yaml
+config:
+  pipeline:
+    global:
+      - { id: score, type: judge, allowAtLeast: 0.6 }
+```
+
+`judge` 节点需要宿主服务 `dsbot-channel/judge`，它以 `{ score, reason? }` 回应 `judge(event, context)`。声明了节点但没有该服务，挂载失败；判定超时或抛错分别以 `judge_timeout`、`judge_failed` 拒绝该消息，分数不是 0–1 的有限数同样判失败。`allowAtLeast` 也可以在 bot 或 session 层 insert/override。`judgeTimeoutMs` 不得超过 `maxTurnMs`。
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `pipeline.maxTurnMs` | `120000` | 一个回合的预算 |
+| `pipeline.judgeTimeoutMs` | `8000` | 一次判定，含重试 |
+| `pipeline.judgePoints` | `1` | 一次判定扣的点数 |
+| `allowAtLeast`（judge 节点） | off | 达到该分数就放行 |
+
+两个入口提供该服务，二选一，并且必须**排在网关之前**。
+
+```yaml
+- id: dsbot-channel/system-one
+  name: dsbot-channel/system-one
+  config:
+    credential: JUDGE_KEY
+    baseUrl: https://api.typesafe.ai/v1/systemone
+    model: jev-latest
+    question:
+      type: noul
+      instructions: Is this message worth answering?
+```
+
+```yaml
+- id: dsbot-channel/llm
+  name: dsbot-channel/llm
+  config:
+    credential: JUDGE_KEY
+    baseUrl: https://openrouter.ai/api/v1
+    model: vendor/model
+```
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `credential` | required | 引用名 |
+| `baseUrl` | required | 绝对 http(s) 地址；`llm` 向 `{baseUrl}/chat/completions` 发请求 |
+| `model` | required | 模型 id |
+| `maxChars` | `2000`（`system-one`）、`6000`（`llm`） | 正文截断上限 |
+| `question` | required | 要问的类型化问题，`system-one` 用 |
+| `question.type` | required | `noul`、`score` 或 `choice` |
+| `question.instructions` | required | 一句问题或陈述 |
+| `question.criteria` | `noul`：`{ true, false }`；`score`：2 到 10 档有序 | |
+| `question.options` | required | 选项，`choice` 用 |
+| `question.target` | required | `choice` 用：取哪一项的概率作为分数 |
+| `question.min` / `.max` | off | 仅 `score`：换算原始分；两者相等判失败 |
+
+两个入口都只发送正文、作用域、作者 id 与是否被点名——不带历史、不带工具——并在 `pipeline.judgeTimeoutMs` 内对 `429` / `529` 重试一次。`llm` 只接受裸 JSON。同一个 profile 挂第二个 provider 会在加载期失败。
+
+## 身份与印象库
+
+`identity` 是顶层块，含 `people` 与 `bots` 两个列表。每个节点是 `{ id, accounts: [{ kind, instance, accountId }] }`；节点 id 与账号都只能出现一次，`accounts` 不能为空。内置 kind 的账号必须指向已挂载的实例，已配置的 p2p 对端也算；第三方 kind 只警告。解析到的账号会被写入 `author.personId`。
+
+`impressions.dir` 是笔记根目录的绝对路径，不配它印象库就关闭。`impressions.import` 在挂载时为每个 bot 跑一次：`{ path, as: { personId } }` 或 `{ path, as: { groupKey } }`；`path` 必须是绝对路径，`personId` 必须是已声明的人、不能是 bot，`groupKey` 是已挂载通道上群会话的 `<channel>|<sessionKey>`。它只读 bullet 行，放不下的会警告但不挡挂载；再跑一次不会新增任何记录。
+
+`turn.impressions.chars` 限制放在回合前的笔记量：默认 `400`，范围 `0`–`2000`，`0` 关闭注入。笔记只对 `c2c` 与 `group` 回合注入，`p2p` 从不注入，且在那里三个工具都返回 `unsupported`。`impression_put` 写本回合对端（该账号需有 `personId`），带 `about: "group"` 时写本群；`impression_get` 读该对端在 `c2c`、`group` 或 `cross` 中的一个分区，带 `about: "group"` 时读群存档；`impression_forget` 按 id 删，`all: true` 时删掉关于该对端的全部，带 `about: "group"` 时删本群。
+
+## 各块写在哪一层
+
+| 块 | 可写的位置 |
+| --- | --- |
+| `reply`、`turn`、`policy`、`delivery` | 顶层与每个 adapter，按每个键继承 |
+| `pipeline` | 顶层写 `global` 节点、`maxTurnMs`、`judgeTimeoutMs`、`judgePoints`；adapter 写 `inherit`、`remove`、`insert`、`override` |
+| `events` | 只在 adapter |
+| `impressions`、`identity` | 只能顶层 |
 
 ## 许可证
 
