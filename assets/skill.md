@@ -71,24 +71,26 @@ An adapter whose `capabilities.outbound` is `false` is never written back: core 
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `imap.host` / `imap.port` / `imap.secure` / `imap.user` / `imap.password` | required | the mailbox the link reads; `password` is a credential reference |
+| `imap.host` / `imap.port` / `imap.user` / `imap.password` | required | the mailbox the link reads; `password` is a credential reference |
+| `imap.secure` | `true` | TLS to the mailbox; `false` reads plaintext |
 | `imap.mailbox` | `INBOX` | folder to poll |
 | `imap.pollMs` | `30000` | how often the folder is read |
-| `smtp.host` / `smtp.port` / `smtp.secure` / `smtp.user` / `smtp.password` | required | where an answer is sent; `secure` is `true`, `false` or `starttls` |
+| `smtp.host` / `smtp.port` / `smtp.user` / `smtp.password` | required | where an answer is sent; `password` is a credential reference |
+| `smtp.secure` | `true` | `true`, `false` or `starttls` |
 | `from` | required | the address answers are sent from |
 | `signature` | off | text appended after the answer |
 | `listUnsubscribe` | off | `List-Unsubscribe` value on an answer |
 | `bots` | `[]` | senders counted as bot speech |
-| `lists` | `[]` | list addresses treated as rooms |
-| `maxAttachmentBytes` | off | attachment size kept as media |
+| `lists` | `[]` | addresses that count as lists when the headers do not name one |
+| `maxAttachmentBytes` | `10485760` | largest attachment recorded; larger ones are dropped with a warning |
 
-A thread is a room keyed by its root: `mail:<thread-root>`. An answer carries `In-Reply-To` and the whole `References` chain; a list message answers the list, a direct message answers its sender. HTML is read as text, attachments become media. The IMAP and SMTP links run through `imapflow` and `nodemailer`; the fields do not depend on them.
+A thread is a room keyed by its root: `mail:<thread-root>`; the root is the first `References` entry, else `In-Reply-To`, else the message's own `Message-ID`. An answer carries `In-Reply-To` and the whole `References` chain; a list message answers the list, a direct message answers its sender. HTML is read as text with scripts, styles and images dropped; an attachment is not passed to the model, only its name, type and size are recorded. The IMAP and SMTP links run through `imapflow` and `nodemailer`; the fields do not depend on them.
 
 ### Behaviour blocks
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `policy.requireMention` | `false` | group messages must name the bot or everyone |
+| `policy.requireMention` | `false` | group messages must name the bot or everyone; a transport that cannot tell mentions (`p2p`, `mail`) refuses it at mount |
 | `policy.groupBots` | `whenMentioned` | `whenMentioned`, `silent` or `answer` |
 | `policy.relayLimit` | `3` | rounds one peer may hold in a row |
 | `policy.relayResetMs` | `300000` | idle time that resets the count |

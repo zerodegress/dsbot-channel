@@ -138,18 +138,20 @@ config:
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `transport.imap.host` / `.port` / `.secure` / `.user` / `.password` | required | the mailbox the link reads; `password` is a credential reference |
+| `transport.imap.host` / `.port` / `.user` / `.password` | required | the mailbox the link reads; `password` is a credential reference |
+| `transport.imap.secure` | `true` | TLS to the mailbox; `false` reads plaintext |
 | `transport.imap.mailbox` | `INBOX` | folder to poll |
 | `transport.imap.pollMs` | `30000` | how often the folder is read |
-| `transport.smtp.host` / `.port` / `.secure` / `.user` / `.password` | required | where an answer is sent; `secure` is `true`, `false` or `starttls` |
+| `transport.smtp.host` / `.port` / `.user` / `.password` | required | where an answer is sent; `password` is a credential reference |
+| `transport.smtp.secure` | `true` | `true`, `false` or `starttls` |
 | `transport.from` | required | the address answers are sent from |
 | `transport.signature` | off | text appended after the answer |
 | `transport.listUnsubscribe` | off | `List-Unsubscribe` value on an answer |
 | `transport.bots` | `[]` | senders counted as bot speech |
-| `transport.lists` | `[]` | list addresses treated as rooms |
-| `transport.maxAttachmentBytes` | off | attachment size kept as media |
+| `transport.lists` | `[]` | addresses that count as lists when the headers do not name one |
+| `transport.maxAttachmentBytes` | `10485760` | largest attachment recorded; larger ones are dropped with a warning |
 
-The IMAP and SMTP links run through `imapflow` and `nodemailer`; the fields above do not depend on them. A thread is one chain: an answer carries `In-Reply-To` and the whole `References` chain, so it lands where the conversation is. A list message answers the list, a direct message answers its sender. HTML is read as text: scripts, images and tags are dropped, an attachment becomes media and never body text.
+The IMAP and SMTP links run through `imapflow` and `nodemailer`; the fields above do not depend on them. A thread is one chain: an answer carries `In-Reply-To` and the whole `References` chain, so it lands where the conversation is. The root is the first `References` entry, else `In-Reply-To`, else the message's own `Message-ID`. A list message answers the list, a direct message answers its sender. HTML is read as text: scripts, styles, images and tags are dropped. Attachments are not passed to the model: a name, a type and a size are recorded, and one over `maxAttachmentBytes` is dropped with a warning.
 
 ## Turns and delivery
 
@@ -250,7 +252,7 @@ An inbound message goes through three steps: the adapter drops a duplicate, the 
 
 | Policy key | Default | What it decides |
 | --- | --- | --- |
-| `policy.requireMention` | `false` | a group message must name the bot or everyone; a transport that cannot tell mentions (`p2p`) refuses this at mount |
+| `policy.requireMention` | `false` | a group message must name the bot or everyone; a transport that cannot tell mentions (`p2p`, `mail`) refuses this at mount |
 | `policy.groupBots` | `whenMentioned` | how another bot's group message is treated: `whenMentioned`, `silent` or `answer` |
 | `policy.relayLimit` / `policy.relayResetMs` | `3` / `300000` | how many turns in a row one peer may hold, and the idle time that resets it |
 | `policy.deny.words` / `policy.deny.regexes` | `[]` | substrings and regular expressions that refuse a message; matching is case-insensitive |
