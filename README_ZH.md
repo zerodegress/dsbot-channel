@@ -120,6 +120,38 @@ config:
 
 一个 adapter 只用一种协议；属于另一种协议的字段在加载期被拒。一个实现只对应一个 adapter，不是两个。`events.turn` 按 `<kind>.<type>` 填类名：OneBot 自己的 `notice.group_recall`、`request.friend` 这类，或 adapter 为 push、CI、定时器事件定义的 `action.<type>`。其余非消息事件只被记录与计数、不开回合，`meta_event` 与自己的回声永不开回合，写了未知类名会挂载失败，被点名的类跳过提及要求。
 
+## 邮件
+
+一个邮箱是一条链路，房间按线程根划分：`mail:<thread-root>`。邮件列表地址是回复目标，直邮回给发件人。
+
+```yaml
+config:
+  adapters:
+    - kind: mail
+      channel: mail:bot
+      botName: self-bot
+      transport:
+        imap: { host: 127.0.0.1, port: 993, secure: true, user: bot@example.test, password: IMAP_SECRET, mailbox: INBOX, pollMs: 30000 }
+        smtp: { host: 127.0.0.1, port: 465, secure: true, user: bot@example.test, password: SMTP_SECRET }
+        from: bot@example.test
+```
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `transport.imap.host` / `.port` / `.secure` / `.user` / `.password` | required | 读取用的邮箱；`password` 是凭据引用 |
+| `transport.imap.mailbox` | `INBOX` | 轮询的文件夹 |
+| `transport.imap.pollMs` | `30000` | 轮询间隔 |
+| `transport.smtp.host` / `.port` / `.secure` / `.user` / `.password` | required | 回信走哪台服务器；`secure` 取 `true`、`false` 或 `starttls` |
+| `transport.from` | required | 回信的发件地址 |
+| `transport.signature` | off | 追加在回信正文后的署名 |
+| `transport.listUnsubscribe` | off | 回信上的 `List-Unsubscribe` |
+| `transport.bots` | `[]` | 计入 bot 发言的发件人 |
+| `transport.lists` | `[]` | 当作房间的列表地址 |
+| `transport.maxAttachmentBytes` | off | 保留为媒体的附件大小上限 |
+| `transport.attachDir` | off | 保存附件正文的目录 |
+
+IMAP 与 SMTP 由 `imapflow` 和 `nodemailer` 承担，下面的配置字段不随库变化。一条线程就是一条链：回信带 `In-Reply-To` 与完整的 `References`，所以回复落回原来的讨论。列表邮件回给列表，直邮回给发件人。HTML 按文本读取：脚本、图片与标签都被剥掉，附件进媒体，不进正文。
+
 ## 回合与切段
 
 | 字段 | 默认值 | 说明 |

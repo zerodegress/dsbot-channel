@@ -120,6 +120,38 @@ config:
 
 One adapter speaks one protocol; a field of another protocol is refused at load. One implementation reaches one adapter, not two. `events.turn` names classes as `<kind>.<type>`: OneBot's own, such as `notice.group_recall` or `request.friend`, or an adapter's `action.<type>` for push, CI and timer events. Every other non-message event is recorded and counted without starting a turn, `meta_event` or a self echo never starts one, an unknown name fails the mount, and a named class skips the mention requirement.
 
+## Email
+
+A mailbox is a room keyed by the thread root: `mail:<thread-root>`. A mailing list address is the reply target; a direct mail answers its sender.
+
+```yaml
+config:
+  adapters:
+    - kind: mail
+      channel: mail:bot
+      botName: self-bot
+      transport:
+        imap: { host: 127.0.0.1, port: 993, secure: true, user: bot@example.test, password: IMAP_SECRET, mailbox: INBOX, pollMs: 30000 }
+        smtp: { host: 127.0.0.1, port: 465, secure: true, user: bot@example.test, password: SMTP_SECRET }
+        from: bot@example.test
+```
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `transport.imap.host` / `.port` / `.secure` / `.user` / `.password` | required | the mailbox the link reads; `password` is a credential reference |
+| `transport.imap.mailbox` | `INBOX` | folder to poll |
+| `transport.imap.pollMs` | `30000` | how often the folder is read |
+| `transport.smtp.host` / `.port` / `.secure` / `.user` / `.password` | required | where an answer is sent; `secure` is `true`, `false` or `starttls` |
+| `transport.from` | required | the address answers are sent from |
+| `transport.signature` | off | text appended after the answer |
+| `transport.listUnsubscribe` | off | `List-Unsubscribe` value on an answer |
+| `transport.bots` | `[]` | senders counted as bot speech |
+| `transport.lists` | `[]` | list addresses treated as rooms |
+| `transport.maxAttachmentBytes` | off | attachment size kept as media |
+| `transport.attachDir` | off | folder that keeps attachment bodies |
+
+The IMAP and SMTP links run through `imapflow` and `nodemailer`; the fields above do not depend on them. A thread is one chain: an answer carries `In-Reply-To` and the whole `References` chain, so it lands where the conversation is. A list message answers the list, a direct message answers its sender. HTML is read as text: scripts, images and tags are dropped, an attachment becomes media and never body text.
+
 ## Turns and delivery
 
 | Field | Default | Meaning |

@@ -67,6 +67,24 @@ One adapter accepts one connection in `ws-reverse`; a new connection for the sam
 
 An adapter whose `capabilities.outbound` is `false` is never written back: core does not call its `send` or `refuse`, and the `send_text` tool answers `unsupported` for it. Its turns still run, so a profile that lets such an adapter start turns needs a reply block that always chooses `tool`, or the mount fails.
 
+### mail transport
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `imap.host` / `imap.port` / `imap.secure` / `imap.user` / `imap.password` | required | the mailbox the link reads; `password` is a credential reference |
+| `imap.mailbox` | `INBOX` | folder to poll |
+| `imap.pollMs` | `30000` | how often the folder is read |
+| `smtp.host` / `smtp.port` / `smtp.secure` / `smtp.user` / `smtp.password` | required | where an answer is sent; `secure` is `true`, `false` or `starttls` |
+| `from` | required | the address answers are sent from |
+| `signature` | off | text appended after the answer |
+| `listUnsubscribe` | off | `List-Unsubscribe` value on an answer |
+| `bots` | `[]` | senders counted as bot speech |
+| `lists` | `[]` | list addresses treated as rooms |
+| `maxAttachmentBytes` | off | attachment size kept as media |
+| `attachDir` | off | folder that keeps attachment bodies |
+
+A thread is a room keyed by its root: `mail:<thread-root>`. An answer carries `In-Reply-To` and the whole `References` chain; a list message answers the list, a direct message answers its sender. HTML is read as text, attachments become media. The IMAP and SMTP links run through `imapflow` and `nodemailer`; the fields do not depend on them.
+
 ### Behaviour blocks
 
 | Field | Default | Meaning |
