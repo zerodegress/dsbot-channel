@@ -293,7 +293,12 @@ function actionOf(input: MappingInput, entity: Entity, action: string): InboundM
     kind: 'action',
     event: {
       postType: input.event,
-      type: record(payload.review) === undefined ? semanticClass(input.event) : 'review',
+      type:
+        record(payload.comment) !== undefined
+          ? 'comment'
+          : record(payload.review) !== undefined
+            ? 'review'
+            : semanticClass(input.event),
       ...(action === '' ? {} : { subType: action }),
     },
     sessionKey: scoped,
