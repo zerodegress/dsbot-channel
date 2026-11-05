@@ -298,6 +298,35 @@ describe('the onebot sender', () => {
     expect(nothing).toMatchObject({ ok: false, code: 'rejected' })
   })
 
+  test('a reply to a text message names this bot', async () => {
+    const api = createServer((request, response) => {
+      request.resume()
+      request.on('end', () => {
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({ status: 'ok', retcode: 0, data: { message_id: 77 } }))
+      })
+    })
+    await new Promise<void>((resolve) => api.listen(0, '127.0.0.1', resolve))
+    const apiPort = (api.address() as AddressInfo).port
+    stops.push(async () => {
+      api.close()
+    })
+    const { adapter, port, seen } = await startAdapter({
+      accessToken: REF,
+      api: { url: `http://127.0.0.1:${apiPort}`, timeoutMs: 1000 },
+    })
+
+    const sent = await adapter.send({ target: 'group:12345', eventId: 'evt-1', body: 'hello', sender: 'bot-a', instance: 'onebot:a' })
+    expect(sent).toMatchObject({ ok: true, messageId: '77' })
+
+    expect(await post(port, '/onebot/event', event({
+      message_id: '4002',
+      message: [{ type: 'reply', data: { id: '77' } }, { type: 'text', data: { text: 'thanks' } }],
+    }), `Bearer ${TOKEN}`)).toEqual({ status: 204 })
+    await waitFor(() => seen.length > 0)
+    expect(seen[0]).toMatchObject({ replyToMe: true, rawText: 'thanks' })
+  })
+
   test('a refused credential and a server error map to distinct codes', async () => {
     const api = createServer((request, response) => {
       request.resume()

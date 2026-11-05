@@ -1130,7 +1130,7 @@ export class OneBotAdapter implements ChannelAdapter {
       this.#warn?.(`dsbot-channel: kept a repeated onebot event ${message.requestId} from ${message.replyTarget} out of a turn`)
       return
     }
-    if (message !== undefined && message.kind === 'message' && message.body.replyTo !== null) {
+    if (message !== undefined && (message.kind ?? 'message') === 'message' && message.body.replyTo !== null) {
       const recent = this.#recentSent.get(message.sessionKey)
       if (recent !== undefined && recent.includes(message.body.replyTo)) message.replyToMe = true
     }
