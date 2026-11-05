@@ -138,7 +138,7 @@ config:
 | `delivery.pacing.minMs` | `700` | 段间最短等待 |
 | `delivery.pacing.maxMs` | `5000` | 段间最长等待 |
 
-只有回合回复会被切段；`send_text`、拒绝与婉拒消息整条发出。任何地方都没写 `delivery` 时回复整条发出。一批只计费一次、只留一条记录；写了 `policy.budget` 后 `policy.budget.capacity` 就是必填。`policy.deny.words` 按大小写不敏感的子串匹配，空词在挂载期被拒；`policy.deny.regexes` 按大小写不敏感编译，非法正则在挂载期被拒；`policy.allow.peers` 匹配 `source.peer`，空名被拒。三者任一非空就自动加上 `deny` 或 `allow` 节点，命中即拒绝或放行。每段前的等待是「该段码点数 ÷ `charsPerSecond`」，夹在 `minMs` 与 `maxMs` 之间，最后一段之后不等待。`maxChars: 0` 关闭硬切，空的 `delivery` 块不添加任何键。某段失败即停止，回复按失败记录已发出的段数。
+只有回合回复会被切段；`send_text`、拒绝与婉拒消息整条发出。任何地方都没写 `delivery` 时回复整条发出。一批只计费一次、只留一条记录。每段前的等待是「该段码点数 ÷ `charsPerSecond`」，夹在 `minMs` 与 `maxMs` 之间，最后一段之后不等待。`maxChars: 0` 关闭硬切，空的 `delivery` 块不添加任何键。某段失败即停止，回复按失败记录已发出的段数。
 
 ## 判定
 
