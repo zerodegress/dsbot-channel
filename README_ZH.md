@@ -45,10 +45,10 @@ config:
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
-| `kind` | `p2p` | `p2p`、`onebot`、`webhook`，第三方传输用 `x-[a-z0-9-]+` |
+| `kind` | `p2p` | `p2p`、`onebot`、`webhook`、`mail`，第三方传输用 `x-[a-z0-9-]+` |
 | `channel` | required | 链路唯一名字，对端在线上也看到它 |
 | `botName` | required | 这条链路服务的 Bot |
-| `transport` | required | 按 kind 的配置块，见「对端」与「OneBot」 |
+| `transport` | required | 按 kind 的配置块，见「对端」「OneBot」「Webhook」与「邮件」 |
 | `session` | off | 所有回合都跑在同一个已有会话里 |
 | `cwd` | off | 它创建的会话所在目录 |
 | `agentPreset` | off | 它创建的会话所用 preset |

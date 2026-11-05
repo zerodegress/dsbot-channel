@@ -45,10 +45,10 @@ config:
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `kind` | `p2p` | `p2p`, `onebot`, `webhook`, or `x-[a-z0-9-]+` for a third-party transport |
+| `kind` | `p2p` | `p2p`, `onebot`, `webhook`, `mail`, or `x-[a-z0-9-]+` for a third-party transport |
 | `channel` | required | unique link name; peers see it on the wire |
 | `botName` | required | the bot this link answers for |
-| `transport` | required | per-kind block; see Peers and OneBot |
+| `transport` | required | per-kind block; see Peers, OneBot, Webhook and Email |
 | `session` | off | run every turn in one existing session |
 | `cwd` | off | directory for the sessions this adapter creates |
 | `agentPreset` | off | preset for the sessions it creates |

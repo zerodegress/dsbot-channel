@@ -19,10 +19,10 @@ config:
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `kind` | `p2p` | `p2p`, `onebot`, `webhook`, or `x-[a-z0-9-]+` (third-party) |
+| `kind` | `p2p` | `p2p`, `onebot`, `webhook`, `mail`, or `x-[a-z0-9-]+` (third-party) |
 | `channel` | required | unique link name; peers see it on the wire |
 | `botName` | required | the bot this link answers for |
-| `transport` | required | per-kind block below |
+| `transport` | required | per-kind block below: `p2p`, `onebot`, `webhook` or `mail` |
 | `status` | `true` | register the read-only status route |
 | `skill` | `true` | register the packaged skill when the host has a skills service |
 
