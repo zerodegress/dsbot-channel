@@ -34,7 +34,6 @@ export interface MailConfig {
   bots: readonly string[]
   lists: readonly string[]
   maxAttachmentBytes?: number | undefined
-  attachDir?: string | undefined
 }
 
 export interface MailOptions {
@@ -224,7 +223,7 @@ export class MailAdapter implements ChannelAdapter {
       this.#stats.authenticated()
       for (const item of batch.messages) {
         if (this.#stopped) break
-        const mail = parseMail(item.raw.toString('utf8'))
+        const mail = parseMail(item.raw.toString('utf8'), this.#config.maxAttachmentBytes)
         const message = mapMail({
           mail,
           config: { channel: this.#config.channel, from: this.#config.from, bots: this.#config.bots, lists: this.#config.lists },

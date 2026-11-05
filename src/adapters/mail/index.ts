@@ -12,7 +12,6 @@ const FIELDS = new Set([
   'bots',
   'lists',
   'maxAttachmentBytes',
-  'attachDir',
 ])
 
 function refuse(message: string, path: (string | number)[] = ['transport']): never {
@@ -100,7 +99,6 @@ export function parseMailConfig(mount: AdapterMount): MailConfig {
     bots: strings(raw.bots, 'bots'),
     lists: strings(raw.lists, 'lists'),
     ...(typeof maxAttachmentBytes === 'number' ? { maxAttachmentBytes } : {}),
-    ...(typeof raw.attachDir === 'string' ? { attachDir: raw.attachDir } : {}),
   }
 }
 

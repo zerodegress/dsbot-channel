@@ -148,7 +148,6 @@ config:
 | `transport.bots` | `[]` | 计入 bot 发言的发件人 |
 | `transport.lists` | `[]` | 当作房间的列表地址 |
 | `transport.maxAttachmentBytes` | off | 保留为媒体的附件大小上限 |
-| `transport.attachDir` | off | 保存附件正文的目录 |
 
 IMAP 与 SMTP 由 `imapflow` 和 `nodemailer` 承担，下面的配置字段不随库变化。一条线程就是一条链：回信带 `In-Reply-To` 与完整的 `References`，所以回复落回原来的讨论。列表邮件回给列表，直邮回给发件人。HTML 按文本读取：脚本、图片与标签都被剥掉，附件进媒体，不进正文。
 

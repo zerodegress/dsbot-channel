@@ -81,7 +81,6 @@ An adapter whose `capabilities.outbound` is `false` is never written back: core 
 | `bots` | `[]` | senders counted as bot speech |
 | `lists` | `[]` | list addresses treated as rooms |
 | `maxAttachmentBytes` | off | attachment size kept as media |
-| `attachDir` | off | folder that keeps attachment bodies |
 
 A thread is a room keyed by its root: `mail:<thread-root>`. An answer carries `In-Reply-To` and the whole `References` chain; a list message answers the list, a direct message answers its sender. HTML is read as text, attachments become media. The IMAP and SMTP links run through `imapflow` and `nodemailer`; the fields do not depend on them.
 

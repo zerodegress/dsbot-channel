@@ -253,11 +253,11 @@ function attachmentsOf(part: MailPart, depth = 0): MailAttachment[] {
 }
 
 /** Reads the headers a thread and a reply need, then the body and attachments. */
-export function parseMail(raw: string): ParsedMail {
+export function parseMail(raw: string, maxAttachmentBytes = MAX_ATTACHMENT_BYTES): ParsedMail {
   const root = splitMessage(raw)
   const top: MailPart = { headers: root.headers, contentType: contentTypeOf(root.headers), body: Buffer.from(root.body, 'binary') }
   const text = chooseBody(top).trimEnd()
-  const attachments = attachmentsOf(top).filter((one) => one.size <= MAX_ATTACHMENT_BYTES)
+  const attachments = attachmentsOf(top).filter((one) => one.size <= maxAttachmentBytes)
   const references = (header(root.headers, 'references') ?? '')
     .split(/\s+/)
     .map((one) => one.trim())

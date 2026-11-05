@@ -148,7 +148,6 @@ config:
 | `transport.bots` | `[]` | senders counted as bot speech |
 | `transport.lists` | `[]` | list addresses treated as rooms |
 | `transport.maxAttachmentBytes` | off | attachment size kept as media |
-| `transport.attachDir` | off | folder that keeps attachment bodies |
 
 The IMAP and SMTP links run through `imapflow` and `nodemailer`; the fields above do not depend on them. A thread is one chain: an answer carries `In-Reply-To` and the whole `References` chain, so it lands where the conversation is. A list message answers the list, a direct message answers its sender. HTML is read as text: scripts, images and tags are dropped, an attachment becomes media and never body text.
 
