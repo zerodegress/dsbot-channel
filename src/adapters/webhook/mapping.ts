@@ -214,14 +214,36 @@ function botOrPerson(bots: readonly string[], login: string, type: unknown): 'pe
   return type === 'Bot' || bots.some((one) => one.toLowerCase() === login.toLowerCase()) ? 'bot' : 'person'
 }
 
-function messageOf(input: MappingInput, entity: Entity, action: string): InboundMessage {
-  const payload = input.payload
+function bodyOf(payload: Payload): { body: string; id: number; parent?: number; user: unknown } {
   const comment = record(payload.comment)
   const review = record(payload.review)
-  const body = input.event === 'pull_request_review' ? (text(review?.body) ?? '') : (text(comment?.body) ?? '')
+  if (comment !== undefined) {
+    const parent = whole(comment.in_reply_to_id)
+    return {
+      body: text(comment.body) ?? '',
+      id: whole(comment.id) ?? 0,
+      ...(parent === undefined ? {} : { parent }),
+      user: comment.user,
+    }
+  }
+  const comments = Array.isArray(review?.comments) ? review?.comments : undefined
+  const first = comments === undefined ? undefined : record(comments[0])
+  return {
+    body: text(review?.body) ?? text(first?.body) ?? '',
+    id: whole(review?.id) ?? whole(first?.id) ?? 0,
+    ...(whole(first?.in_reply_to_id) === undefined ? {} : { parent: whole(first?.in_reply_to_id)! }),
+    user: review?.user ?? first?.user,
+  }
+}
+
+function messageOf(input: MappingInput, entity: Entity, action: string): InboundMessage {
+  const payload = input.payload
+  const found = bodyOf(payload)
+  const comment = record(payload.comment)
+  const body = found.body
   const login = sender(payload, action)
-  const id = whole(comment?.id) ?? whole(review?.id) ?? whole(payload.id) ?? 0
-  const parent = whole(comment?.in_reply_to_id)
+  const id = found.id
+  const parent = found.parent
   const mentioned = mentionsOf(body, input.config.login)
   const scoped = scopeOf(entity)
   return {
@@ -240,7 +262,7 @@ function messageOf(input: MappingInput, entity: Entity, action: string): Inbound
     },
     author: {
       senderId: login,
-      kind: botOrPerson(input.config.bots, login, record(comment?.user)?.type ?? record(review?.user)?.type),
+      kind: botOrPerson(input.config.bots, login, record(found.user)?.type),
       personId: null,
     },
     rawText: body,
@@ -315,13 +337,15 @@ export function mapWebhook(input: MappingInput): MappingResult {
   const entity = entityOf(payload)
   if (entity === undefined) return { skip: 'malformed' }
   const action = text(payload.action) ?? ''
-  const comment = record(payload.comment)
-  const isMessage =
+  const found = bodyOf(payload)
+  const written = found.body.length > 0
+  const created = action === 'created' || event === 'pull_request_comment'
+  const message =
     (event === 'issue_comment' && action === 'created') ||
-    (event === 'pull_request_review_comment' && action === 'created') ||
-    (event === 'pull_request_review' && action === 'submitted' && text(record(payload.review)?.body) !== undefined)
-  if (isMessage) return { message: messageOf(input, entity, action) }
-  void comment
+    (event === 'pull_request_comment' && created) ||
+    (event === 'pull_request_review_comment' && created && written) ||
+    (event === 'pull_request_review' && action === 'submitted' && written)
+  if (message) return { message: messageOf(input, entity, action) }
   return { message: actionOf(input, entity, action) }
 }
 
@@ -332,11 +356,17 @@ export function classOf(message: InboundMessage): string {
   return `${kind}.${type}`
 }
 
-/** Keeps `meta.adapter` under the core limit by dropping the payload before anything else. */
+/** Keeps `meta.adapter` under the core limit by dropping the biggest fields first. */
 export function fitAdapterMeta(meta: Record<string, unknown>, limit: number): Record<string, unknown> {
-  const serialized = JSON.stringify(meta)
-  if (serialized !== undefined && serialized.length <= limit) return meta
-  const { payload, ...rest } = meta as { payload?: unknown } & Record<string, unknown>
-  void payload
-  return rest
+  const kept: Record<string, unknown> = { ...meta }
+  const size = (value: Record<string, unknown>) => JSON.stringify(value)?.length ?? 0
+  for (const key of ['payload', 'title', 'body']) {
+    if (size(kept) <= limit) return kept
+    delete kept[key]
+  }
+  for (const key of Object.keys(kept).sort((left, right) => size({ [right]: kept[right] }) - size({ [left]: kept[left] }))) {
+    if (size(kept) <= limit) return kept
+    delete kept[key]
+  }
+  return kept
 }

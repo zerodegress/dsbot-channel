@@ -158,6 +158,26 @@ describe('a webhook action becomes a one line event', () => {
     expect(one.message.eventKey).toContain('ci/build')
   })
 
+  test('forgejo names its pull request conversation comment', () => {
+    const mapped = mapWebhook({
+      dialect: 'forgejo',
+      event: 'pull_request_comment',
+      delivery: 'f-1',
+      payload: {
+        action: 'created',
+        repository: repo,
+        pull_request: { number: 4, title: 'A lane', updated_at: '2026-01-02T03:04:07Z' },
+        comment: { id: 91, body: 'looks good', user: { login: 'seal' } },
+        sender: { login: 'seal' },
+      },
+      config,
+    })
+    if (!('message' in mapped)) throw new Error('expected a message')
+    expect(mapped.message.kind).toBe('message')
+    expect(mapped.message.body.text).toBe('looks good')
+    expect(mapped.message.sessionKey).toBe('gh:acme/api#4')
+  })
+
   test('a ping carries no event', () => {
     expect(map('ping', { zen: 'hi', repository: repo })).toEqual({ skip: 'ping' })
   })

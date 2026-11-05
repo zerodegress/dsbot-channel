@@ -1,13 +1,14 @@
 import { createServer } from 'node:http'
+import { ConfigError } from '../../config.js'
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { NO_MEDIA, buildListenerHealth, buildStatus } from '../../adapter-status.js'
 import type { AdapterStatus, CapabilitySet } from '../../adapter-status.js'
 import { ChannelStats, countersOf } from '../../channel-stats.js'
-import type { AdapterHandle, AdapterPorts, ChannelAdapter, InboundMessage, SendFailureCode, SendInput, SendResult } from '../../contract.js'
+import type { AdapterHandle, AdapterPorts, ChannelAdapter, InboundMessage, InboundVerdict, SendFailureCode, SendInput, SendResult } from '../../contract.js'
 import { ADAPTER_META_MAX_BYTES } from '../../adapter-meta.js'
-import { fitAdapterMeta, mapWebhook } from './mapping.js'
+import { classOf, fitAdapterMeta, mapWebhook } from './mapping.js'
 import type { WebhookDialect } from './mapping.js'
 
 export const DEFAULT_WEBHOOK_HOST = '127.0.0.1'
@@ -67,17 +68,27 @@ function hexToBytes(hex: string): Buffer | undefined {
 
 /** The signature the request carries, whichever dialect names it. */
 export function signatureOf(request: IncomingMessage): { kind: SignatureKind; value: string } | undefined {
-  const github = headerOf(request, 'x-hub-signature-256')
+  const github = headerOf(request, 'x-hub-signature-256') ?? headerOf(request, 'x-hub-signature')
   if (github !== undefined) {
     return { kind: 'github', value: github.startsWith('sha256=') ? github.slice('sha256='.length) : github }
   }
-  for (const name of ['x-forgejo-signature', 'x-gitea-signature', 'x-hub-signature']) {
+  for (const name of ['x-forgejo-signature', 'x-gitea-signature']) {
     const found = headerOf(request, name)
     if (found !== undefined) {
       return { kind: 'forgejo', value: found.startsWith('sha256=') ? found.slice('sha256='.length) : found }
     }
   }
   return undefined
+}
+
+function retryAfterMs(response: Response): number | undefined {
+  const after = response.headers.get('retry-after')
+  if (after !== null) {
+    const seconds = Number(after)
+    if (Number.isFinite(seconds) && seconds >= 0) return Math.min(seconds * 1000, 30_000)
+  }
+  const remaining = response.headers.get('x-ratelimit-remaining')
+  return remaining === '0' ? 1000 : undefined
 }
 
 export function verifySignature(secret: string, raw: Buffer, signature: string): boolean {
@@ -101,6 +112,7 @@ export function pickDialect(request: IncomingMessage, configured: WebhookDialect
   const byHeader = githubEvent !== undefined ? 'github' : forgejoEvent !== undefined ? 'forgejo' : undefined
   if (configured !== 'auto') {
     if (byHeader !== undefined && byHeader !== configured) return 'mismatch'
+    if (seen !== undefined && seen !== configured) return 'mismatch'
     return { dialect: configured, fallback: false }
   }
   if (byHeader !== undefined) return { dialect: byHeader, fallback: false }
@@ -135,6 +147,7 @@ export class WebhookAdapter implements ChannelAdapter {
   readonly #now: () => number
   readonly #stats = new ChannelStats()
   readonly #seen = new Map<string, Seen>()
+  readonly #inFlightKeys = new Set<string>()
   readonly #queue: { input: SendInput; resolve: (result: SendResult) => void }[] = []
   #server: Server | undefined
   #inFlight = 0
@@ -147,11 +160,17 @@ export class WebhookAdapter implements ChannelAdapter {
   }
 
   checkConfig(): void {
-    if (this.#config.secret.length === 0) throw new Error('webhook: transport.secret is required')
-    if (this.#config.token.length === 0) throw new Error('webhook: transport.token is required to answer with a comment')
-    if (this.#config.login.length === 0) throw new Error('webhook: transport.login names the bot and is required')
-    if (!/^https?:\/\//.test(this.#config.api)) throw new Error(`webhook: transport.api must be an absolute http(s) url: ${this.#config.api}`)
-    if (!this.#config.listen.path.startsWith('/')) throw new Error(`webhook: transport.listen.path must start with "/": ${this.#config.listen.path}`)
+    if (this.#config.secret.length === 0) throw new ConfigError('transport.secret is required', ['transport', 'secret'])
+    if (this.#config.token.length === 0) {
+      throw new ConfigError('transport.token is required to answer with a comment', ['transport', 'token'])
+    }
+    if (this.#config.login.length === 0) throw new ConfigError('transport.login names the bot and is required', ['transport', 'login'])
+    if (!/^https?:\/\//.test(this.#config.api)) {
+      throw new ConfigError(`transport.api must be an absolute http(s) url: ${this.#config.api}`, ['transport', 'api'])
+    }
+    if (!this.#config.listen.path.startsWith('/')) {
+      throw new ConfigError(`transport.listen.path must start with "/": ${this.#config.listen.path}`, ['transport', 'listen', 'path'])
+    }
   }
 
   checkSessionKey(key: string): string | undefined {
@@ -160,7 +179,11 @@ export class WebhookAdapter implements ChannelAdapter {
   }
 
   checkTarget(target: string): string | undefined {
-    if (!/^gh:[^/#]+\/[^#]+#[0-9]+$/.test(target)) return 'a webhook reply target reads "gh:<owner>/<repo>#<number>"'
+    const matched = /^gh:([^#]+)#[0-9]+$/.exec(target)
+    if (matched === null) return 'a webhook reply target reads "gh:<owner>/<repo>#<number>"'
+    if (this.#config.repos.length > 0 && !this.#config.repos.includes(matched[1]!)) {
+      return `"${matched[1]}" is not in transport.repos`
+    }
     return undefined
   }
 
@@ -249,23 +272,45 @@ export class WebhookAdapter implements ChannelAdapter {
     if (request === undefined) return { ok: false, code: 'no_url', reason: 'not an issue address', retryable: false }
     const token = await this.#token()
     if (token === undefined) return { ok: false, code: 'unauthorized', reason: 'the token did not resolve', retryable: false }
-    let response: Response
-    try {
-      response = await fetch(request.url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, 'user-agent': 'dsbot-channel' },
-        body: JSON.stringify({ body: request.body }),
-      })
-    } catch (error) {
-      this.#stats.sendFailed('unreachable')
-      return { ok: false, code: 'unreachable', reason: String(error), retryable: true }
+    const budget = input.timeoutMs ?? 10_000
+    const deadline = Date.now() + budget
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const left = deadline - Date.now()
+      if (left <= 0) break
+      let response: Response
+      try {
+        response = await fetch(request.url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, 'user-agent': 'dsbot-channel' },
+          body: JSON.stringify({ body: request.body }),
+          signal: AbortSignal.timeout(left),
+        })
+      } catch (error) {
+        const name = (error as { name?: string }).name
+        if (name === 'TimeoutError' || name === 'AbortError') {
+          return this.#fail('busy', true, 'the api did not answer inside the send timeout')
+        }
+        if (attempt === 0) continue
+        return this.#fail('unreachable', true, String(error))
+      }
+      if (response.ok) {
+        const body = (await response.json().catch(() => undefined)) as { id?: unknown } | undefined
+        const id = body !== undefined && (typeof body.id === 'number' || typeof body.id === 'string') ? String(body.id) : input.eventId
+        return { ok: true, messageId: id, duplicate: false }
+      }
+      const status = response.status
+      if (status === 401) return this.#fail('unauthorized', false)
+      const waitMs = retryAfterMs(response)
+      if ((status === 429 || status === 403) && attempt === 0 && waitMs !== undefined && Date.now() + waitMs < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, waitMs))
+        continue
+      }
+      if (status === 429) return this.#fail('busy', true)
+      if (status === 403) return this.#fail(waitMs === undefined ? 'forbidden' : 'busy', waitMs !== undefined)
+      if (status >= 500) return this.#fail('unreachable', true)
+      return this.#fail('rejected', false)
     }
-    if (response.ok) return { ok: true, messageId: `comment:${input.eventId}`, duplicate: false }
-    const status = response.status
-    if (status === 401) return this.#fail('unauthorized', false)
-    if (status === 403 || status === 429) return this.#fail(status === 429 ? 'busy' : 'forbidden', status === 429)
-    if (status >= 500) return this.#fail('unreachable', true)
-    return this.#fail('rejected', false)
+    return this.#fail('busy', true, 'the api did not answer inside the send timeout')
   }
 
   #fail(code: SendFailureCode, retryable: boolean, reason = 'the api refused the comment'): SendResult {
@@ -352,12 +397,16 @@ export class WebhookAdapter implements ChannelAdapter {
       return
     }
     const key = delivery === '' ? mapped.message.eventKey : delivery
-    if (this.#seen.has(key) || this.#seen.has(mapped.message.eventKey)) {
+    const keys = [key, mapped.message.eventKey]
+    if (keys.some((one) => this.#inFlightKeys.has(one))) {
+      this.#answer(response, 503, 'busy')
+      return
+    }
+    if (keys.some((one) => this.#seen.has(one))) {
       this.#answer(response, 200, 'duplicate')
       return
     }
-    this.#remember(key)
-    this.#remember(mapped.message.eventKey)
+    for (const one of keys) this.#inFlightKeys.add(one)
     const at = this.#now()
     const message: InboundMessage = {
       ...mapped.message,
@@ -365,9 +414,15 @@ export class WebhookAdapter implements ChannelAdapter {
       receivedAt: at,
       adapter: fitAdapterMeta(mapped.message.adapter, ADAPTER_META_MAX_BYTES),
     }
-    this.#stats.event(`${message.kind ?? 'message'}.${message.event?.postType ?? 'unknown'}`)
-    const verdict = await ports.onMessage(message).catch((error: unknown) => ({ ok: false as const, code: 'rejected' as const, reason: String(error) }))
+    this.#stats.event(classOf(message))
+    let verdict: InboundVerdict
+    try {
+      verdict = await ports.onMessage(message).catch((error: unknown) => ({ ok: false as const, code: 'rejected' as const, reason: String(error) }))
+    } finally {
+      for (const one of keys) this.#inFlightKeys.delete(one)
+    }
     if (verdict.ok) {
+      for (const one of keys) this.#remember(one)
       this.#answer(response, 200, 'ok')
       return
     }
@@ -376,6 +431,7 @@ export class WebhookAdapter implements ChannelAdapter {
       response.end('busy')
       return
     }
+    for (const one of keys) this.#remember(one)
     this.#answer(response, 202, verdict.reason)
   }
 
