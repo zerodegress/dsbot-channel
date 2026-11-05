@@ -19,10 +19,10 @@ config:
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `kind` | `p2p` | `p2p`, `onebot`, `webhook`, or `x-[a-z0-9-]+` (third-party) |
+| `kind` | `p2p` | `p2p`, `onebot`, `webhook`, `mail`, or `x-[a-z0-9-]+` (third-party) |
 | `channel` | required | unique link name; peers see it on the wire |
 | `botName` | required | the bot this link answers for |
-| `transport` | required | per-kind block below |
+| `transport` | required | per-kind block below: `p2p`, `onebot`, `webhook` or `mail` |
 | `status` | `true` | register the read-only status route |
 | `skill` | `true` | register the packaged skill when the host has a skills service |
 
@@ -82,11 +82,30 @@ An adapter whose `capabilities.outbound` is `false` is never written back: core 
 
 An issue comment, a review comment, or a pull request review that carries a body runs a turn and the answer is posted as a comment on the issue. Events that are not comments, such as `issues`, `pull_request`, `push`, `release` and CI runs, are `action` events with a one line summary; they start no turn unless `events.turn` names the class (`action.push`, `action.ci`, …). A failed signature is a 401 and never reaches the gateway, and a request that verifies but names no event header is a 400; a repeated delivery runs once.
 
+### mail transport
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `imap.host` / `imap.port` / `imap.user` / `imap.password` | required | the mailbox the link reads; `password` is a credential reference |
+| `imap.secure` | `true` | TLS to the mailbox; `false` reads plaintext |
+| `imap.mailbox` | `INBOX` | folder to poll |
+| `imap.pollMs` | `30000` | how often the folder is read |
+| `smtp.host` / `smtp.port` / `smtp.user` / `smtp.password` | required | where an answer is sent; `password` is a credential reference |
+| `smtp.secure` | `true` | `true`, `false` or `starttls` |
+| `from` | required | the address answers are sent from |
+| `signature` | off | text appended after the answer |
+| `listUnsubscribe` | off | `List-Unsubscribe` value on an answer |
+| `bots` | `[]` | senders counted as bot speech |
+| `lists` | `[]` | addresses that count as lists when the headers do not name one |
+| `maxAttachmentBytes` | `10485760` | largest attachment recorded; larger ones are dropped with a warning |
+
+A thread is a room keyed by its root: `mail:<thread-root>`; the root is the first `References` entry, else `In-Reply-To`, else the message's own `Message-ID`. An answer carries `In-Reply-To` and the whole `References` chain; a list message answers the list, a direct message answers its sender. HTML is read as text with scripts, styles and images dropped; an attachment is not passed to the model, only its name, type and size are recorded. The IMAP and SMTP links run through `imapflow` and `nodemailer`; the fields do not depend on them.
+
 ### Behaviour blocks
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `policy.requireMention` | `false` | group messages must name the bot or everyone |
+| `policy.requireMention` | `false` | group messages must name the bot or everyone; a transport that cannot tell mentions (`p2p`, `mail`) refuses it at mount |
 | `policy.groupBots` | `whenMentioned` | `whenMentioned`, `silent` or `answer` |
 | `policy.relayLimit` | `3` | rounds one peer may hold in a row |
 | `policy.relayResetMs` | `300000` | idle time that resets the count |

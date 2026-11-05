@@ -45,10 +45,10 @@ config:
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `kind` | `p2p` | `p2p`, `onebot`, `webhook`, or `x-[a-z0-9-]+` for a third-party transport |
+| `kind` | `p2p` | `p2p`, `onebot`, `webhook`, `mail`, or `x-[a-z0-9-]+` for a third-party transport |
 | `channel` | required | unique link name; peers see it on the wire |
 | `botName` | required | the bot this link answers for |
-| `transport` | required | per-kind block; see Peers and OneBot |
+| `transport` | required | per-kind block; see Peers, OneBot, Webhook and Email |
 | `session` | off | run every turn in one existing session |
 | `cwd` | off | directory for the sessions this adapter creates |
 | `agentPreset` | off | preset for the sessions it creates |
@@ -151,6 +151,39 @@ config:
 
 An issue comment, a review comment, or a pull request review that carries a body runs a turn, and the answer is posted as a comment on the same issue. Events that are not comments, such as `issues`, `pull_request`, `push`, `release` and CI runs, are `action` events: each carries a one line summary and starts no turn unless its class is listed in `events.turn` (`action.push`, `action.ci`, `action.issues`, …). A ping or installation event is answered with 200 and dropped before the gateway. A request whose signature does not verify is refused with 401 and never reaches the gateway; one that verifies but names no event header is refused with 400; a repeated delivery, or the same comment under a new delivery, runs once. The answer is the only thing this adapter writes: it never edits or closes anything.
 
+## Email
+
+A mailbox is a room keyed by the thread root: `mail:<thread-root>`. A mailing list address is the reply target; a direct mail answers its sender.
+
+```yaml
+config:
+  adapters:
+    - kind: mail
+      channel: mail:bot
+      botName: self-bot
+      transport:
+        imap: { host: 127.0.0.1, port: 993, secure: true, user: bot@example.test, password: IMAP_SECRET, mailbox: INBOX, pollMs: 30000 }
+        smtp: { host: 127.0.0.1, port: 465, secure: true, user: bot@example.test, password: SMTP_SECRET }
+        from: bot@example.test
+```
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `transport.imap.host` / `.port` / `.user` / `.password` | required | the mailbox the link reads; `password` is a credential reference |
+| `transport.imap.secure` | `true` | TLS to the mailbox; `false` reads plaintext |
+| `transport.imap.mailbox` | `INBOX` | folder to poll |
+| `transport.imap.pollMs` | `30000` | how often the folder is read |
+| `transport.smtp.host` / `.port` / `.user` / `.password` | required | where an answer is sent; `password` is a credential reference |
+| `transport.smtp.secure` | `true` | `true`, `false` or `starttls` |
+| `transport.from` | required | the address answers are sent from |
+| `transport.signature` | off | text appended after the answer |
+| `transport.listUnsubscribe` | off | `List-Unsubscribe` value on an answer |
+| `transport.bots` | `[]` | senders counted as bot speech |
+| `transport.lists` | `[]` | addresses that count as lists when the headers do not name one |
+| `transport.maxAttachmentBytes` | `10485760` | largest attachment recorded; larger ones are dropped with a warning |
+
+The IMAP and SMTP links run through `imapflow` and `nodemailer`; the fields above do not depend on them. A thread is one chain: an answer carries `In-Reply-To` and the whole `References` chain, so it lands where the conversation is. The root is the first `References` entry, else `In-Reply-To`, else the message's own `Message-ID`. A list message answers the list, a direct message answers its sender. HTML is read as text: scripts, styles, images and tags are dropped. Attachments are not passed to the model: a name, a type and a size are recorded, and one over `maxAttachmentBytes` is dropped with a warning.
+
 ## Turns and delivery
 
 | Field | Default | Meaning |
@@ -250,7 +283,7 @@ An inbound message goes through three steps: the adapter drops a duplicate, the 
 
 | Policy key | Default | What it decides |
 | --- | --- | --- |
-| `policy.requireMention` | `false` | a group message must name the bot or everyone; a transport that cannot tell mentions (`p2p`) refuses this at mount |
+| `policy.requireMention` | `false` | a group message must name the bot or everyone; a transport that cannot tell mentions (`p2p`, `mail`) refuses this at mount |
 | `policy.groupBots` | `whenMentioned` | how another bot's group message is treated: `whenMentioned`, `silent` or `answer` |
 | `policy.relayLimit` / `policy.relayResetMs` | `3` / `300000` | how many turns in a row one peer may hold, and the idle time that resets it |
 | `policy.deny.words` / `policy.deny.regexes` | `[]` | substrings and regular expressions that refuse a message; matching is case-insensitive |

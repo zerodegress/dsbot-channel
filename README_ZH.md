@@ -45,10 +45,10 @@ config:
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
-| `kind` | `p2p` | `p2p`、`onebot`、`webhook`，第三方传输用 `x-[a-z0-9-]+` |
+| `kind` | `p2p` | `p2p`、`onebot`、`webhook`、`mail`，第三方传输用 `x-[a-z0-9-]+` |
 | `channel` | required | 链路唯一名字，对端在线上也看到它 |
 | `botName` | required | 这条链路服务的 Bot |
-| `transport` | required | 按 kind 的配置块，见「对端」与「OneBot」 |
+| `transport` | required | 按 kind 的配置块，见「对端」「OneBot」「Webhook」与「邮件」 |
 | `session` | off | 所有回合都跑在同一个已有会话里 |
 | `cwd` | off | 它创建的会话所在目录 |
 | `agentPreset` | off | 它创建的会话所用 preset |
@@ -151,6 +151,39 @@ config:
 
 issue 评论、review 评论，或带正文的 pull request review 会起一个回合，回复作为评论发回同一个 issue。评论之外的事件，例如 `issues`、`pull_request`、`push`、`release` 与 CI 运行，是 `action` 事件：只带一行摘要，除非类的名字写进 `events.turn`（`action.push`、`action.ci`、`action.issues` 等），否则不起回合。ping 与 installation 事件直接回 200，在进网关前丢掉。签名校验不通过的请求直接 401，不进网关；签名通过但没有事件头的请求回 400；同一次投递、或同一条评论换个 delivery 重投，只跑一次。这个 adapter 只写评论，不编辑、不关闭任何东西。
 
+## 邮件
+
+一个邮箱是一条链路，房间按线程根划分：`mail:<thread-root>`。邮件列表地址是回复目标，直邮回给发件人。
+
+```yaml
+config:
+  adapters:
+    - kind: mail
+      channel: mail:bot
+      botName: self-bot
+      transport:
+        imap: { host: 127.0.0.1, port: 993, secure: true, user: bot@example.test, password: IMAP_SECRET, mailbox: INBOX, pollMs: 30000 }
+        smtp: { host: 127.0.0.1, port: 465, secure: true, user: bot@example.test, password: SMTP_SECRET }
+        from: bot@example.test
+```
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `transport.imap.host` / `.port` / `.user` / `.password` | required | 读取用的邮箱；`password` 是凭据引用 |
+| `transport.imap.secure` | `true` | 到邮箱的 TLS；`false` 为明文 |
+| `transport.imap.mailbox` | `INBOX` | 轮询的文件夹 |
+| `transport.imap.pollMs` | `30000` | 轮询间隔 |
+| `transport.smtp.host` / `.port` / `.user` / `.password` | required | 回信走哪台服务器；`password` 是凭据引用 |
+| `transport.smtp.secure` | `true` | `true`、`false` 或 `starttls` |
+| `transport.from` | required | 回信的发件地址 |
+| `transport.signature` | off | 追加在回信正文后的署名 |
+| `transport.listUnsubscribe` | off | 回信上的 `List-Unsubscribe` |
+| `transport.bots` | `[]` | 计入 bot 发言的发件人 |
+| `transport.lists` | `[]` | 头里没写明时按列表处理的地址 |
+| `transport.maxAttachmentBytes` | `10485760` | 记录为元数据的附件上限；超过的丢弃并告警 |
+
+IMAP 与 SMTP 由 `imapflow` 和 `nodemailer` 承担，下面的配置字段不随库变化。一条线程就是一条链：回信带 `In-Reply-To` 与完整的 `References`，所以回复落回原来的讨论。根取 `References` 第一条，缺则 `In-Reply-To`，再缺则自身 `Message-ID`。列表邮件回给列表，直邮回给发件人。HTML 按文本读取：脚本、样式、图片与标签都被剥掉。附件不交给模型：只记录名字、类型与大小，超过 `maxAttachmentBytes` 的丢弃并告警。
+
 ## 回合与切段
 
 | 字段 | 默认值 | 说明 |
@@ -250,7 +283,7 @@ export function apply(ctx) {
 
 | policy 键 | 默认 | 决定什么 |
 | --- | --- | --- |
-| `policy.requireMention` | `false` | 群消息必须点名机器人或 @全体；分辨不了提及的传输（`p2p`）在挂载期直接拒绝这个配置 |
+| `policy.requireMention` | `false` | 群消息必须点名机器人或 @全体；分辨不了提及的传输（`p2p`、`mail`）在挂载期直接拒绝这个配置 |
 | `policy.groupBots` | `whenMentioned` | 另一个机器人的群消息怎么处理：`whenMentioned`、`silent` 或 `answer` |
 | `policy.relayLimit` / `policy.relayResetMs` | `3` / `300000` | 一个对端最多连续占几轮，以及重置这个计数的空闲时间 |
 | `policy.deny.words` / `policy.deny.regexes` | `[]` | 拒绝消息的子串与正则，匹配不区分大小写 |

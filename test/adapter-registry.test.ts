@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import entry, { plugin as gatewayPlugin } from '../src/index.js'
-import { REGISTRY_SERVICE, defineAdapterPlugin } from '../src/adapter-registry.js'
+import { REGISTRY_SERVICE, checkAdapterKind, defineAdapterPlugin } from '../src/adapter-registry.js'
 import type { AdapterRegistry } from '../src/adapter-registry.js'
 import { registryPlugin } from '../src/registry-plugin.js'
 import { NO_MEDIA, buildListenerHealth, buildStatus } from '../src/adapter-status.js'
@@ -96,8 +96,10 @@ describe('the registry a context owns', () => {
     const ctx = new Context()
     await ctx.plugin(registryPlugin)
     const registry = ctx.get(REGISTRY_SERVICE) as AdapterRegistry
-    expect(registry.known().sort()).toEqual(['onebot', 'p2p', 'webhook'])
+    expect(registry.known().sort()).toEqual(['mail', 'onebot', 'p2p', 'webhook'])
     expect(typeof registry.factory('p2p')).toBe('function')
+    expect(typeof registry.factory('mail')).toBe('function')
+    expect(() => checkAdapterKind('mail')).not.toThrow()
   })
 
   test('a third-party kind keeps its own namespace and registers once', async () => {
@@ -126,7 +128,7 @@ describe('the registry a context owns', () => {
     await ctx.plugin(registryPlugin)
     await ctx.plugin(registryPlugin)
     expect(said.some((line) => line.includes('already exists'))).toBe(true)
-    expect((ctx.get(REGISTRY_SERVICE) as AdapterRegistry).known().sort()).toEqual(['onebot', 'p2p', 'webhook'])
+    expect((ctx.get(REGISTRY_SERVICE) as AdapterRegistry).known().sort()).toEqual(['mail', 'onebot', 'p2p', 'webhook'])
   })
 
   test('two contexts never see each other', async () => {

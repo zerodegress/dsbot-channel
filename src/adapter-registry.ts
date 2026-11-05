@@ -21,7 +21,7 @@ export interface AdapterOptions {
 export type AdapterFactory = (mount: AdapterMount, options: AdapterOptions) => ChannelAdapter
 
 /** Kinds the package ships and owns; a profile names them directly. */
-export const BUILTIN_KINDS = ['p2p', 'onebot', 'webhook'] as const
+export const BUILTIN_KINDS = ['p2p', 'onebot', 'mail', 'webhook'] as const
 
 /** Longest kind an adapter may declare. */
 export const ADAPTER_KIND_MAX = 32
