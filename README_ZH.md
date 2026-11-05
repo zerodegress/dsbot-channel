@@ -263,7 +263,7 @@ config:
 | `question.min` / `.max` | 仅 `score`：换算原始分；两者相等判失败。 |
 | `context` | 仅 `judge`：静态材料，字符串或「名字→字符串」映射。 |
 
-`question` 里上述字段之外的键会让挂载失败，错误带节点 id 与字段名。单个 `context` 的码点总数不得超过 provider 的 `maxChars`，映射的名字也计入；值为空、类型不对或超长都会挂载失败。`context` 是配置方知道的材料，不是发生过的事：正文、作用域、作者与是否被点名本来就随事件发送，历史、会话与工具一律不读。`llm` 把它渲染在消息事实之后；`system-one` 放进 `state.context`。
+`question` 里上述字段之外的键会让挂载失败，错误带节点 id 与字段名。单个 `context` 的码点总数不得超过 provider 的 `maxChars`，映射的名字也计入；名字或值为空、类型不对或超长都会挂载失败。`context` 是配置方知道的材料，不是发生过的事：正文、作用域、作者与是否被点名本来就随事件发送，历史、会话与工具一律不读。`llm` 把它渲染在消息事实之后；`system-one` 放进 `state.context`。
 
 `score` 与 `budget` 在 schema 里有声明，但这一版绑不上：score 节点需要的评分函数没有提供，budget 节点需要的会话级判定管道带不了。声明它们会在挂载期失败并给出原因；真正的花费限制由网关自己的硬窗口执行，且只有写了 `policy.budget` 的 profile 才有这个窗口。
 

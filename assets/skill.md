@@ -170,7 +170,7 @@ A `judge` node names what it asks and what it adds.
 | `question.min` / `question.max` | off | `score` only: convert a raw score; equal values fail the verdict |
 | `context` | off | static material for this node: a string or a mapping of name to string |
 
-A key other than these in `question` fails the mount and names the node and the field. One `context` may total `maxChars` code points, mapping names included; an empty value, another type or an over-long one fails the mount. `context` carries what the profile knows, not what happened: the body, the scope, the author and whether the bot was named are sent already, and history, sessions and tools are never read. `llm` renders it after the message facts; `system-one` sends it as `state.context`.
+A key other than these in `question` fails the mount and names the node and the field. One `context` may total `maxChars` code points, mapping names included; an empty name or value, another type or an over-long one fails the mount. `context` carries what the profile knows, not what happened: the body, the scope, the author and whether the bot was named are sent already, and history, sessions and tools are never read. `llm` renders it after the message facts; `system-one` sends it as `state.context`.
 
 `question` and `context` may be written in `pipeline.global` and in an adapter's `insert` and `override`. A session layer's `insert` takes only `id`, `type`, `after` and `before`, so it carries neither; a session's `override` may set both.
 

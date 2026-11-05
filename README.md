@@ -263,7 +263,7 @@ A node is `{ id, type }` plus the fields its type reads. The chain runs in order
 | `question.min` / `.max` | `score` only: convert a raw score; equal values fail the verdict. |
 | `context` | `judge` only: static material, a string or a mapping of name to string. |
 
-A key other than these inside `question` fails the mount and names the node and the field. One `context` may total the provider's `maxChars` in code points, mapping names included; an empty value, another type or an over-long one fails the mount. `context` is what the profile knows, not what happened: the body, the scope, the author and the mention flag are sent already, and no history, session or tool is read. `llm` renders it after the message facts; `system-one` sends it as `state.context`.
+A key other than these inside `question` fails the mount and names the node and the field. One `context` may total the provider's `maxChars` in code points, mapping names included; an empty name or value, another type or an over-long one fails the mount. `context` is what the profile knows, not what happened: the body, the scope, the author and the mention flag are sent already, and no history, session or tool is read. `llm` renders it after the message facts; `system-one` sends it as `state.context`.
 
 `score` and `budget` are declared in the schema but cannot bind in this version: a score node needs a scoring function the pipeline does not supply, and a budget node needs a session-scoped verdict it cannot carry yet. Declaring either fails the mount and names the reason; the gateway's own hard window is what limits spending, and only a profile that writes `policy.budget` has one.
 
