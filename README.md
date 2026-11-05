@@ -45,7 +45,7 @@ config:
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `kind` | `p2p` | `p2p`, `onebot`, or `x-[a-z0-9-]+` for a third-party transport |
+| `kind` | `p2p` | `p2p`, `onebot`, `webhook`, or `x-[a-z0-9-]+` for a third-party transport |
 | `channel` | required | unique link name; peers see it on the wire |
 | `botName` | required | the bot this link answers for |
 | `transport` | required | per-kind block; see Peers and OneBot |
@@ -119,6 +119,37 @@ config:
 | `events.turn` | `[]` | non-message classes that may start a turn; an adapter names its own `action.<type>` |
 
 One adapter speaks one protocol; a field of another protocol is refused at load. One implementation reaches one adapter, not two. `events.turn` names classes as `<kind>.<type>`: OneBot's own, such as `notice.group_recall` or `request.friend`, or an adapter's `action.<type>` for push, CI and timer events. Every other non-message event is recorded and counted without starting a turn, `meta_event` or a self echo never starts one, an unknown name fails the mount, and a named class skips the mention requirement.
+
+## Webhook
+
+A GitHub or Forgejo webhook is a room whose address is the issue: `gh:<owner>/<repo>#<number>`.
+
+```yaml
+config:
+  adapters:
+    - kind: webhook
+      channel: gh:acme/api
+      botName: self-bot
+      transport:
+        listen: { host: 127.0.0.1, port: 8463, path: /github/webhook }
+        secret: WEBHOOK_SECRET
+        token: API_TOKEN
+        api: https://api.github.com
+        login: acme-bot
+```
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `transport.listen.host` / `.port` / `.path` | `127.0.0.1` / `8463` / `/github/webhook` | where the calls arrive |
+| `transport.secret` | required | credential reference: the HMAC-SHA256 key of the raw body |
+| `transport.token` | required | credential reference used to post a comment |
+| `transport.dialect` | `auto` | `github`, `forgejo` or `auto` |
+| `transport.api` | `https://api.github.com` | base URL of the comment api |
+| `transport.login` | required | the bot's own login, used for `@` mentions |
+| `transport.bots` | `[]` | logins counted as bot speech |
+| `transport.repos` | `[]` | optional `owner/repo` allow list |
+
+An issue comment or a review comment runs a turn, and the answer is posted as a comment on the same issue. `issues`, `pull_request`, `push`, `release` and CI events are `action` events: each carries a one line summary and starts no turn unless its class is listed in `events.turn` (`action.push`, `action.ci`, `action.issues`, …). A ping or installation event is `meta` and runs nothing. A request whose signature does not verify is refused with 401 and never reaches the gateway; a repeated delivery, or the same comment under a new delivery, runs once. The answer is the only thing this adapter writes: it never edits or closes anything.
 
 ## Turns and delivery
 
