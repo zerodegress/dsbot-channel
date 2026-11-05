@@ -214,7 +214,7 @@ A node is `{ id, type }` plus the fields its type reads. The chain runs in order
 | `deny` | Refuses when `policy.deny` matches, otherwise passes. |
 | `allow` | Allows when `policy.allow` matches, otherwise passes; it also stops every later `score` and `judge`. |
 | `score` | Adds its value to the running score. |
-| `judge` | Scores through the host judge service; with `allowAtLeast` it allows at or above that score and refuses below it. |
+| `judge` | Scores through the host judge service; its threshold is `allowAtLeast`. |
 | `budget` | Refuses when the budget ledger is at its hard limit, otherwise passes. |
 | `prepare` | Runs the host prepare hook, then passes. |
 
@@ -235,6 +235,22 @@ config:
       - { id: guard, type: deny }
       - { id: limits, type: budget, mayRestrict: true, restrictSkip: [scoring] }
       - { id: verdict, type: judge, allowAtLeast: 0.6 }
+```
+
+An adapter changes the chain it starts from with four keys: `inherit` names the layer it starts from, `remove` drops nodes by id, `insert` adds a node after or before a named node, and `override` replaces fields of a node by id.
+
+```yaml
+config:
+  adapters:
+    - kind: p2p
+      channel: p2p:peer-a
+      botName: self-bot
+      transport: { listen: { host: 127.0.0.1, port: 7123 }, peers: { peer-b: PEER_B_REFERENCE } }
+      pipeline:
+        remove: [guard]
+        insert: [{ id: strict, type: judge, after: limits, allowAtLeast: 0.8 }]
+        override:
+          verdict: { allowAtLeast: 0.9 }
 ```
 
 ## Identity and impressions

@@ -214,7 +214,7 @@ config:
 | `deny` | `policy.deny` 命中即拒绝，否则通过。 |
 | `allow` | `policy.allow` 命中即放行，否则通过；被它放行后，后面的 `score` 与 `judge` 不再执行。 |
 | `score` | 把它的分数加进累计分数。 |
-| `judge` | 通过宿主 judge 服务打分；带 `allowAtLeast` 时达到阈值即放行、低于阈值即拒绝。 |
+| `judge` | 通过宿主 judge 服务打分；阈值是 `allowAtLeast`。 |
 | `budget` | 预算账本到达硬上限即拒绝，否则通过。 |
 | `prepare` | 执行宿主提供的 prepare 钩子，然后通过。 |
 
@@ -235,6 +235,22 @@ config:
       - { id: guard, type: deny }
       - { id: limits, type: budget, mayRestrict: true, restrictSkip: [scoring] }
       - { id: verdict, type: judge, allowAtLeast: 0.6 }
+```
+
+adapter 用四个键调整它继承到的链条：`inherit` 指定从哪一层开始，`remove` 按 id 删节点，`insert` 把节点插到某个 id 之前或之后，`override` 按 id 替换节点字段。
+
+```yaml
+config:
+  adapters:
+    - kind: p2p
+      channel: p2p:peer-a
+      botName: self-bot
+      transport: { listen: { host: 127.0.0.1, port: 7123 }, peers: { peer-b: PEER_B_REFERENCE } }
+      pipeline:
+        remove: [guard]
+        insert: [{ id: strict, type: judge, after: limits, allowAtLeast: 0.8 }]
+        override:
+          verdict: { allowAtLeast: 0.9 }
 ```
 
 ## 身份与印象库
