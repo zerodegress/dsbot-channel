@@ -1,6 +1,6 @@
 import type { LimitLevel } from './budget-ledger.js'
 import { Pipeline } from './pipeline.js'
-import { chanceBucket } from './chance.js'
+import { chanceBucket, chanceHits } from './chance.js'
 import type { NodeContext, PipelineEvent, PipelineNode, PipelineOptions } from './pipeline.js'
 import { DEFAULT_PIPELINE } from './pipeline-config.js'
 import type { PipelineNodeSpec } from './pipeline-config.js'
@@ -145,7 +145,7 @@ export function buildPipeline(
           id: spec.id,
           type: 'chance',
           run: (context) => {
-            const hit = chanceBucket(context.event.eventKey, spec.id) < probability
+            const hit = chanceHits(chanceBucket(context.event.eventKey, spec.id), probability)
             options.onChance?.(hit ? outcome : 'miss', spec.id, context.event)
             const reason = `chance_${hit ? outcome : 'miss'} (p=${probability})`
             if (!hit) return { kind: 'pass', reason }
