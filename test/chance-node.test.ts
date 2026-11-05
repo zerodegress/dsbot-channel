@@ -13,8 +13,8 @@ function event(eventKey: string): PipelineEvent {
   }
 }
 
-const chance = (probability: number, outcome: 'allow' | 'deny') =>
-  ({ id: 'c', type: 'chance', probability, outcome }) as never
+const chance = (probability: number, outcome: 'allow' | 'deny', id = 'c') =>
+  ({ id, type: 'chance', probability, outcome }) as never
 
 describe('the chance node declaration', () => {
   test('takes a probability and an outcome', () => {
@@ -62,6 +62,26 @@ describe('what a chance node decides', () => {
     }
     expect(denied / total).toBeGreaterThan(0.27)
     expect(denied / total).toBeLessThan(0.33)
+  })
+
+  test('two nodes on one message take independent buckets', async () => {
+    const first = buildPipeline([chance(0.5, 'allow', 'a')], {})
+    const second = buildPipeline([chance(0.5, 'allow', 'b')], {})
+    let differed = false
+    for (let index = 0; index < 30; index += 1) {
+      const key = `evt-salt-${index}`
+      const one = await first.run(event(key))
+      const two = await second.run(event(key))
+      if (one.decision !== two.decision) differed = true
+    }
+    expect(differed).toBe(true)
+  })
+
+  test('a miss leaves its own reason in the result', async () => {
+    const pipeline = buildPipeline([chance(0, 'allow')], {})
+    const result = await pipeline.run(event('evt-miss'))
+    expect(result.matched).toContain('c')
+    expect(result.reasons.c).toMatch(/^chance_miss \(p=0\)$/)
   })
 
   test('a miss passes the chain on and a hit ends it', async () => {
