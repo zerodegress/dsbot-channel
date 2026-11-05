@@ -211,33 +211,32 @@ config:
 
 | 节点 | 作用 |
 | --- | --- |
-| `deny` | `policy.deny` 命中即拒绝，否则通过。 |
-| `allow` | `policy.allow` 命中即放行，否则通过；被它放行后，后面的 `score` 与 `judge` 不再执行。 |
-| `score` | 把它的分数加进累计分数。 |
+| `deny` | `policy.deny` 命中即拒绝。没有 `policy.deny` 规则时声明 `deny` 节点会让挂载失败。 |
+| `allow` | `policy.allow` 命中即放行，并跳过后面所有 `score` 与 `judge`。没有 `policy.allow` 对端时声明 `allow` 节点会让挂载失败。 |
 | `judge` | 通过宿主 judge 服务打分；阈值是 `allowAtLeast`。 |
-| `budget` | 预算账本到达硬上限即拒绝，否则通过。 |
-| `prepare` | 执行宿主提供的 prepare 钩子，然后通过。 |
+| `prepare` | 执行宿主提供的 prepare 钩子，然后通过。为该 bot 服务的每个 adapter 都必须带这个钩子，否则挂载失败。 |
 
 | 字段 | 含义 |
 | --- | --- |
-| `id` | 在链条内唯一；`matched` 与 `reasons` 用它指代该节点。 |
-| `type` | 上面六种之一；写错在挂载期失败。 |
+| `id` | `matched` 与 `reasons` 用它指代该节点。 |
+| `type` | 上面四种之一。 |
 | `allowAtLeast` | 仅 `judge`：0 到 1 的分数。 |
-| `restrictSkip` | `restrict` 可跳过的目标：`scoring`、`judge`。 |
-| `mayRestrict` | 仅 `budget`；不写则返回 restrict 会失败。 |
 
-`deny` 与 `allow` 节点的匹配规则来自 `policy.deny` 或 `policy.allow`，配置里不重复写。`judge` 或 `allow` 排在 `budget` 之前会在挂载期告警，因为那次预算检查已无法拦住前面放行的消息。
+`score` 与 `budget` 在 schema 里有声明，但这一版绑不上：score 节点需要的评分函数没有提供，budget 节点需要的会话级判定管道带不了。声明它们会在挂载期失败并给出原因；真正的花费限制由网关自己的硬窗口执行。
+
+adapter 用四个键调整它继承到的链条：`inherit` 指定从哪一层开始，`remove` 按 id 删节点，`insert` 把节点插到某个 id 之前或之后，`override` 按 id 替换节点字段。`insert` 的 `after` 与 `before` 只能写一个、不能复用已有的 id；`override` 只写该节点类型拥有的字段；`remove` 或 `override` 指向不存在的 id 会让挂载失败。
 
 ```yaml
 config:
+  policy:
+    deny: { words: [spam] }
   pipeline:
     global:
       - { id: guard, type: deny }
-      - { id: limits, type: budget, mayRestrict: true, restrictSkip: [scoring] }
       - { id: verdict, type: judge, allowAtLeast: 0.6 }
 ```
 
-adapter 用四个键调整它继承到的链条：`inherit` 指定从哪一层开始，`remove` 按 id 删节点，`insert` 把节点插到某个 id 之前或之后，`override` 按 id 替换节点字段。
+judge 节点需要先挂上一个 provider；下面的 adapter 示例修改它继承到的链条。
 
 ```yaml
 config:
@@ -248,7 +247,7 @@ config:
       transport: { listen: { host: 127.0.0.1, port: 7123 }, peers: { peer-b: PEER_B_REFERENCE } }
       pipeline:
         remove: [guard]
-        insert: [{ id: strict, type: judge, after: limits, allowAtLeast: 0.8 }]
+        insert: [{ id: strict, type: judge, after: verdict, allowAtLeast: 0.8 }]
         override:
           verdict: { allowAtLeast: 0.9 }
 ```

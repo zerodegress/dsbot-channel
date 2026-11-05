@@ -211,33 +211,32 @@ A node is `{ id, type }` plus the fields its type reads. The chain runs in order
 
 | Node | Effect |
 | --- | --- |
-| `deny` | Refuses when `policy.deny` matches, otherwise passes. |
-| `allow` | Allows when `policy.allow` matches, otherwise passes; it also stops every later `score` and `judge`. |
-| `score` | Adds its value to the running score. |
+| `deny` | Refuses when `policy.deny` matches. A `deny` node with no `policy.deny` rule fails the mount. |
+| `allow` | Allows when `policy.allow` matches, and stops every later `score` and `judge`. An `allow` node with no `policy.allow` peer fails the mount. |
 | `judge` | Scores through the host judge service; its threshold is `allowAtLeast`. |
-| `budget` | Refuses when the budget ledger is at its hard limit, otherwise passes. |
-| `prepare` | Runs the host prepare hook, then passes. |
+| `prepare` | Runs the host prepare hook, then passes. Every adapter answering for the bot must carry the hook, or the mount fails. |
 
 | Field | Meaning |
 | --- | --- |
-| `id` | Unique in the chain; it names the node in `matched` and `reasons`. |
-| `type` | One of the six above; any other value fails the mount. |
+| `id` | Names the node in `matched` and `reasons`. |
+| `type` | One of the four above. |
 | `allowAtLeast` | `judge` only: a score from 0 to 1. |
-| `restrictSkip` | Targets a `restrict` may skip: `scoring`, `judge`. |
-| `mayRestrict` | `budget` only; without it a restrict fails. |
 
-A `deny` or `allow` node takes its patterns from `policy.deny` or `policy.allow`; a profile does not write them twice. A `judge` or an `allow` placed before a `budget` warns at load, because that budget check can no longer stop the message.
+`score` and `budget` are declared in the schema but cannot bind in this version: a score node needs a scoring function the pipeline does not supply, and a budget node needs a session-scoped verdict it cannot carry yet. Declaring either fails the mount and names the reason; the gateway's own hard window is what limits spending.
+
+An adapter changes the chain it starts from with four keys: `inherit` names the layer it starts from, `remove` drops nodes by id, `insert` adds a node after or before a named node, and `override` replaces fields of a node by id. `insert` sets exactly one of `after` or `before` and cannot reuse an existing id; `override` writes only fields the node's type reads; `remove` or `override` naming an id that is not there fails the mount.
 
 ```yaml
 config:
+  policy:
+    deny: { words: [spam] }
   pipeline:
     global:
       - { id: guard, type: deny }
-      - { id: limits, type: budget, mayRestrict: true, restrictSkip: [scoring] }
       - { id: verdict, type: judge, allowAtLeast: 0.6 }
 ```
 
-An adapter changes the chain it starts from with four keys: `inherit` names the layer it starts from, `remove` drops nodes by id, `insert` adds a node after or before a named node, and `override` replaces fields of a node by id.
+The judge node needs one provider mounted; the adapter example below changes the chain it inherits.
 
 ```yaml
 config:
@@ -248,7 +247,7 @@ config:
       transport: { listen: { host: 127.0.0.1, port: 7123 }, peers: { peer-b: PEER_B_REFERENCE } }
       pipeline:
         remove: [guard]
-        insert: [{ id: strict, type: judge, after: limits, allowAtLeast: 0.8 }]
+        insert: [{ id: strict, type: judge, after: verdict, allowAtLeast: 0.8 }]
         override:
           verdict: { allowAtLeast: 0.9 }
 ```

@@ -150,29 +150,28 @@ The provider sets no timer of its own; `pipeline.judgeTimeoutMs` bounds the call
 
 ## Pipeline nodes
 
-A node is `{ id, type }` plus the fields its type reads. The chain runs in order; the first `deny` or `allow` ends it, and a chain that reaches the end refuses. `id` is unique in the chain and names the node in `matched` and `reasons`.
+A node is `{ id, type }` plus the fields its type reads. The chain runs in order; the first `deny` or `allow` ends it, and a chain that reaches the end refuses. `id` names the node in `matched` and `reasons`.
 
 | Node | Effect |
 | --- | --- |
-| `deny` | refuses when `policy.deny` matches, otherwise passes |
-| `allow` | allows when `policy.allow` matches; later `score` and `judge` nodes do not run |
-| `score` | adds its value to the running score |
+| `deny` | refuses when `policy.deny` matches; no `policy.deny` rule fails the mount |
+| `allow` | allows when `policy.allow` matches and stops later `score` and `judge`; no `policy.allow` peer fails the mount |
 | `judge` | scores through the host judge service; its threshold is `allowAtLeast` |
-| `budget` | refuses at the budget ledger's hard limit, otherwise passes |
-| `prepare` | runs the host prepare hook, then passes |
+| `prepare` | runs the host prepare hook, then passes; every adapter for the bot needs the hook |
 
-`allowAtLeast` is read by `judge` only, 0 to 1. `restrictSkip` lists what a `restrict` may skip (`scoring`, `judge`), and `mayRestrict` is read by `budget` only. A `judge` or an `allow` before a `budget` warns at load.
+`score` and `budget` are declared in the schema but cannot bind in this version: a score node needs a scoring function, a budget node needs a session-scoped verdict. Declaring either fails the mount; the gateway's hard window limits spending. `allowAtLeast` is read by `judge` only, 0 to 1.
+
+An adapter changes the chain it starts from with `inherit`, `remove`, `insert` and `override`: `inherit` names the layer, `remove` drops nodes by id, `insert` adds a node after or before a named node (one of the two, no reused id), `override` replaces fields by id and only those the type reads; an unknown id fails the mount.
 
 ```yaml
 config:
+  policy:
+    deny: { words: [spam] }
   pipeline:
     global:
       - { id: guard, type: deny }
-      - { id: limits, type: budget, mayRestrict: true, restrictSkip: [scoring] }
       - { id: verdict, type: judge, allowAtLeast: 0.6 }
 ```
-
-An adapter changes the chain it starts from with `inherit`, `remove`, `insert` and `override`: `inherit` names the layer, `remove` drops nodes by id, `insert` adds a node after or before a named node, `override` replaces fields by id.
 
 ```yaml
 config:
@@ -183,7 +182,7 @@ config:
       transport: { listen: { host: 127.0.0.1, port: 7123 }, peers: { peer-b: PEER_B_REFERENCE } }
       pipeline:
         remove: [guard]
-        insert: [{ id: strict, type: judge, after: limits, allowAtLeast: 0.8 }]
+        insert: [{ id: strict, type: judge, after: verdict, allowAtLeast: 0.8 }]
         override:
           verdict: { allowAtLeast: 0.9 }
 ```
