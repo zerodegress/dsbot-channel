@@ -12,6 +12,7 @@ import type { Hold } from './budget-ledger.js'
 import { ClosedChains } from './chain-closer.js'
 import { buildIdentity } from './identity.js'
 import type { IdentityGraph, MountedAccountSpace } from './identity.js'
+import { OwnRecent } from './own-recent.js'
 import { ContextBuffer, DEFAULT_CONTEXT_CHARS, DEFAULT_CONTEXT_MESSAGES, renderContext } from './context-buffer.js'
 import type { ContextLimits } from './context-buffer.js'
 import { ConfigError, validateConfig } from './config.js'
@@ -165,6 +166,8 @@ const nodeSpecSchema = Schema.object({
   probability: Schema.number(),
   outcome: Schema.string(),
   allowAtLeast: Schema.number(),
+  test: Schema.any(),
+  when: Schema.any(),
 })
 
 const layerSchema = Schema.object({
@@ -183,6 +186,8 @@ const layerSchema = Schema.object({
       outcome: Schema.string(),
       restrictSkip: Schema.any(),
       mayRestrict: Schema.boolean(),
+      test: Schema.any(),
+      when: Schema.any(),
     }),
   ).default([]),
   override: Schema.dict(Schema.any()).default({}),
@@ -934,6 +939,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   const observe = (listener: (sessionId: string, event: SessionEventLike) => void): (() => void) =>
     ctx.on('session/event', (session, event) => listener(session.id, event as unknown as SessionEventLike))
   const sources = new Map<string, PushSource>()
+  const ownRecent = new OwnRecent(() => Date.now())
   const chains = new ClosedChains()
   const injected = new InjectionLedger()
   const activeTurns = new Map<string, TurnRef>()
@@ -1147,6 +1153,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         sentParts += 1
       }
       if (sent.ok) {
+        ownRecent.reset(adapter.channel, message.sessionKey)
         turns.replied()
         ended('replied')
         runtime.gate.recordReply(adapter.botName, message.sessionKey)
@@ -1294,6 +1301,8 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         const chainConflict = chainKeys.check(message.chainId, message.eventKey)
         if (chainConflict !== undefined) return { ok: false, code: 'chain_conflict', reason: chainConflict }
         const specs = pipelines.pipelineFor(adapter.botName, message.sessionKey)
+        const kind = message.kind ?? 'message'
+        if (kind === 'message') ownRecent.touch(adapter.channel, message.sessionKey)
         const event: PipelineEvent = {
           eventKey: message.eventKey,
           scope: message.source.scope,
@@ -1301,6 +1310,8 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
           text: message.rawText,
           authorId: message.author.senderId,
           ...(message.source.peer === null ? {} : { peer: message.source.peer }),
+          replyToMe: message.replyToMe === true,
+          ownRecent: kind === 'message' && ownRecent.recent(adapter.channel, message.sessionKey),
         }
         const judge =
           judgeService?.judge === undefined
@@ -1345,7 +1356,6 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
                 },
               })
             : undefined
-        const kind = message.kind ?? 'message'
         if (kind === 'meta') return { ok: true }
         if (kind !== 'message') {
           const eventClass = `${kind}.${message.event?.type ?? 'unknown'}`
@@ -1510,7 +1520,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
             reason: `channel "${delivery.channel}" is no longer configured`,
           }
         }
-        return channel.adapter.send({
+        const sent = await channel.adapter.send({
           target: delivery.target,
           to: delivery.to,
           body: delivery.text,
@@ -1520,6 +1530,8 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
           sender: channel.config.botName,
           instance: channel.config.channel,
         })
+        if (sent.ok) ownRecent.resetTarget(channel.config.channel, delivery.target)
+        return sent
       },
     })
     ctx.effect(() => tools.register(createSendText(router)), 'dsbot-channel: send_text tool')

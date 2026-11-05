@@ -1,6 +1,7 @@
 import type { BudgetLedger, LimitLevel } from './budget-ledger.js'
 import { Pipeline } from './pipeline.js'
 import { chanceBucket, chanceHits } from './chance.js'
+import { compileMatch } from './match-spec.js'
 import type { NodeContext, PipelineEvent, PipelineNode, PipelineOptions } from './pipeline.js'
 import { DEFAULT_PIPELINE } from './pipeline-config.js'
 import type { PipelineNodeSpec } from './pipeline-config.js'
@@ -179,13 +180,28 @@ export function buildPipeline(
           },
         }
       }
+      case 'when': {
+        const matches = compileMatch(spec.test ?? {})
+        const outcome = spec.outcome ?? 'pass'
+        return {
+          id: spec.id,
+          type: 'when',
+          run: (context) => {
+            if (!matches(context.event)) return { kind: 'pass' }
+            if (outcome === 'pass') return { kind: 'pass' }
+            return outcome === 'allow' ? { kind: 'allow', reason: 'when_allow' } : { kind: 'deny', reason: 'when_deny' }
+          },
+        }
+      }
       case 'chance': {
         const probability = spec.probability ?? 0
-        const outcome = spec.outcome ?? 'deny'
+        const outcome = spec.outcome === 'allow' ? 'allow' : 'deny'
+        const guard = spec.when === undefined ? undefined : compileMatch(spec.when)
         return {
           id: spec.id,
           type: 'chance',
           run: (context) => {
+            if (guard !== undefined && !guard(context.event)) return { kind: 'pass' }
             const hit = chanceHits(chanceBucket(context.event.eventKey, spec.id), probability)
             options.onChance?.(hit ? outcome : 'miss', spec.id, context.event)
             const reason = `chance_${hit ? outcome : 'miss'} (p=${probability})`

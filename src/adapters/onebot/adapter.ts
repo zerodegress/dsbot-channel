@@ -591,6 +591,7 @@ export class OneBotAdapter implements ChannelAdapter {
       return answered
     }
     this.#rememberChain(String(answered.messageId), input.chainId ?? input.eventId)
+    this.#rememberSent(`${target.scope === 'group' ? 'group' : 'peer'}:${target.id}`, String(answered.messageId))
     return answered
   }
 
@@ -949,6 +950,15 @@ export class OneBotAdapter implements ChannelAdapter {
     this.#stats.closed()
   }
 
+  #recentSent = new Map<string, string[]>()
+
+  #rememberSent(session: string, messageId: string): void {
+    const list = this.#recentSent.get(session) ?? []
+    list.push(messageId)
+    while (list.length > 20) list.shift()
+    this.#recentSent.set(session, list)
+  }
+
   #rememberChain(messageId: string, chainId: string): void {
     this.#chainRoot.set(messageId, chainId)
     while (this.#chainRoot.size > ONEBOT_CHAIN_LIMIT) {
@@ -1119,6 +1129,10 @@ export class OneBotAdapter implements ChannelAdapter {
     ) {
       this.#warn?.(`dsbot-channel: kept a repeated onebot event ${message.requestId} from ${message.replyTarget} out of a turn`)
       return
+    }
+    if (message !== undefined && message.kind === 'message' && message.body.replyTo !== null) {
+      const recent = this.#recentSent.get(message.sessionKey)
+      if (recent !== undefined && recent.includes(message.body.replyTo)) message.replyToMe = true
     }
     const code = oneBotEventClass(event)
     if (code !== undefined) this.#stats.event(code)
