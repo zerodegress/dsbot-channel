@@ -3,7 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { checkPipeline } from '../src/pipeline-config.js'
 import type { JudgeQuestion } from '../src/judge-question.js'
 import { buildPipeline } from '../src/build-pipeline.js'
-import { resolvePipeline } from '../src/pipeline-scopes.js'
+import { resolveAndCheck, resolvePipeline } from '../src/pipeline-scopes.js'
 import { registryPlugin } from '../src/registry-plugin.js'
 import entry from '../src/index.js'
 import systemOne from '../src/system-one.js'
@@ -83,6 +83,21 @@ describe('a judge node carries what to ask', () => {
       bot: { override: { j: { question: { ...question, instructions: 'Other?' } } } },
     }).nodes
     expect(overridden.find((node) => node.id === 'j')?.question?.instructions).toBe('Other?')
+  })
+
+  test('an inserted or overridden judge is checked like a declared one', () => {
+    const bad = { ...question, surprise: true }
+    const inserted = resolveAndCheck({
+      global: [{ id: 'base', type: 'deny' }],
+      bot: { insert: [{ id: 'j', type: 'judge', after: 'base', question: bad }] },
+    })
+    expect(inserted.pipeline.fatal.some((line) => line.includes('"j"') && line.includes('surprise'))).toBe(true)
+
+    const overridden = resolveAndCheck({
+      global: [{ id: 'j', type: 'judge', question }],
+      bot: { override: { j: { question: bad } } },
+    })
+    expect(overridden.pipeline.fatal.some((line) => line.includes('"j"') && line.includes('surprise'))).toBe(true)
   })
 
   test('the pipeline hands both to the judge', async () => {
