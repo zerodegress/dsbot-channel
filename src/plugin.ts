@@ -854,7 +854,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     if ((channel.config.events?.turn ?? []).length === 0) continue
     if (replyOf(channel.config).alwaysTool) continue
     throw new ConfigError(
-      `adapter "${channel.config.channel}" writes no replies and starts turns, so its reply block must always choose "tool"; it can also choose "auto"`,
+      `adapter "${channel.config.channel}" writes no replies and starts turns, so its reply block must always choose "tool"`,
       ['adapters', String(channel.index), 'reply'],
     )
   }
