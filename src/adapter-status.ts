@@ -34,6 +34,8 @@ export interface CapabilitySet {
   mention: boolean
   reply: boolean
   stream: boolean
+  /** Whether core may write back to this adapter at all; absent means yes. */
+  outbound?: boolean
 }
 
 export interface PlatformAttributes {
