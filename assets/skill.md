@@ -33,7 +33,7 @@ config:
 | Field | Default | Meaning |
 | --- | --- | --- |
 | `listen.host` | `127.0.0.1` | concrete address only |
-| `listen.port` | required | |
+| `listen.port` | `7123` | |
 | `peers` | required | list or mapping of peer instance to secret reference; a list entry also carries `url`, `host`, `botName` |
 | `dedupe.ttlMs` / `dedupe.limit` | | dedupe window and size |
 | `inflightTtlMs` | `300000` | stale claim is reclaimed after this |
