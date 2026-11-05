@@ -755,7 +755,9 @@ export class OneBotAdapter implements ChannelAdapter {
     }
     const action = target.scope === 'group' ? 'upload_group_file' : 'upload_private_file'
     const params = target.scope === 'group' ? { group_id: target.id, file, name } : { user_id: target.id, file, name }
-    return this.#uploadCall(action, params, timeoutMs)
+    const sent = await this.#uploadCall(action, params, timeoutMs)
+    if (sent.ok) this.#rememberSent(`${target.scope === 'group' ? 'group' : 'peer'}:${target.id}`, sent.messageId)
+    return sent
   }
 
   async #uploadCall(
