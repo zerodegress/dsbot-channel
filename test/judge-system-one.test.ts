@@ -224,6 +224,10 @@ describe('the system-one provider', () => {
     await expect(ctx.plugin(systemOne as never, config(server.url) as never)).rejects.toThrow(/one judge service/)
   })
 
+  test('refuses a provider block that still carries a question', async () => {
+    await expect(mount({ ...config('http://127.0.0.1:1'), question: noul })).rejects.toThrow(/does not read: question/)
+  })
+
   test('checks its own configuration at mount', async () => {
     await expect(mount({ ...config('http://127.0.0.1:1'), baseUrl: 'not-a-url' })).rejects.toThrow(/baseUrl/)
     await expect(mount({ ...config('http://127.0.0.1:1'), model: '' })).rejects.toThrow(/model/)

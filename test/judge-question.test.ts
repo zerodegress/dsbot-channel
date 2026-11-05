@@ -61,6 +61,9 @@ describe('a judge node carries what to ask', () => {
     expect(
       checkPipeline([{ id: 'j', type: 'judge', question: { type: 'choice', instructions: 'x', options: ['a'], target: 'b' } } as never]).fatal.length,
     ).toBeGreaterThan(0)
+    expect(
+      checkPipeline([{ id: 'j', type: 'judge', question: { ...question, surprise: true } } as never]).fatal.length,
+    ).toBeGreaterThan(0)
   })
 
   test('a context that is not text or a text map is refused', () => {

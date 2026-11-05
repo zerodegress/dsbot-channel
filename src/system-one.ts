@@ -83,6 +83,7 @@ export function askedOf(question: JudgeQuestion): Record<string, unknown> {
 }
 
 export function apply(ctx: Context, config: SystemOneConfig): void {
+  checkFields(config)
   const credential = checkText(config.credential, 'judge.credential')
   const baseUrl = checkBaseUrl(checkText(config.baseUrl, 'judge.baseUrl'), 'judge')
   const model = checkText(config.model, 'judge.model')

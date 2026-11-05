@@ -36,6 +36,10 @@ export function questionProblems(raw: unknown): string[] {
     return problems
   }
   if (!text(body.instructions)) problems.push('question.instructions must be a non-empty string')
+  const known = new Set(['type', 'instructions', 'criteria', 'options', 'target', 'min', 'max'])
+  for (const key of Object.keys(body)) {
+    if (!known.has(key)) problems.push(`question names a field it does not read: ${key}`)
+  }
   if (type === 'noul') {
     const criteria = record(body.criteria)
     if (criteria === undefined || !text(criteria.true) || !text(criteria.false)) {
