@@ -76,6 +76,7 @@ function event(overrides: Partial<PipelineEvent> = {}): PipelineEvent {
     mentioned: { self: false, others: false, all: false },
     text: 'hello there',
     peer: 'peer-a',
+    authorId: '20002',
     ...overrides,
   }
 }
@@ -113,7 +114,7 @@ describe('the llm provider', () => {
     expect(messages[1]!.role).toBe('user')
     expect(messages[1]!.content).toContain('scope: group')
     expect(messages[1]!.content).toContain('mentioned: no')
-    expect(messages[1]!.content).toContain('peer: peer-a')
+    expect(messages[1]!.content).toContain('author: 20002')
     expect(messages[1]!.content).toContain('hello there')
     expect(hit.body).not.toHaveProperty('tools')
   })

@@ -77,6 +77,7 @@ function event(overrides: Partial<PipelineEvent> = {}): PipelineEvent {
     mentioned: { self: false, others: false, all: false },
     text: 'hello there',
     peer: 'peer-a',
+    authorId: '20002',
     ...overrides,
   }
 }
@@ -111,7 +112,7 @@ describe('the system-one provider', () => {
     expect(server.hits[0]!.url).toBe('/v1/systemone')
     const body = server.hits[0]!.body
     expect(body.model).toBe('test/model')
-    expect(body.state).toBe('hello there')
+    expect(body.state).toEqual({ scope: 'group', author: '20002', mentioned: false, text: 'hello there' })
     expect(body.questions).toEqual({
       judge: { type: 'noul', instructions: 'Is it worth answering?', criteria: { true: 'it asks something', false: 'it is noise' } },
     })
@@ -163,6 +164,11 @@ describe('the system-one provider', () => {
     opened.push(object.close)
     const byObject = await mount(config(object.url, shape))
     await expect(judgeOf(byObject)(event())).resolves.toMatchObject({ score: 0.8 })
+
+    const indexed = await stub(() => ({ status: 200, payload: { answers: { judge: { choice: 'b', probabilities: { '0': 0.2, '1': 0.8 } } } } }))
+    opened.push(indexed.close)
+    const byIndex = await mount(config(indexed.url, shape))
+    await expect(judgeOf(byIndex)(event())).resolves.toMatchObject({ score: 0.8 })
   })
 
   test('refuses a choice without a probability for the target', async () => {

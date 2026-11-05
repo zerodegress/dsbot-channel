@@ -9,9 +9,9 @@ import {
   provideJudge,
   reasonOf,
   record,
+  renderInput,
   scoreOf,
   sendJson,
-  truncate,
 } from './judge-providers.js'
 import type { PipelineEvent } from './pipeline.js'
 
@@ -38,15 +38,9 @@ export const VERDICT_PROMPT =
   'Judge one chat message. Reply with only a JSON object: {"score": <number from 0 to 1>, "reason": "<short reason>"}. ' +
   'No markdown, no code fences, no extra text.'
 
-/** What the model sees: the message, where it came from, and whether the bot was named. */
+/** What the model sees: the message, its scope, its author and whether the bot was named. */
 export function renderMessage(event: PipelineEvent, maxChars: number): string {
-  return [
-    `scope: ${event.scope}`,
-    `mentioned: ${event.mentioned.self || event.mentioned.all ? 'yes' : 'no'}`,
-    `peer: ${event.peer ?? 'unknown'}`,
-    'message:',
-    truncate(event.text, maxChars),
-  ].join('\n')
+  return renderInput(event, maxChars)
 }
 
 /** A bare JSON object with a usable score; anything else is a refusal the pipeline reports as judge_failed. */

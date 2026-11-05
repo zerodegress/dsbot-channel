@@ -52,6 +52,17 @@ export function truncate(text: string, max: number): string {
   return Array.from(text).slice(0, max).join('')
 }
 
+/** What every provider sends: the body, its scope, its author and whether the bot was named. */
+export function renderInput(event: PipelineEvent, maxChars: number): string {
+  return [
+    `scope: ${event.scope}`,
+    `author: ${event.authorId ?? 'unknown'}`,
+    `mentioned: ${event.mentioned.self || event.mentioned.all ? 'yes' : 'no'}`,
+    'message:',
+    truncate(event.text, maxChars),
+  ].join('\n')
+}
+
 /** A score core can use, or a refusal the pipeline reports as judge_failed. */
 export function scoreOf(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {

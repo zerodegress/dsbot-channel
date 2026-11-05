@@ -132,9 +132,13 @@ function scoreFor(question: Question, answer: Record<string, unknown>): number {
     return scaled(raw, question.min, question.max)
   }
   const probabilities = answer.probabilities
-  if (Array.isArray(probabilities)) return scoreOf(probabilities[question.options.indexOf(question.target)])
+  const index = question.options.indexOf(question.target)
+  if (Array.isArray(probabilities)) return scoreOf(probabilities[index])
   const byOption = record(probabilities)
-  if (byOption !== undefined && question.target in byOption) return scoreOf(byOption[question.target])
+  if (byOption !== undefined) {
+    if (typeof byOption[String(index)] === 'number') return scoreOf(byOption[String(index)])
+    if (question.target in byOption) return scoreOf(byOption[question.target])
+  }
   throw new Error('judge answer carried no probability for the target option')
 }
 
@@ -168,7 +172,12 @@ export function apply(ctx: Context, config: SystemOneConfig): void {
           : { type: question.type, instructions: question.instructions, options: question.options }
     const response = await sendJson(baseUrl, {
       model,
-      state: truncate(event.text, maxChars),
+      state: {
+        scope: event.scope,
+        author: event.authorId ?? 'unknown',
+        mentioned: event.mentioned.self || event.mentioned.all,
+        text: truncate(event.text, maxChars),
+      },
       questions: { judge: asked },
     }, await token())
     const answer = pickAnswer(response)

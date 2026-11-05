@@ -1193,6 +1193,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
           scope: message.source.scope,
           mentioned: message.transport.mentioned,
           text: message.rawText,
+          authorId: message.author.senderId,
           ...(message.source.peer === null ? {} : { peer: message.source.peer }),
         }
         const judge =

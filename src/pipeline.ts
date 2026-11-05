@@ -17,6 +17,8 @@ export interface PipelineEvent {
   text: string
   /** The identity that admitted the message, when the adapter has one. */
   peer?: string
+  /** Who wrote the message, as the adapter reported it. */
+  authorId?: string
 }
 
 export interface DenyOutput {
