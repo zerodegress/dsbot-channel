@@ -137,16 +137,8 @@ One adapter speaks one protocol; a field of another protocol is refused at load.
 | `delivery.pacing.charsPerSecond` | `14` | reading speed for the wait |
 | `delivery.pacing.minMs` | `700` | shortest wait between parts |
 | `delivery.pacing.maxMs` | `5000` | longest wait between parts |
-| `policy.requireMention` | `false` | group messages must name the bot or everyone; needs a transport that can tell mentions apart, so `p2p` is refused at mount |
-| `policy.groupBots` | `whenMentioned` | `whenMentioned`, `silent` or `answer` |
-| `policy.relayLimit` | `3` | rounds one peer may hold in a row |
-| `policy.relayResetMs` | `300000` | idle time that resets the count |
-| `policy.budget.capacity` | off | points per window |
-| `policy.budget.hardLimit` | `1` | ratio that refuses |
-| `policy.deny.words` / `regexes` | `[]` | refuse a message whose text matches |
-| `policy.allow.peers` | `[]` | matches `source.peer`: a peer instance on p2p, or the group or user id of a OneBot event |
 
-Only a turn reply is split; `send_text`, decline and refusal messages go out whole. Without a `delivery` block anywhere a reply is sent whole. A batch is charged and recorded once; `policy.budget.capacity` is required once `policy.budget` is written. `policy.deny.words` matches case-insensitively as a substring and an empty word is refused at mount; `policy.deny.regexes` compiles case-insensitively and an invalid pattern is refused at mount; `policy.allow.peers` matches `source.peer` and an empty name is refused. Any of the three that is not empty adds a `deny` or `allow` node, a match refusing or allowing the message. Each wait before a part is the part's code points divided by `charsPerSecond`, kept inside `minMs` and `maxMs`; the last part is not followed by a wait. `maxChars: 0` turns the hard cut off, and an empty `delivery` block adds no keys. A part that fails stops the rest and the reply is reported failed with the parts already sent.
+Only a turn reply is split; `send_text`, decline and refusal messages go out whole. Without a `delivery` block anywhere a reply is sent whole. A batch is charged and recorded once. Each wait before a part is the part's code points divided by `charsPerSecond`, kept inside `minMs` and `maxMs`; the last part is not followed by a wait. `maxChars: 0` turns the hard cut off, and an empty `delivery` block adds no keys. A part that fails stops the rest and the reply is reported failed with the parts already sent.
 
 ## Judge
 
@@ -217,6 +209,8 @@ An inbound message goes through three steps: the adapter drops a duplicate, the 
 | `policy.deny.words` / `policy.deny.regexes` | `[]` | substrings and regular expressions that refuse a message; matching is case-insensitive |
 | `policy.allow.peers` | `[]` | `source.peer` values that are allowed before the rest of the chain runs |
 | `policy.budget.capacity` / `policy.budget.hardLimit` | required once `budget` is written / `1` | points per window and the ratio at which the gateway refuses, set as a hard window |
+
+An empty word, an invalid pattern or an empty peer name fails the mount. Any of the three lists that is not empty adds a `deny` or `allow` node, and a match refuses or allows the message.
 
 A judge enters as one node of the pipeline, not as a gate: mount a provider first, then declare the node. Without `allowAtLeast` the node only adds its score; with it, a score at or above the threshold allows the message and one below refuses it.
 

@@ -137,14 +137,6 @@ config:
 | `delivery.pacing.charsPerSecond` | `14` | 计算等待的阅读速度 |
 | `delivery.pacing.minMs` | `700` | 段间最短等待 |
 | `delivery.pacing.maxMs` | `5000` | 段间最长等待 |
-| `policy.requireMention` | `false` | 群消息必须点名本 Bot 或所有人；需要能分辨提及的通道，`p2p` 写了会在挂载期被拒 |
-| `policy.groupBots` | `whenMentioned` | `whenMentioned`、`silent` 或 `answer` |
-| `policy.relayLimit` | `3` | 同一对端连续占用的轮数 |
-| `policy.relayResetMs` | `300000` | 空闲多久复位计数 |
-| `policy.budget.capacity` | off | 每窗口点数 |
-| `policy.budget.hardLimit` | `1` | 拒绝比例 |
-| `policy.deny.words` / `regexes` | `[]` | 正文命中即拒 |
-| `policy.allow.peers` | `[]` | 匹配 `source.peer`：p2p 上是对端实例名，OneBot 上是群号或用户号 |
 
 只有回合回复会被切段；`send_text`、拒绝与婉拒消息整条发出。任何地方都没写 `delivery` 时回复整条发出。一批只计费一次、只留一条记录；写了 `policy.budget` 后 `policy.budget.capacity` 就是必填。`policy.deny.words` 按大小写不敏感的子串匹配，空词在挂载期被拒；`policy.deny.regexes` 按大小写不敏感编译，非法正则在挂载期被拒；`policy.allow.peers` 匹配 `source.peer`，空名被拒。三者任一非空就自动加上 `deny` 或 `allow` 节点，命中即拒绝或放行。每段前的等待是「该段码点数 ÷ `charsPerSecond`」，夹在 `minMs` 与 `maxMs` 之间，最后一段之后不等待。`maxChars: 0` 关闭硬切，空的 `delivery` 块不添加任何键。某段失败即停止，回复按失败记录已发出的段数。
 
@@ -217,6 +209,8 @@ config:
 | `policy.deny.words` / `policy.deny.regexes` | `[]` | 拒绝消息的子串与正则，匹配不区分大小写 |
 | `policy.allow.peers` | `[]` | 命中 `source.peer` 就放行，不再走后面的链条 |
 | `policy.budget.capacity` / `policy.budget.hardLimit` | 写了 `budget` 就必填 / `1` | 每个窗口的点数，以及网关据此拒绝的比例，按硬窗口执行 |
+
+空词、非法正则、空对端名都会让挂载失败。三者任一非空就自动加上 `deny` 或 `allow` 节点，命中即拒绝或放行。
 
 judge 是**管道里的一个节点**，不是关卡：先挂 provider，再声明节点。不带 `allowAtLeast` 时它只加分；带了就按阈值判定，达到放行、低于拒绝。
 
