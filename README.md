@@ -205,6 +205,38 @@ Two entries fill that service; mount one of them **before** the gateway.
 
 Both entries send the body, the scope, the author id and whether the bot was named — no history, no tools — and retry once on `429` or `529` inside `pipeline.judgeTimeoutMs`. `llm` accepts bare JSON only. A second provider on one profile fails at load.
 
+## Pipeline nodes
+
+A node is `{ id, type }` plus the fields its type reads. The chain runs in order; the first `deny` or `allow` ends it, and a chain that reaches the end refuses.
+
+| Node | Effect |
+| --- | --- |
+| `deny` | Refuses when `policy.deny` matches, otherwise passes. |
+| `allow` | Allows when `policy.allow` matches, otherwise passes; it also stops every later `score` and `judge`. |
+| `score` | Adds its value to the running score. |
+| `judge` | Scores through the host judge service; with `allowAtLeast` it allows at or above that score and refuses below it. |
+| `budget` | Refuses when the budget ledger is at its hard limit, otherwise passes. |
+| `prepare` | Runs the host prepare hook, then passes. |
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Unique in the chain; it names the node in `matched` and `reasons`. |
+| `type` | One of the six above; any other value fails the mount. |
+| `allowAtLeast` | `judge` only: a score from 0 to 1. |
+| `restrictSkip` | Targets a `restrict` may skip: `scoring`, `judge`. |
+| `mayRestrict` | `budget` only; without it a restrict fails. |
+
+A `deny` or `allow` node takes its patterns from `policy.deny` or `policy.allow`; a profile does not write them twice. A `judge` or an `allow` placed before a `budget` warns at load, because that budget check can no longer stop the message.
+
+```yaml
+config:
+  pipeline:
+    global:
+      - { id: guard, type: deny }
+      - { id: limits, type: budget, mayRestrict: true, restrictSkip: [scoring] }
+      - { id: verdict, type: judge, allowAtLeast: 0.6 }
+```
+
 ## Identity and impressions
 
 `identity` is a top-level block with `people` and `bots` lists. Each node is `{ id, accounts: [{ kind, instance, accountId }] }`. A node id and an account may each appear once; `accounts` may not be empty. A built-in account must name an instance that is mounted, and a configured p2p peer counts; a third-party kind is only warned about. An account that resolves fills `author.personId`.

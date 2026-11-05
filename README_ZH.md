@@ -205,6 +205,38 @@ config:
 
 两个入口都只发送正文、作用域、作者 id 与是否被点名——不带历史、不带工具——并在 `pipeline.judgeTimeoutMs` 内对 `429` / `529` 重试一次。`llm` 只接受裸 JSON。同一个 profile 挂第二个 provider 会在加载期失败。
 
+## 管道节点
+
+节点是 `{ id, type }` 加上该类型读取的字段。链条按顺序执行，遇到第一个 `deny` 或 `allow` 就结束；走到末尾仍未放行的按拒绝处理。
+
+| 节点 | 作用 |
+| --- | --- |
+| `deny` | `policy.deny` 命中即拒绝，否则通过。 |
+| `allow` | `policy.allow` 命中即放行，否则通过；被它放行后，后面的 `score` 与 `judge` 不再执行。 |
+| `score` | 把它的分数加进累计分数。 |
+| `judge` | 通过宿主 judge 服务打分；带 `allowAtLeast` 时达到阈值即放行、低于阈值即拒绝。 |
+| `budget` | 预算账本到达硬上限即拒绝，否则通过。 |
+| `prepare` | 执行宿主提供的 prepare 钩子，然后通过。 |
+
+| 字段 | 含义 |
+| --- | --- |
+| `id` | 在链条内唯一；`matched` 与 `reasons` 用它指代该节点。 |
+| `type` | 上面六种之一；写错在挂载期失败。 |
+| `allowAtLeast` | 仅 `judge`：0 到 1 的分数。 |
+| `restrictSkip` | `restrict` 可跳过的目标：`scoring`、`judge`。 |
+| `mayRestrict` | 仅 `budget`；不写则返回 restrict 会失败。 |
+
+`deny` 与 `allow` 节点的匹配规则来自 `policy.deny` 或 `policy.allow`，配置里不重复写。`judge` 或 `allow` 排在 `budget` 之前会在挂载期告警，因为那次预算检查已无法拦住前面放行的消息。
+
+```yaml
+config:
+  pipeline:
+    global:
+      - { id: guard, type: deny }
+      - { id: limits, type: budget, mayRestrict: true, restrictSkip: [scoring] }
+      - { id: verdict, type: judge, allowAtLeast: 0.6 }
+```
+
 ## 身份与印象库
 
 `identity` 是顶层块，含 `people` 与 `bots` 两个列表。每个节点是 `{ id, accounts: [{ kind, instance, accountId }] }`；节点 id 与账号都只能出现一次，`accounts` 不能为空。内置 kind 的账号必须指向已挂载的实例，已配置的 p2p 对端也算；第三方 kind 只警告。解析到的账号会被写入 `author.personId`。

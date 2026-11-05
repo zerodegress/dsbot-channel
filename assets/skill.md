@@ -147,3 +147,27 @@ Mount one of two entries. Both provide `dsbot-channel/judge`, so a profile mount
 | `question.min` / `question.max` | `score` only | used when a reply carries no normalized score; equal values fail the verdict |
 
 The provider sets no timer of its own; `pipeline.judgeTimeoutMs` bounds the call. A `429` or `529` is retried once. Only the body, the scope, the author id and whether the bot was named are sent — no history, no tools. `llm` accepts bare JSON only; a fenced block fails the verdict.
+
+## Pipeline nodes
+
+A node is `{ id, type }` plus the fields its type reads. The chain runs in order; the first `deny` or `allow` ends it, and a chain that reaches the end refuses. `id` is unique in the chain and names the node in `matched` and `reasons`.
+
+| Node | Effect |
+| --- | --- |
+| `deny` | refuses when `policy.deny` matches, otherwise passes |
+| `allow` | allows when `policy.allow` matches; later `score` and `judge` nodes do not run |
+| `score` | adds its value to the running score |
+| `judge` | scores through the host judge service; with `allowAtLeast` it allows at or above the score and refuses below it |
+| `budget` | refuses at the budget ledger's hard limit, otherwise passes |
+| `prepare` | runs the host prepare hook, then passes |
+
+`allowAtLeast` is read by `judge` only, 0 to 1. `restrictSkip` lists what a `restrict` may skip (`scoring`, `judge`), and `mayRestrict` is read by `budget` only. A `judge` or an `allow` before a `budget` warns at load.
+
+```yaml
+config:
+  pipeline:
+    global:
+      - { id: guard, type: deny }
+      - { id: limits, type: budget, mayRestrict: true, restrictSkip: [scoring] }
+      - { id: verdict, type: judge, allowAtLeast: 0.6 }
+```
