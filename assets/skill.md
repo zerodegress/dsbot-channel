@@ -150,7 +150,7 @@ The provider sets no timer of its own; `pipeline.judgeTimeoutMs` bounds the call
 
 ## How a message is decided
 
-An inbound message is deduplicated by the adapter, then the policy gate decides whether it may become a turn, then the pipeline decides whether the turn is allowed; each refusal names its reason. `policy.requireMention` needs a transport that can tell mentions, `policy.groupBots` sets how another bot's group message is treated (`whenMentioned`, `silent`, `answer`), `policy.relayLimit` / `policy.relayResetMs` cap one peer's consecutive turns, `policy.deny.words` / `policy.deny.regexes` match case-insensitively, `policy.allow.peers` matches `source.peer`, and `policy.budget` sets a points window with a hard ratio. A judge is a pipeline node: mount a provider, then declare the node; `allowAtLeast` makes it decide, without it the node only scores.
+An inbound message is deduplicated by the adapter, then the policy keys in the table above decide whether it may become a turn, then the pipeline decides whether the turn is allowed; each refusal names its reason. A judge is a pipeline node: mount a provider, then declare the node; `allowAtLeast` makes it decide, without it the node only scores.
 
 ## Pipeline nodes
 
