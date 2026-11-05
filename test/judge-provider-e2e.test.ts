@@ -11,7 +11,7 @@ import { buildListenerHealth, buildStatus, NO_MEDIA } from '../src/adapter-statu
 import type { AdapterPorts, ChannelAdapter, InboundMessage, InboundVerdict, SendResult } from '../src/contract.js'
 
 const REF = '{{SECRET_e2e_judge}}'
-const SECRET = 'e2e-secret-value'
+const SECRET = 'judge-secret-value'
 
 interface Hit {
   body: Record<string, unknown>
