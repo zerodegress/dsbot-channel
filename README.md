@@ -249,19 +249,19 @@ A node is `{ id, type }` plus the fields its type reads. The chain runs in order
 | `judge` | Scores through the host judge service; `allowAtLeast` sets its threshold, and it reads `question` and `context`. |
 | `prepare` | Runs the host prepare hook, then passes. Every adapter answering for the bot must carry the hook, or the mount fails. |
 
-| Field | Meaning |
-| --- | --- |
-| `id` | Names the node in `matched` and `reasons`. |
-| `type` | One of the four above. |
-| `allowAtLeast` | `judge` only: a score from 0 to 1. |
-| `question` | `judge` only: what this node asks. `system-one` needs one; an `llm` node may not carry it. |
-| `question.type` | `noul`, `score` or `choice`. |
-| `question.instructions` | One question or statement. |
-| `question.criteria` | `noul`: `{ true, false }`; `score`: 2 to 10 ordered levels, low to high. |
-| `question.options` | `choice` only: at least two options. |
-| `question.target` | `choice` only: one of `question.options`; its probability becomes the score. |
-| `question.min` / `.max` | `score` only: convert a raw score; equal values fail the verdict. |
-| `context` | `judge` only: static material, a string or a mapping of name to string. |
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `id` | required | Names the node in `matched` and `reasons`. |
+| `type` | required | One of the four above. |
+| `allowAtLeast` | off | `judge` only: a score from 0 to 1. |
+| `question` | required | `judge` only: what this node asks. `system-one` needs one; an `llm` node may not carry it. |
+| `question.type` | required | `noul`, `score` or `choice`. |
+| `question.instructions` | required | One question or statement. |
+| `question.criteria` | required | `noul`: `{ true, false }`; `score`: 2 to 10 ordered levels, low to high. |
+| `question.options` | required | `choice` only: at least two options. |
+| `question.target` | required | `choice` only: one of `question.options`; its probability becomes the score. |
+| `question.min` / `.max` | off | `score` only: convert a raw score; equal values fail the verdict. |
+| `context` | off | `judge` only: static material, a string or a mapping of name to string. |
 
 A key other than these inside `question` fails the mount and names the node and the field. One `context` may total the provider's `maxChars` in code points, mapping names included; an empty name or value, another type or an over-long one fails the mount. `context` is what the profile knows, not what happened: the body, the scope, the author and the mention flag are sent already, and no history, session or tool is read. `llm` renders it after the message facts; `system-one` sends it as `state.context`.
 

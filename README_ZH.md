@@ -249,19 +249,19 @@ config:
 | `judge` | 通过宿主 judge 服务打分；`allowAtLeast` 是阈值，节点还读取 `question` 与 `context`。 |
 | `prepare` | 执行宿主提供的 prepare 钩子，然后通过。为该 bot 服务的每个 adapter 都必须带这个钩子，否则挂载失败。 |
 
-| 字段 | 含义 |
-| --- | --- |
-| `id` | `matched` 与 `reasons` 用它指代该节点。 |
-| `type` | 上面四种之一。 |
-| `allowAtLeast` | 仅 `judge`：0 到 1 的分数。 |
-| `question` | 仅 `judge`：这个节点问什么。`system-one` 必须有；`llm` 节点带了会挂载失败。 |
-| `question.type` | `noul`、`score` 或 `choice`。 |
-| `question.instructions` | 一句问题或陈述。 |
-| `question.criteria` | `noul`：`{ true, false }`；`score`：2 到 10 档，由低到高。 |
-| `question.options` | 仅 `choice`：至少两项。 |
-| `question.target` | 仅 `choice`：`question.options` 中的一项，取它的概率作为分数。 |
-| `question.min` / `.max` | 仅 `score`：换算原始分；两者相等判失败。 |
-| `context` | 仅 `judge`：静态材料，字符串或「名字→字符串」映射。 |
+| 字段 | 默认值 | 含义 |
+| --- | --- | --- |
+| `id` | required | `matched` 与 `reasons` 用它指代该节点。 |
+| `type` | required | 上面四种之一。 |
+| `allowAtLeast` | off | 仅 `judge`：0 到 1 的分数。 |
+| `question` | required | 仅 `judge`：这个节点问什么。`system-one` 必须有；`llm` 节点带了会挂载失败。 |
+| `question.type` | required | `noul`、`score` 或 `choice`。 |
+| `question.instructions` | required | 一句问题或陈述。 |
+| `question.criteria` | required | `noul`：`{ true, false }`；`score`：2 到 10 档，由低到高。 |
+| `question.options` | required | 仅 `choice`：至少两项。 |
+| `question.target` | required | 仅 `choice`：`question.options` 中的一项，取它的概率作为分数。 |
+| `question.min` / `.max` | off | 仅 `score`：换算原始分；两者相等判失败。 |
+| `context` | off | 仅 `judge`：静态材料，字符串或「名字→字符串」映射。 |
 
 `question` 里上述字段之外的键会让挂载失败，错误带节点 id 与字段名。单个 `context` 的码点总数不得超过 provider 的 `maxChars`，映射的名字也计入；名字或值为空、类型不对或超长都会挂载失败。`context` 是配置方知道的材料，不是发生过的事：正文、作用域、作者与是否被点名本来就随事件发送，历史、会话与工具一律不读。`llm` 把它渲染在消息事实之后；`system-one` 放进 `state.context`。
 

@@ -164,7 +164,7 @@ A `judge` node names what it asks and what it adds.
 | `question` | required | what this node asks; `system-one` needs one, an `llm` node may not carry it |
 | `question.type` | required | `noul`, `score` or `choice` |
 | `question.instructions` | required | one question or statement |
-| `question.criteria` | `noul`: `{ true, false }`; `score`: 2 to 10 ordered levels, low to high | |
+| `question.criteria` | required | `noul`: `{ true, false }`; `score`: 2 to 10 ordered levels, low to high |
 | `question.options` | required | for `choice`: at least two options |
 | `question.target` | required | for `choice`: one of `question.options`; its probability becomes the score |
 | `question.min` / `question.max` | off | `score` only: convert a raw score; equal values fail the verdict |
