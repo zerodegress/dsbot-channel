@@ -11,7 +11,7 @@ import { signEnvelope } from '../src/adapters/p2p/p2p-auth.js'
 import type { Envelope } from '../src/adapters/p2p/p2p-auth.js'
 import { PEER_TEXT_MAX } from '../src/adapters/p2p/p2p-mapping.js'
 
-const REF = '{{SECRET_dgntdkke}}'
+const REF = 'p2p-secret-send'
 const SECRET = 'shared-value'
 const credentials = staticCredentials({ [REF]: SECRET })
 

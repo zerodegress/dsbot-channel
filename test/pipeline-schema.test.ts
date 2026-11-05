@@ -8,7 +8,7 @@ import type { ChannelConfig } from '../src/plugin.js'
 import { ConfigError, validateConfig } from '../src/config.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
 
-const REF = '{{SECRET_pq7x2m4a}}'
+const REF = 'p2p-secret-pipeline'
 
 const sessionStub = {
   create: () => Promise.resolve({ sessionId: 'session-1' }),

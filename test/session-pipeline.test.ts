@@ -22,7 +22,7 @@ import { SessionPipelines } from '../src/session-pipeline.js'
 const ids = (nodes: readonly { id: string }[]): string[] => nodes.map((node) => node.id)
 
 const forks: { dispose(): Promise<void> }[] = []
-const REF = '{{SECRET_4dhhwz2n}}'
+const REF = 'p2p-secret-session-pipeline'
 const credentials = staticCredentials({ [REF]: 'shared-value' })
 
 afterEach(async () => {
