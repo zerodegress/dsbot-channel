@@ -156,7 +156,7 @@ config:
         context: This bot answers questions about the project only.
 ```
 
-A `judge` node needs the host service `dsbot-channel/judge`, which answers `judge(event, context)` with `{ score, reason? }`. A profile that declares the node without the service fails the mount; a judge that times out or throws refuses the message with `judge_timeout` or `judge_failed`, and a score that is not a finite number from 0 to 1 fails it the same way. `allowAtLeast`, `question` and `context` may also be set by an adapter's `insert` or `override`, or by a session's `override`; the fields a judge node reads are listed under `Pipeline nodes`. `judgeTimeoutMs` must not exceed `maxTurnMs`.
+A `judge` node needs the host service `dsbot-channel/judge`, which answers `judge(event, context)` with `{ score, reason? }`. A profile that declares the node without the service fails the mount; a judge that times out or throws refuses the message with `judge_timeout` or `judge_failed`, and a score that is not a finite number from 0 to 1 fails it the same way. `allowAtLeast` may also be set by an adapter's `insert` or `override`, or by a session's `override`; the fields a judge node reads, and where they may be written, are listed under `Pipeline nodes`. `judgeTimeoutMs` must not exceed `maxTurnMs`.
 
 | Field | Default | Meaning |
 | --- | --- | --- |

@@ -156,7 +156,7 @@ config:
         context: This bot answers questions about the project only.
 ```
 
-`judge` 节点需要宿主服务 `dsbot-channel/judge`，它以 `{ score, reason? }` 回应 `judge(event, context)`。声明了节点但没有该服务，挂载失败；判定超时或抛错分别以 `judge_timeout`、`judge_failed` 拒绝该消息，分数不是 0–1 的有限数同样判失败。`allowAtLeast`、`question` 与 `context` 也可以由 adapter 的 `insert` 或 `override` 写入，或由 session 的 `override` 写入；judge 节点读哪些字段见「管道节点」。`judgeTimeoutMs` 不得超过 `maxTurnMs`。
+`judge` 节点需要宿主服务 `dsbot-channel/judge`，它以 `{ score, reason? }` 回应 `judge(event, context)`。声明了节点但没有该服务，挂载失败；判定超时或抛错分别以 `judge_timeout`、`judge_failed` 拒绝该消息，分数不是 0–1 的有限数同样判失败。`allowAtLeast` 也可以由 adapter 的 `insert` 或 `override` 写入，或由 session 的 `override` 写入；judge 节点读哪些字段、能写在哪一层，见「管道节点」。`judgeTimeoutMs` 不得超过 `maxTurnMs`。
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
