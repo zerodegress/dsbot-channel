@@ -352,7 +352,7 @@ config:
 | `context` | off | 仅 `judge`：静态材料，字符串或「名字→字符串」映射。 |
 | `probability` | required | 仅 `chance`：0 到 1。 |
 | `outcome` | required | `when`：`allow`、`deny` 或 `pass`；`chance`：`allow` 或 `deny`。 |
-| `test` | `when` 必填 | `when` 节点读取的 Matcher。 |
+| `test` | required | 仅 `when`：它读取的 Matcher。 |
 | `when` | off | 仅 `chance`：它掷骰前要满足的 Matcher。 |
 | `restrictSkip` | off | 仅 `budget`：restrict 跳过什么，与 `mayRestrict` 同用时必填。`scoring` 跳过 `score` 与 `judge`；`judge` 只跳 `judge`。 |
 | `mayRestrict` | off | 仅 `budget`：比例达到 `policy.budget.restrictAt` 时转入 restrict。 |
@@ -364,12 +364,20 @@ config:
 | Matcher 键 | 取值 | 含义 |
 | --- | --- | --- |
 | `scope` | `c2c`、`group`、`p2p` | 会话类型 |
-| `peer` | 字符串，或 `{ in: [...] }` / `{ notIn: [...] }` | 事件里的对端；缺 `peer` 时不在任何 `in` 列表里，也算不在 `notIn` 列表里 |
+| `peer` | 字符串，或 `{ in: [...] }` / `{ notIn: [...] }` | 事件里的对端；事件没有 `peer` 时 `in` 不匹配、`notIn` 匹配 |
 | `mentioned` | `true` / `false` | 本 bot 或所有人被点名 |
 | `replyToMe` | `true` / `false` | 这条消息引用了本 bot 在同一 channel 上发出的消息 |
-| `ownRecent` | `true` / `false` | 本 bot 在这段对话最近十条消息内说过话 |
+| `ownRecent` | `true` / `false` | 本 bot 最近十分钟内在本会话说过话，且此后收到的消息少于十条 |
 
-至少写一个键，写了多个必须同时成立。`ownRecent` 由网关计数；`replyToMe` 由 adapter 给出，没有父消息 id 时恒为 false；非消息事件两者都为 false。
+至少写一个键，写了多个必须同时成立。本 bot 成功发出消息会把 `ownRecent` 归零，发送失败不归零；本 bot 上次说话满十分钟后过期。`replyToMe` 由 adapter 给出，没有父消息 id 时恒为 false；非消息事件两者都为 false。没有键、未知键、`in` 与 `notIn` 同时写、空列表或非布尔值都会让挂载失败。命中会把 `when_allow` 或 `when_deny` 记进 `reasons`；`pass` 与未命中不记。
+```yaml
+config:
+  pipeline:
+    global:
+      - { id: named, type: when, test: { mentioned: true }, outcome: allow }
+      - { id: roll, type: chance, when: { ownRecent: false }, probability: 0.99, outcome: deny }
+```
+
 
 `chance` 节点的落桶值来自「事件键 + 节点 id」的固定哈希：同一条消息重放结果相同，同一条消息上的两个 chance 节点互相独立。它在 `reasons` 下记 `chance_allow`、`chance_deny` 或 `chance_miss`（带 `p=`），承载这条消息的 adapter 在 `counters.chance[nodeId]` 记 `{ hit, miss }`；该键只在节点实际跑过之后出现。
 
@@ -377,7 +385,7 @@ config:
 
 `budget` 节点读取最忙窗口的花费：比例取 global、bot 与 session 三者用量的最大值除以 `policy.budget.capacity`。`hardLimit` 拒绝；配了 `mayRestrict` 时，比例达到 `policy.budget.restrictAt` 就返回 restrict，跳过 `restrictSkip` 指定的节点并让链条继续。restrict 不是放行：走到链尾仍然拒绝，网关记为 `pipeline-restrict`。`restrictSkip` 没配 `mayRestrict`、`mayRestrict` 没配 `restrictAt`、或 `mayRestrict` 的 `restrictSkip` 为空，都是不会生效的字段，挂载失败。
 
-adapter 用四个键调整它继承到的链条：`inherit` 指定从哪一层开始（adapter 层只能是 `global`），`remove` 按 id 删节点，`insert` 把节点插到某个 id 之前或之后，`override` 按 id 替换节点字段。`insert` 的 `after` 与 `before` 只能写一个、不能复用已有的 id；`override` 只写该节点类型拥有的字段；`remove` 或 `override` 指向不存在的 id 会让挂载失败。`question`、`context`、`probability`、`outcome`、`restrictSkip` 与 `mayRestrict` 可以写在 `pipeline.global`，也可以写在 adapter 的 `insert` 或 `override` 里。session 的 `insert` 只接受 `id`、`type`、`after`、`before`，带不了这几个字段；session 的 `override` 可以写。
+adapter 用四个键调整它继承到的链条：`inherit` 指定从哪一层开始（adapter 层只能是 `global`），`remove` 按 id 删节点，`insert` 把节点插到某个 id 之前或之后，`override` 按 id 替换节点字段。`insert` 的 `after` 与 `before` 只能写一个、不能复用已有的 id；`override` 只写该节点类型拥有的字段；`remove` 或 `override` 指向不存在的 id 会让挂载失败。`question`、`context`、`probability`、`outcome`、`test`、`when`、`restrictSkip` 与 `mayRestrict` 可以写在 `pipeline.global`，也可以写在 adapter 的 `insert` 或 `override` 里。session 的 `insert` 只接受 `id`、`type`、`after`、`before`，带不了这几个字段；session 的 `override` 可以写。
 
 ```yaml
 config:

@@ -231,14 +231,34 @@ A `judge` node names what it asks and what it adds.
 | `context` | off | static material for this node: a string or a mapping of name to string |
 | `probability` | required | `chance` only: 0 to 1 |
 | `outcome` | required | `when`: `allow`, `deny` or `pass`; `chance`: `allow` or `deny` |
-| `test` | required for `when` | the Matcher a `when` node reads |
+| `test` | required | `when` only: the Matcher it reads |
 | `when` | off | `chance` only: the Matcher it rolls behind |
 | `restrictSkip` | off | `budget` only: what a restrict skips; required with `mayRestrict`. `scoring` skips `score` and `judge`; `judge` skips only `judge` |
 | `mayRestrict` | off | `budget` only: turn a ratio at `policy.budget.restrictAt` into a restrict |
 
+A `when` node decides by a Matcher: a match returns its `outcome`, no match passes. The same Matcher guards a `chance` node; a guard that does not hold passes without rolling, without a `counters.chance` entry and without a `chance_miss` reason.
+
+| Matcher key | Values | Meaning |
+| --- | --- | --- |
+| `scope` | `c2c`, `group`, `p2p` | the conversation kind |
+| `peer` | a string, or `{ in: [...] }` / `{ notIn: [...] }` | the peer the event names; when the event names no peer, `in` does not match and `notIn` does |
+| `mentioned` | `true` / `false` | this bot or everyone was named |
+| `replyToMe` | `true` / `false` | the message quotes something this bot sent on the same channel |
+| `ownRecent` | `true` / `false` | the bot spoke here within the last ten minutes and fewer than ten messages have arrived since |
+
+At least one key is required and every key present must hold. A successful send by the bot resets `ownRecent` and a failed send does not; it expires ten minutes after the bot last spoke. `replyToMe` is reported by the adapter, false when the transport carries no parent message id; both are false for non-message events. A matcher with no key, an unknown key, both `in` and `notIn`, an empty list or a non-boolean flag fails the mount. A match records `when_allow` or `when_deny` under `reasons`; `pass` and a miss record nothing.
+```yaml
+config:
+  pipeline:
+    global:
+      - { id: named, type: when, test: { mentioned: true }, outcome: allow }
+      - { id: roll, type: chance, when: { ownRecent: false }, probability: 0.99, outcome: deny }
+```
+
+
 A key other than these in `question` fails the mount and names the node and the field. One `context` may total `maxChars` code points, mapping names included; an empty name or value, another type or an over-long one fails the mount. `context` carries what the profile knows, not what happened: the body, the scope, the author and whether the bot was named are sent already, and history, sessions and tools are never read. `llm` renders it after the message facts; `system-one` sends it as `state.context`.
 
-`question`, `context`, `probability`, `outcome`, `restrictSkip` and `mayRestrict` may be written in `pipeline.global` and in an adapter's `insert` and `override`. A session layer's `insert` takes only `id`, `type`, `after` and `before`, so it carries none of them; a session's `override` may set them.
+`question`, `context`, `probability`, `outcome`, `test`, `when`, `restrictSkip` and `mayRestrict` may be written in `pipeline.global` and in an adapter's `insert` and `override`. A session layer's `insert` takes only `id`, `type`, `after` and `before`, so it carries none of them; a session's `override` may set them.
 
 A `chance` node takes its bucket from a fixed hash of the event key and the node id: the same message replayed takes the same outcome, and two chance nodes on one message draw independently. It records `chance_allow`, `chance_deny` or `chance_miss` with `p=` under `reasons`, and the adapter that carried the message counts it under `counters.chance[nodeId]` as `{ hit, miss }`; the key appears only after the node has run.
 

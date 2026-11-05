@@ -352,7 +352,7 @@ A node is `{ id, type }` plus the fields its type reads. The chain runs in order
 | `context` | off | `judge` only: static material, a string or a mapping of name to string. |
 | `probability` | required | `chance` only: 0 to 1. |
 | `outcome` | required | `when`: `allow`, `deny` or `pass`; `chance`: `allow` or `deny`. |
-| `test` | required for `when` | the Matcher a `when` node reads. |
+| `test` | required | `when` only: the Matcher it reads. |
 | `when` | off | `chance` only: the Matcher it rolls behind. |
 | `restrictSkip` | off | `budget` only: what a restrict skips; required with `mayRestrict`. `scoring` skips `score` and `judge`; `judge` skips only `judge`. |
 | `mayRestrict` | off | `budget` only: turn a ratio at `policy.budget.restrictAt` into a restrict. |
@@ -364,12 +364,20 @@ A `when` node decides by a Matcher: a match returns its `outcome`, no match pass
 | Matcher key | Values | Meaning |
 | --- | --- | --- |
 | `scope` | `c2c`, `group`, `p2p` | the conversation kind |
-| `peer` | a string, or `{ in: [...] }` / `{ notIn: [...] }` | the peer the event names; a missing peer is never in a list and is not in a `notIn` list |
+| `peer` | a string, or `{ in: [...] }` / `{ notIn: [...] }` | the peer the event names; when the event names no peer, `in` does not match and `notIn` does |
 | `mentioned` | `true` / `false` | this bot or everyone was named |
 | `replyToMe` | `true` / `false` | the message quotes something this bot sent on the same channel |
-| `ownRecent` | `true` / `false` | this bot spoke within the last ten messages of the conversation |
+| `ownRecent` | `true` / `false` | the bot spoke here within the last ten minutes and fewer than ten messages have arrived since |
 
-At least one key is required and every key present must hold. `ownRecent` is counted by the gateway; `replyToMe` is reported by the adapter, false when the transport carries no parent message id, and both are false for non-message events.
+At least one key is required and every key present must hold. A successful send by the bot resets `ownRecent` and a failed send does not; it expires ten minutes after the bot last spoke. `replyToMe` is reported by the adapter, false when the transport carries no parent message id; both are false for non-message events. A matcher with no key, an unknown key, both `in` and `notIn`, an empty list or a non-boolean flag fails the mount. A match records `when_allow` or `when_deny` under `reasons`; `pass` and a miss record nothing.
+```yaml
+config:
+  pipeline:
+    global:
+      - { id: named, type: when, test: { mentioned: true }, outcome: allow }
+      - { id: roll, type: chance, when: { ownRecent: false }, probability: 0.99, outcome: deny }
+```
+
 
 A `chance` node takes its bucket from a fixed hash of the event key and the node id, so the same message replayed takes the same outcome and two chance nodes on one message draw independently. It records `chance_allow`, `chance_deny` or `chance_miss` with `p=` under `reasons`, and the adapter that carried the message counts it under `counters.chance[nodeId]` as `{ hit, miss }`; that key appears only after the node has run.
 
@@ -377,7 +385,7 @@ A `score` node adds what the host service `dsbot-channel/score` returns. A profi
 
 A `budget` node reads the spend of the busiest window: the ratio is the largest of the global, bot and session usage divided by `policy.budget.capacity`. `hardLimit` refuses; with `mayRestrict`, a ratio at or above `policy.budget.restrictAt` returns a restrict, which skips what `restrictSkip` names and lets the chain continue. A restrict is not an allow: a chain that ends after one still refuses, and the gate records `pipeline-restrict`. `restrictSkip` without `mayRestrict`, `mayRestrict` without `restrictAt`, or `mayRestrict` with an empty `restrictSkip` declares a field that would do nothing and fails the mount.
 
-An adapter changes the chain it starts from with four keys: `inherit` names the layer it starts from, which for an adapter is `global`; `remove` drops nodes by id, `insert` adds a node after or before a named node, and `override` replaces fields of a node by id. `insert` sets exactly one of `after` or `before` and cannot reuse an existing id; `override` writes only fields the node's type reads; `remove` or `override` naming an id that is not there fails the mount. `question`, `context`, `probability`, `outcome`, `restrictSkip` and `mayRestrict` may be written in `pipeline.global` and in an adapter's `insert` or `override`. A session's `insert` takes only `id`, `type`, `after` and `before`, so it carries none of them; a session's `override` may set them.
+An adapter changes the chain it starts from with four keys: `inherit` names the layer it starts from, which for an adapter is `global`; `remove` drops nodes by id, `insert` adds a node after or before a named node, and `override` replaces fields of a node by id. `insert` sets exactly one of `after` or `before` and cannot reuse an existing id; `override` writes only fields the node's type reads; `remove` or `override` naming an id that is not there fails the mount. `question`, `context`, `probability`, `outcome`, `test`, `when`, `restrictSkip` and `mayRestrict` may be written in `pipeline.global` and in an adapter's `insert` or `override`. A session's `insert` takes only `id`, `type`, `after` and `before`, so it carries none of them; a session's `override` may set them.
 
 ```yaml
 config:
