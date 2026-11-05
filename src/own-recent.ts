@@ -3,6 +3,7 @@ export const OWN_RECENT_TTL_MS = 10 * 60_000
 export const OWN_RECENT_MAX = 4096
 
 interface Reading {
+  spoke: boolean
   count: number
   at: number
 }
@@ -20,6 +21,16 @@ export class OwnRecent {
     return `${channel}|${session}`
   }
 
+  #store(key: string, reading: Reading): void {
+    this.#readings.delete(key)
+    this.#readings.set(key, reading)
+    while (this.#readings.size > OWN_RECENT_MAX) {
+      const oldest = this.#readings.keys().next()
+      if (oldest.done === true) break
+      this.#readings.delete(oldest.value)
+    }
+  }
+
   #read(channel: string, session: string): Reading {
     const key = this.#key(channel, session)
     const seen = this.#readings.get(key)
@@ -29,14 +40,8 @@ export class OwnRecent {
       this.#readings.set(key, seen)
       return seen
     }
-    const fresh: Reading = { count: 0, at }
-    this.#readings.delete(key)
-    this.#readings.set(key, fresh)
-    while (this.#readings.size > OWN_RECENT_MAX) {
-      const oldest = this.#readings.keys().next()
-      if (oldest.done === true) break
-      this.#readings.delete(oldest.value)
-    }
+    const fresh: Reading = { spoke: false, count: 0, at }
+    this.#store(key, fresh)
     return fresh
   }
 
@@ -50,22 +55,31 @@ export class OwnRecent {
   /** This bot spoke here, so the window starts again. */
   reset(channel: string, session: string): void {
     const reading = this.#read(channel, session)
+    reading.spoke = true
     reading.count = 0
     reading.at = this.#now()
   }
 
-  /** Whether the bot spoke within the last few messages of this conversation. */
+  /** Whether the bot spoke here recently and few messages arrived since. */
   recent(channel: string, session: string): boolean {
-    return this.#read(channel, session).count < OWN_RECENT_WINDOW
+    const reading = this.#read(channel, session)
+    return reading.spoke && reading.count < OWN_RECENT_WINDOW
   }
 
   /** A send that only names the channel and its target resets every session that answers to it. */
   resetTarget(channel: string, target: string): void {
     const prefix = `${channel}|`
     const suffix = `|${target}`
-    for (const key of [...this.#readings.keys()]) {
+    const at = this.#now()
+    let named = false
+    for (const [key, reading] of [...this.#readings]) {
       if (!key.startsWith(prefix) || !key.endsWith(suffix)) continue
-      this.#readings.delete(key)
+      named = true
+      reading.spoke = true
+      reading.count = 0
+      reading.at = at
+      this.#store(key, reading)
     }
+    if (!named) this.#store(this.#key(channel, target), { spoke: true, count: 0, at })
   }
 }
