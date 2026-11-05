@@ -247,6 +247,7 @@ A `when` node decides by a Matcher: a match returns its `outcome`, no match pass
 | `ownRecent` | `true` / `false` | the bot spoke here within the last ten minutes and fewer than ten messages have arrived since |
 
 At least one key is required and every key present must hold. A successful send by the bot resets `ownRecent` and a failed send does not; it expires ten minutes after the bot last spoke. `replyToMe` is reported by the adapter, false when the transport carries no parent message id; both are false for non-message events. A matcher with no key, an unknown key, both `in` and `notIn`, an empty list or a non-boolean flag fails the mount. A match records `when_allow` or `when_deny` under `reasons`; `pass` and a miss record nothing.
+
 ```yaml
 config:
   pipeline:
@@ -254,7 +255,6 @@ config:
       - { id: named, type: when, test: { mentioned: true }, outcome: allow }
       - { id: roll, type: chance, when: { ownRecent: false }, probability: 0.99, outcome: deny }
 ```
-
 
 A key other than these in `question` fails the mount and names the node and the field. One `context` may total `maxChars` code points, mapping names included; an empty name or value, another type or an over-long one fails the mount. `context` carries what the profile knows, not what happened: the body, the scope, the author and whether the bot was named are sent already, and history, sessions and tools are never read. `llm` renders it after the message facts; `system-one` sends it as `state.context`.
 

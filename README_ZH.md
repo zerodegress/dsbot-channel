@@ -370,6 +370,7 @@ config:
 | `ownRecent` | `true` / `false` | 本 bot 最近十分钟内在本会话说过话，且此后收到的消息少于十条 |
 
 至少写一个键，写了多个必须同时成立。本 bot 成功发出消息会把 `ownRecent` 归零，发送失败不归零；本 bot 上次说话满十分钟后过期。`replyToMe` 由 adapter 给出，没有父消息 id 时恒为 false；非消息事件两者都为 false。没有键、未知键、`in` 与 `notIn` 同时写、空列表或非布尔值都会让挂载失败。命中会把 `when_allow` 或 `when_deny` 记进 `reasons`；`pass` 与未命中不记。
+
 ```yaml
 config:
   pipeline:
@@ -377,7 +378,6 @@ config:
       - { id: named, type: when, test: { mentioned: true }, outcome: allow }
       - { id: roll, type: chance, when: { ownRecent: false }, probability: 0.99, outcome: deny }
 ```
-
 
 `chance` 节点的落桶值来自「事件键 + 节点 id」的固定哈希：同一条消息重放结果相同，同一条消息上的两个 chance 节点互相独立。它在 `reasons` 下记 `chance_allow`、`chance_deny` 或 `chance_miss`（带 `p=`），承载这条消息的 adapter 在 `counters.chance[nodeId]` 记 `{ hit, miss }`；该键只在节点实际跑过之后出现。
 

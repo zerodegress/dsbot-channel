@@ -370,6 +370,7 @@ A `when` node decides by a Matcher: a match returns its `outcome`, no match pass
 | `ownRecent` | `true` / `false` | the bot spoke here within the last ten minutes and fewer than ten messages have arrived since |
 
 At least one key is required and every key present must hold. A successful send by the bot resets `ownRecent` and a failed send does not; it expires ten minutes after the bot last spoke. `replyToMe` is reported by the adapter, false when the transport carries no parent message id; both are false for non-message events. A matcher with no key, an unknown key, both `in` and `notIn`, an empty list or a non-boolean flag fails the mount. A match records `when_allow` or `when_deny` under `reasons`; `pass` and a miss record nothing.
+
 ```yaml
 config:
   pipeline:
@@ -377,7 +378,6 @@ config:
       - { id: named, type: when, test: { mentioned: true }, outcome: allow }
       - { id: roll, type: chance, when: { ownRecent: false }, probability: 0.99, outcome: deny }
 ```
-
 
 A `chance` node takes its bucket from a fixed hash of the event key and the node id, so the same message replayed takes the same outcome and two chance nodes on one message draw independently. It records `chance_allow`, `chance_deny` or `chance_miss` with `p=` under `reasons`, and the adapter that carried the message counts it under `counters.chance[nodeId]` as `{ hit, miss }`; that key appears only after the node has run.
 
