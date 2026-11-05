@@ -1219,7 +1219,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         if (kind !== 'message') {
           const eventClass = `${kind}.${message.event?.type ?? 'unknown'}`
           const mayTurn = adapter.events?.turn?.includes(eventClass) === true
-          const verdict = pipeline === undefined ? undefined : await pipeline.run(event)
+          const verdict = mayTurn && pipeline !== undefined ? await pipeline.run(event) : undefined
           if (message.event?.postType !== 'message_sent') {
             runtime.context.record(`${adapter.botName}|${message.sessionKey}`, {
               eventKey: message.eventKey,

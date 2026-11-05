@@ -111,13 +111,24 @@ class GroupAdapter implements ChannelAdapter {
   }
 }
 
-async function mount(options: { turn?: Record<string, unknown>; events?: { turn: string[] } } = {}): Promise<void> {
+async function mount(
+  options: {
+    turn?: Record<string, unknown>
+    events?: { turn: string[] }
+    judge?: () => Promise<{ score: number }>
+    pipeline?: { global: { id: string; type: string }[] }
+  } = {},
+): Promise<void> {
   const ctx = new Context()
   await ctx.plugin({
     name: 'probe-services',
     apply(scope: Context) {
       scope.provide('credentials')
       scope.set('credentials', { resolve: () => Promise.resolve(undefined) })
+      if (options.judge !== undefined) {
+        scope.provide('dsbot-channel/judge')
+        scope.set('dsbot-channel/judge', { judge: options.judge })
+      }
       scope.provide('sessionController')
       scope.set('sessionController', {
         create: () => Promise.resolve({ sessionId: 'session-1' }),
@@ -138,6 +149,7 @@ async function mount(options: { turn?: Record<string, unknown>; events?: { turn:
   await ctx.plugin(defineAdapterPlugin({ kind: 'x-group', create: () => new GroupAdapter() }))
   await ctx.plugin(entry, {
     ...(options.turn === undefined ? {} : { turn: options.turn }),
+    ...(options.pipeline === undefined ? {} : { pipeline: options.pipeline }),
     adapters: [
       {
         kind: 'x-group',
@@ -153,6 +165,10 @@ async function mount(options: { turn?: Record<string, unknown>; events?: { turn:
 
 async function deliver(...messages: InboundMessage[]): Promise<void> {
   for (const one of messages) verdicts.push(await ports!.onMessage(one))
+}
+
+function drain(): Promise<void> {
+  return new Promise<void>((resolve) => setImmediate(() => setImmediate(resolve)))
 }
 
 async function waitFor(check: () => boolean, timeoutMs = 3000): Promise<void> {
@@ -231,5 +247,37 @@ describe('a self echo', () => {
     await deliver(message({ eventKey: 'm-1', text: 'hello' }))
     await waitFor(() => prompted.length === 1)
     expect(prompted[0]).not.toContain('message 50005')
+  })
+})
+
+describe('the pipeline an event reaches', () => {
+  test('a class that may not turn never starts a judge call', async () => {
+    let calls = 0
+    await mount({
+      judge: () => {
+        calls += 1
+        return Promise.resolve({ score: 1 })
+      },
+      pipeline: { global: [{ id: 'j', type: 'judge' }] },
+    })
+    await deliver(notice({ eventKey: 'evt-recall', type: 'group_recall', text: '[onebot notice: group_recall] user 20002 recalled message 30003 in group 12345' }))
+    await drain()
+    expect(calls).toBe(0)
+    expect(prompted).toHaveLength(0)
+  })
+
+  test('a class named in the profile does reach the pipeline', async () => {
+    let calls = 0
+    await mount({
+      events: { turn: ['notice.group_recall'] },
+      judge: () => {
+        calls += 1
+        return Promise.resolve({ score: 1 })
+      },
+      pipeline: { global: [{ id: 'j', type: 'judge' }] },
+    })
+    await deliver(notice({ eventKey: 'evt-recall', type: 'group_recall', text: '[onebot notice: group_recall] user 20002 recalled message 30003 in group 12345' }))
+    await waitFor(() => calls === 1)
+    expect(calls).toBe(1)
   })
 })
