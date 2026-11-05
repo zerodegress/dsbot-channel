@@ -57,6 +57,7 @@ import { TurnStats } from './turn-stats.js'
 import { TurnWindows } from './turn-window.js'
 import type { TurnOutcome } from './turn-stats.js'
 import { createWarn } from './warn.js'
+import { registerSkill } from './skill-asset.js'
 
 export interface PolicySettings extends PolicyConfig {
   relayLimit: number
@@ -108,6 +109,8 @@ export interface ChannelConfig {
   identity?: unknown
   /** Where this bot's notes live; absent means the feature is off. */
   impressions?: unknown
+  /** Whether the packaged skill is registered with the host; on unless turned off. */
+  skill?: boolean | undefined
 }
 
 export interface TurnSettings {
@@ -167,6 +170,7 @@ export const Config: any = Schema.object({
   reply: Schema.any(),
   identity: Schema.any(),
   impressions: Schema.any(),
+  skill: Schema.boolean().default(true),
   policy: Schema.any(),
   delivery: Schema.any(),
   turn: Schema.object({
@@ -727,6 +731,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     writtenAdapters[config.adapters.indexOf(adapter)]
   const rawProfile = (raw ?? {}) as { reply?: unknown; turn?: unknown; policy?: unknown; delivery?: unknown }
   const warn = createWarn(ctx)
+  registerSkill(ctx, config.skill !== false, warn)
   const flushFailures = { count: 0 }
   const judgeFailures = { count: 0 }
   const flushSessions = async (when: 'reply' | 'shutdown'): Promise<void> => {
