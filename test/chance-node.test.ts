@@ -83,7 +83,7 @@ describe('where a chance node may be declared', () => {
 describe('what a chance node decides', () => {
   test('the same event key always gets the same verdict', async () => {
     const decisions: string[] = []
-    for (let round = 0; round < 5; round += 1) {
+    for (let round = 0; round < 100; round += 1) {
       const pipeline = buildPipeline([chance(0.5, 'allow')], {})
       const result = await pipeline.run(event('evt-1'))
       decisions.push(JSON.stringify({ decision: result.decision, reasons: result.reasons }))
@@ -94,15 +94,15 @@ describe('what a chance node decides', () => {
   test('a large sample follows the probability', async () => {
     const pipeline = buildPipeline([chance(0.3, 'deny')], {})
     let denied = 0
-    const total = 5000
+    const total = 10_000
     for (let index = 0; index < total; index += 1) {
       const result = await pipeline.run(event(`evt-${index}`))
       if (result.decision === 'deny' && Object.values(result.reasons).some((one) => one.startsWith('chance_deny'))) {
         denied += 1
       }
     }
-    expect(denied / total).toBeGreaterThan(0.27)
-    expect(denied / total).toBeLessThan(0.33)
+    expect(denied / total).toBeGreaterThan(0.28)
+    expect(denied / total).toBeLessThan(0.32)
   })
 
   test('two nodes on one message take independent buckets', async () => {
@@ -123,6 +123,21 @@ describe('what a chance node decides', () => {
     const result = await pipeline.run(event('evt-miss'))
     expect(result.matched).toContain('c')
     expect(result.reasons.c).toMatch(/^chance_miss \(p=0\)$/)
+  })
+
+  test('a hit allow skips what an allow node would skip and stops a judge', async () => {
+    let judged = 0
+    const pipeline = buildPipeline([chance(1, 'allow'), { id: 'j', type: 'judge' } as never], {
+      judge: async () => {
+        judged += 1
+        return { score: 0.5 }
+      },
+    })
+    const result = await pipeline.run(event('evt-skip'))
+    expect(result.decision).toBe('allow')
+    expect(result.skip.has('judge')).toBe(true)
+    expect(result.skip.has('scoring')).toBe(true)
+    expect(judged).toBe(0)
   })
 
   test('a miss passes the chain on and a hit ends it', async () => {
