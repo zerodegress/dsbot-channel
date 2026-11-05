@@ -104,7 +104,7 @@ export interface AdapterConfig {
   delivery?: unknown
   policy: PolicySettings
   pipeline?: PipelineLayer | undefined
-  /** Which non-message event classes may start a turn; empty by default. */
+  /** Which non-message event classes may start a turn; empty by default, and adapter-level only: the names come from one transport. */
   events?: { turn?: string[] | undefined } | undefined
   status?: boolean
   /** The transport block; only the adapter of this kind reads it. */
@@ -1219,7 +1219,6 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
         if (kind !== 'message') {
           const eventClass = `${kind}.${message.event?.type ?? 'unknown'}`
           const mayTurn = adapter.events?.turn?.includes(eventClass) === true
-          const verdict = mayTurn && pipeline !== undefined ? await pipeline.run(event) : undefined
           if (message.event?.postType !== 'message_sent') {
             runtime.context.record(`${adapter.botName}|${message.sessionKey}`, {
               eventKey: message.eventKey,
@@ -1229,6 +1228,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
               media: message.body.media.map((one) => one.type),
             })
           }
+          const verdict = mayTurn && pipeline !== undefined ? await pipeline.run(event) : undefined
           if (!mayTurn || (verdict !== undefined && verdict.decision !== 'allow')) return { ok: true }
         }
         if (
@@ -1251,6 +1251,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
           author: message.author.kind,
           session: message.sessionKey,
           ...(pipeline === undefined || kind !== 'message' ? {} : { pipeline }),
+          ...(kind === 'message' ? {} : { skipMention: true }),
         })
         if (kind === 'message' && message.source.scope === 'group') {
           runtime.context.record(`${adapter.botName}|${message.sessionKey}`, {

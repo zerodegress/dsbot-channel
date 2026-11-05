@@ -326,7 +326,9 @@ function summaryOf(event: OneBotEvent, postType: string, type: string, subType: 
     case 'friend_recall':
       return `${head} user ${who} recalled a message`
     case 'group_ban':
-      return `${head} operator ${id(event.operator_id)} banned user ${who} in group ${groupId ?? 'unknown'}`
+      return subType === 'lift_ban'
+        ? `${head} operator ${id(event.operator_id)} lifted the ban on user ${who} in group ${groupId ?? 'unknown'}`
+        : `${head} operator ${id(event.operator_id)} banned user ${who} in group ${groupId ?? 'unknown'}`
     case 'group_lift_ban':
       return `${head} operator ${id(event.operator_id)} lifted the ban on user ${who} in group ${groupId ?? 'unknown'}`
     case 'group_increase':

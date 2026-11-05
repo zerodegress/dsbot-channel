@@ -22,7 +22,10 @@ export type MessageKind = (typeof MESSAGE_KINDS)[number]
 /** What a non-message event is, in the transport's own class names, never the raw payload. */
 export interface EventDescriptor {
   postType: string
-  /** The transport's own event type inside that post type, e.g. `group_recall`. */
+  /**
+   * The transport's own event type inside that post type, e.g. `group_recall`.
+   * A self echo reads as `notice` + `sent` here; the status counts it as `message_sent`.
+   */
   type: string
   subType?: string | undefined
 }

@@ -345,3 +345,22 @@ describe('the actor a notice names', () => {
     expect(first.eventKey.length).toBeLessThanOrEqual(256)
   })
 })
+
+describe('the words a ban notice carries', () => {
+  test('lift_ban is not described as a ban', () => {
+    const shape = {
+      post_type: 'notice' as const,
+      notice_type: 'group_ban',
+      operator_id: 10001,
+      user_id: 20002,
+      group_id: 12345,
+      time: 1_700_000_800,
+    }
+    const banned = mapOneBotEvent(event({ ...shape, sub_type: 'ban' }), config, noChain)!
+    const lifted = mapOneBotEvent(event({ ...shape, sub_type: 'lift_ban' }), config, noChain)!
+    expect(banned.rawText).toBe('[onebot notice: group_ban] operator 10001 banned user 20002 in group 12345')
+    expect(lifted.rawText).toBe(
+      '[onebot notice: group_ban] operator 10001 lifted the ban on user 20002 in group 12345',
+    )
+  })
+})

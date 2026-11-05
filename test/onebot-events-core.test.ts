@@ -117,6 +117,7 @@ async function mount(
     events?: { turn: string[] }
     judge?: () => Promise<{ score: number }>
     pipeline?: { global: { id: string; type: string }[] }
+    policy?: Record<string, unknown>
   } = {},
 ): Promise<void> {
   const ctx = new Context()
@@ -155,7 +156,7 @@ async function mount(
         kind: 'x-group',
         channel: 'inst-a',
         botName: 'bot-a',
-        policy: {},
+        policy: { ...(options.policy ?? {}) },
         ...(options.events === undefined ? {} : { events: options.events }),
         transport: {},
       },
@@ -279,5 +280,21 @@ describe('the pipeline an event reaches', () => {
     await deliver(notice({ eventKey: 'evt-recall', type: 'group_recall', text: '[onebot notice: group_recall] user 20002 recalled message 30003 in group 12345' }))
     await waitFor(() => calls === 1)
     expect(calls).toBe(1)
+  })
+})
+
+describe('the mention rule', () => {
+  test('does not turn away a class the profile named', async () => {
+    await mount({ events: { turn: ['notice.group_recall'] }, policy: { requireMention: true } })
+    await deliver(notice({ eventKey: 'evt-recall', type: 'group_recall', text: '[onebot notice: group_recall] user 20002 recalled message 30003 in group 12345' }))
+    await waitFor(() => prompted.length === 1)
+    expect(prompted[0]).toContain('recalled message 30003')
+  })
+
+  test('still turns away a message that names nobody', async () => {
+    await mount({ policy: { requireMention: true } })
+    await deliver(message({ eventKey: 'm-1', text: 'hello' }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(prompted).toHaveLength(0)
   })
 })

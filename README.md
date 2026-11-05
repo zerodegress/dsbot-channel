@@ -62,7 +62,7 @@ Two entries of one peer instance must reference different secrets; the same refe
 
 An OneBot adapter speaks one protocol: `transport.protocol` is `http` (the default), `ws-forward` or `ws-reverse`. A field that belongs to another protocol is refused when the profile loads. Each adapter is one link: an implementation reached over one protocol gets one OneBot adapter, not two.
 
-`events.turn` lists the non-message event classes that may start a turn, such as `notice.group_recall` or `request.friend`; the default is none, so a notice or a request is recorded in the turn context and counted under `counters.events` without starting a turn. A `meta_event` and a self echo never start a turn, and a name outside the classes OneBot sends fails the mount.
+`events.turn` lists the non-message event classes that may start a turn, such as `notice.group_recall` or `request.friend`; the default is none, so a notice or a request is recorded in the turn context and counted under `counters.events` without starting a turn. A `meta_event` and a self echo never start a turn, and a name outside the classes OneBot sends fails the mount; a non-message event also skips the mention requirement, which it has no field for.
 
 An adapter may name `session` to run every turn in one existing session, and `cwd`, `agentPreset` and `model` for the sessions it creates; `model` is written `provider/model`. The host's session controller selects that model through `selectModel`; a host without it warns and the session keeps its own model. The adapter status reports the outcome under `modelSelection`, as `requested` and a `state` of `applied`, `unsupported` or `rejected`; the field is absent when no model is named and until the host has decided.
 
