@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { checkPipeline } from '../src/pipeline-config.js'
 import { buildPipeline } from '../src/build-pipeline.js'
+import { chanceHits } from '../src/chance.js'
 import type { PipelineEvent } from '../src/pipeline.js'
 import { resolvePipeline } from '../src/pipeline-scopes.js'
 import { SessionPipelines } from '../src/session-pipeline.js'
@@ -166,5 +167,15 @@ describe('what a chance node decides', () => {
     const hit = buildPipeline([chance(1, 'allow')], {}, { onChance: (one: string) => seen.push(one) } as never)
     await hit.run(event('evt-5'))
     expect(seen).toEqual(['miss', 'allow'])
+  })
+})
+
+describe('the bucket a chance node compares', () => {
+  test('p=1 still hits when the hash lands on the last bucket', () => {
+    expect(chanceHits(2n ** 64n - 1n, 1)).toBe(true)
+  })
+
+  test('p=0 misses even on the first bucket', () => {
+    expect(chanceHits(0n, 0)).toBe(false)
   })
 })

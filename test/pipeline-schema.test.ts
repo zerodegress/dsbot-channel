@@ -5,7 +5,7 @@ import entry from '../src/index.js'
 import { Config, checkPipelineScopes, checkPipelineSettings } from '../src/plugin.js'
 import { checkPipeline } from '../src/pipeline-config.js'
 import type { ChannelConfig } from '../src/plugin.js'
-import { ConfigError } from '../src/config.js'
+import { ConfigError, validateConfig } from '../src/config.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
 
 const REF = '{{SECRET_pq7x2m4a}}'
@@ -151,6 +151,37 @@ describe('the pipeline a profile declares', () => {
   test('a pipeline is optional, and an empty one is not an error', async () => {
     const ctx = await mount({ adapters: [] })
     expect(ctx.get('dsbot-channel.peers')).toBeUndefined()
+  })
+
+  test('a layer insert may carry the fields its node type owns', () => {
+    const config = validateConfig<ChannelConfig>(Config, {
+      adapters: [
+        adapter({
+          pipeline: {
+            insert: [
+              { id: 'c', type: 'chance', after: 'allow', probability: 0.25, outcome: 'deny' },
+              { id: 'j', type: 'judge', after: 'c', question: 'Is this spam?', context: { rules: 'No ads.' } },
+            ],
+          },
+        }),
+      ],
+      pipeline: { global: [node('allow', 'allow')] },
+    })
+    expect(config.adapters[0]?.pipeline?.insert?.[0]).toMatchObject({ probability: 0.25, outcome: 'deny' })
+    expect(config.adapters[0]?.pipeline?.insert?.[1]).toMatchObject({ question: 'Is this spam?' })
+  })
+
+  test('mounts an adapter layer that inserts a chance node', async () => {
+    const ctx = await mount({
+      adapters: [
+        adapter({
+          policy: { allow: { peers: ['inst-b'] } },
+          pipeline: { insert: [{ id: 'c', type: 'chance', after: 'allow', probability: 0.5, outcome: 'deny' }] },
+        }),
+      ],
+      pipeline: { global: [node('allow', 'allow')] },
+    })
+    expect(ctx.get('dsbot-channel.peers')).toHaveLength(1)
   })
 
   test('refuses a layer field the node type does not own', async () => {
