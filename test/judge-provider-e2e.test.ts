@@ -147,11 +147,12 @@ async function mountGateway(ctx: Context, pipeline?: Record<string, unknown>): P
   })
 }
 
+const question = { type: 'noul' as const, instructions: 'Is this worth answering?', criteria: { true: 'yes', false: 'no' } }
+
 const providerConfig = (url: string): Record<string, unknown> => ({
   credential: REF,
   baseUrl: url,
   model: 'test/model',
-  question: { type: 'noul', instructions: 'Is this worth answering?', criteria: { true: 'yes', false: 'no' } },
 })
 
 async function settle(): Promise<void> {
@@ -175,7 +176,7 @@ describe('a provider under the gateway', () => {
     const ctx = new Context()
     await services(ctx)
     await ctx.plugin(systemOne as never, providerConfig(server.url) as never)
-    await mountGateway(ctx, { global: [{ id: 'j', type: 'judge', allowAtLeast: 0.5 }] })
+    await mountGateway(ctx, { global: [{ id: 'j', type: 'judge', allowAtLeast: 0.5, question }] })
     await settle()
 
     expect(server.hits).toHaveLength(1)
@@ -191,7 +192,7 @@ describe('a provider under the gateway', () => {
     const ctx = new Context()
     await services(ctx)
     await ctx.plugin(systemOne as never, providerConfig(server.url) as never)
-    await mountGateway(ctx, { global: [{ id: 'j', type: 'judge', allowAtLeast: 0.5 }] })
+    await mountGateway(ctx, { global: [{ id: 'j', type: 'judge', allowAtLeast: 0.5, question }] })
     await settle()
 
     expect(server.hits).toHaveLength(1)
@@ -214,11 +215,56 @@ describe('a provider under the gateway', () => {
     await server.close()
   })
 
+  test('two nodes with different questions both ask theirs', async () => {
+    const server = await stub(0.9)
+    queue = [message('e4')]
+    const ctx = new Context()
+    await services(ctx)
+    await ctx.plugin(systemOne as never, providerConfig(server.url) as never)
+    await mountGateway(ctx, {
+      global: [
+        { id: 'one', type: 'judge', question },
+        { id: 'two', type: 'judge', question: { type: 'score', instructions: 'how good is it?', criteria: ['bad', 'good'] } },
+      ],
+    })
+    await settle()
+
+    expect(server.hits).toHaveLength(2)
+    expect((server.hits[0]!.body.questions as Record<string, Record<string, unknown>>).judge!.instructions).toBe(
+      'Is this worth answering?',
+    )
+    expect((server.hits[1]!.body.questions as Record<string, Record<string, unknown>>).judge!.instructions).toBe(
+      'how good is it?',
+    )
+    await server.close()
+  })
+
+  test('two nodes with one question and different context send different requests', async () => {
+    const server = await stub(0.9)
+    queue = [message('e5')]
+    const ctx = new Context()
+    await services(ctx)
+    await ctx.plugin(systemOne as never, providerConfig(server.url) as never)
+    await mountGateway(ctx, {
+      global: [
+        { id: 'one', type: 'judge', question, context: 'be strict' },
+        { id: 'two', type: 'judge', question, context: { tone: 'friendly' } },
+      ],
+    })
+    await settle()
+
+    expect(server.hits).toHaveLength(2)
+    const sent = server.hits.map((hit) => (hit.body.state as Record<string, unknown>).context)
+    expect(sent[0]).toEqual('be strict')
+    expect(sent[1]).toEqual({ tone: 'friendly' })
+    await server.close()
+  })
+
   test('a gateway mounted before the provider fails at load', async () => {
     const server = await stub(0.9)
     const ctx = new Context()
     await services(ctx)
-    await expect(mountGateway(ctx, { global: [{ id: 'j', type: 'judge' }] })).rejects.toThrow(/dsbot-channel\/judge/)
+    await expect(mountGateway(ctx, { global: [{ id: 'j', type: 'judge', question }] })).rejects.toThrow(/dsbot-channel\/judge/)
     await server.close()
   })
 })

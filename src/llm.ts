@@ -12,8 +12,10 @@ import {
   renderInput,
   scoreOf,
   sendJson,
+  truncate,
 } from './judge-providers.js'
 import type { PipelineEvent } from './pipeline.js'
+import type { JudgeContext } from './judge-question.js'
 
 export const name = 'dsbot-channel/llm'
 
@@ -38,9 +40,15 @@ export const VERDICT_PROMPT =
   'Judge one chat message. Reply with only a JSON object: {"score": <number from 0 to 1>, "reason": "<short reason>"}. ' +
   'No markdown, no code fences, no extra text.'
 
-/** What the model sees: the message, its scope, its author and whether the bot was named. */
-export function renderMessage(event: PipelineEvent, maxChars: number): string {
-  return renderInput(event, maxChars)
+/** What the model sees: the message facts, then the static material the node carries. */
+export function renderMessage(event: PipelineEvent, maxChars: number, context?: JudgeContext): string {
+  const head = renderInput(event, maxChars)
+  if (context === undefined) return head
+  const lines =
+    typeof context === 'string'
+      ? [truncate(context, maxChars)]
+      : Object.entries(context).map(([name, value]) => `${name}: ${truncate(value, maxChars)}`)
+  return `${head}\ncontext:\n${lines.join('\n')}`
 }
 
 /** A bare JSON object with a usable score; anything else is a refusal the pipeline reports as judge_failed. */
@@ -76,7 +84,7 @@ export function apply(ctx: Context, config: LlmConfig): void {
   const model = checkText(config.model, 'judge.model')
   const maxChars = checkWhole(config.maxChars, 'judge.maxChars', 6000)
   const token = credentialOf(ctx, credential)
-  provideJudge(ctx, name, async (event: PipelineEvent): Promise<JudgeVerdictLike> => {
+  provideJudge(ctx, name, async (event: PipelineEvent, node): Promise<JudgeVerdictLike> => {
     const response = await sendJson(
       `${baseUrl}/chat/completions`,
       {
@@ -84,7 +92,7 @@ export function apply(ctx: Context, config: LlmConfig): void {
         temperature: 0,
         messages: [
           { role: 'system', content: VERDICT_PROMPT },
-          { role: 'user', content: renderMessage(event, maxChars) },
+          { role: 'user', content: renderMessage(event, maxChars, node.judgeContext) },
         ],
       },
       await token(),
@@ -94,7 +102,7 @@ export function apply(ctx: Context, config: LlmConfig): void {
     const content = record(record(choices[0])?.message)?.content
     if (typeof content !== 'string') throw new Error('the judge answered without text')
     return parseVerdict(content)
-  })
+  }, { needsQuestion: false, maxChars })
 }
 
 const plugin = { name, inject, Config, apply }

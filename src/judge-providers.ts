@@ -71,13 +71,21 @@ export function scoreOf(value: unknown): number {
   return value
 }
 
+/** What core has to know about a provider to check the nodes a profile declares. */
+export interface JudgeServiceMeta {
+  /** Whether every judge node must carry a question. */
+  needsQuestion: boolean
+  /** How many code points of context one node may carry, the same unit maxChars counts. */
+  maxChars: number
+}
+
 /** Registers the one judge a context may hold; a second provider fails the mount. */
-export function provideJudge(ctx: Context, provider: string, judge: JudgeFn): void {
+export function provideJudge(ctx: Context, provider: string, judge: JudgeFn, meta: JudgeServiceMeta): void {
   if (ctx.get(JUDGE_SERVICE) !== undefined) {
     throw new Error(`dsbot-channel: one judge service per instance; "${provider}" found another judge already mounted`)
   }
   ctx.provide(JUDGE_SERVICE)
-  ctx.set(JUDGE_SERVICE, { judge })
+  ctx.set(JUDGE_SERVICE, { judge, needsQuestion: meta.needsQuestion, maxChars: meta.maxChars })
 }
 
 /** Resolves the configured credential reference on every call, never at mount. */

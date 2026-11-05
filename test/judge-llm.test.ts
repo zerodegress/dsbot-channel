@@ -66,7 +66,7 @@ function judgeOf(ctx: Context): (event: PipelineEvent, context?: unknown) => Pro
   const service = ctx.get('dsbot-channel/judge') as {
     judge: (event: PipelineEvent, context?: unknown) => Promise<{ score: number; reason?: string }>
   }
-  return service.judge
+  return (event: PipelineEvent, context: unknown = {}) => service.judge(event, context)
 }
 
 function event(overrides: Partial<PipelineEvent> = {}): PipelineEvent {
