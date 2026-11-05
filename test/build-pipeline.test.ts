@@ -129,7 +129,7 @@ describe('the budget node reports what the ledger says', () => {
   test('a hard limit denies', async () => {
     const pipeline = buildPipeline([{ id: 'b', type: 'budget' }], {
       ...deps(),
-      budget: () => ({ state: 'hard', triggeredBy: ['bot:a'] }),
+      budget: () => ({ state: 'hard', triggeredBy: ['bot:a'], ratio: 1 }),
     })
     const result = await pipeline.run(event)
     expect(result.decision).toBe('deny')
@@ -138,7 +138,146 @@ describe('the budget node reports what the ledger says', () => {
   test('a normal state passes', async () => {
     const pipeline = buildPipeline([{ id: 'b', type: 'budget' }, { id: 'a', type: 'allow' }], {
       ...deps(),
-      budget: () => ({ state: 'normal', triggeredBy: [] }),
+      budget: () => ({ state: 'normal', triggeredBy: [], ratio: 0.1 }),
+    })
+    expect((await pipeline.run(event)).decision).toBe('allow')
+  })
+})
+
+describe('the budget node restricts past the soft threshold', () => {
+  test('a ratio below restrictAt passes and the judge runs', async () => {
+    let judged = 0
+    const pipeline = buildPipeline(
+      [
+        { id: 'b', type: 'budget', mayRestrict: true, restrictSkip: ['judge'] },
+        { id: 'j', type: 'judge' },
+        { id: 'a', type: 'allow' },
+      ],
+      {
+        ...deps(),
+        judge: async () => {
+          judged += 1
+          return { score: 0.9 }
+        },
+        budget: () => ({ state: 'normal', triggeredBy: [], ratio: 0.5, restrictAt: 0.8 }),
+      },
+    )
+    const result = await pipeline.run(event)
+    expect(result.restricted).toBe(false)
+    expect(judged).toBe(1)
+    expect(result.decision).toBe('allow')
+  })
+
+  test('a ratio at restrictAt skips what restrictSkip names', async () => {
+    let judged = 0
+    const pipeline = buildPipeline(
+      [
+        { id: 'b', type: 'budget', mayRestrict: true, restrictSkip: ['judge'] },
+        { id: 'j', type: 'judge' },
+        { id: 'a', type: 'allow' },
+      ],
+      {
+        ...deps(),
+        judge: async () => {
+          judged += 1
+          return { score: 0.9 }
+        },
+        budget: () => ({ state: 'normal', triggeredBy: ['global'], ratio: 0.8, restrictAt: 0.8 }),
+      },
+    )
+    const result = await pipeline.run(event)
+    expect(result.restricted).toBe(true)
+    expect(judged).toBe(0)
+    expect(result.decision).toBe('allow')
+    expect(result.reasons.b).toMatch(/budget restrict/)
+  })
+
+  test('a restrict with no allow ends as deny', async () => {
+    const pipeline = buildPipeline(
+      [{ id: 'b', type: 'budget', mayRestrict: true, restrictSkip: ['scoring', 'judge'] }],
+      { ...deps(), budget: () => ({ state: 'normal', triggeredBy: [], ratio: 1, restrictAt: 0.5 }) },
+    )
+    const result = await pipeline.run(event)
+    expect(result.decision).toBe('deny')
+    expect(result.restricted).toBe(true)
+  })
+
+  test('scoring skips score and judge, judge skips only the judge', async () => {
+    let judged = 0
+    const run = async (restrictSkip: ('scoring' | 'judge')[]) => {
+      judged = 0
+      const pipeline = buildPipeline(
+        [
+          { id: 'b', type: 'budget', mayRestrict: true, restrictSkip },
+          { id: 's', type: 'score' },
+          { id: 'j', type: 'judge' },
+          { id: 'a', type: 'allow' },
+        ],
+        {
+          ...deps(),
+          score: () => 2,
+          judge: async () => {
+            judged += 1
+            return { score: 0.5 }
+          },
+          budget: () => ({ state: 'normal', triggeredBy: [], ratio: 0.9, restrictAt: 0.8 }),
+        },
+      )
+      return pipeline.run(event)
+    }
+
+    const judgeOnly = await run(['judge'])
+    expect(judgeOnly.score).toBe(2)
+    expect(judged).toBe(0)
+
+    const scoring = await run(['scoring'])
+    expect(scoring.score).toBe(0)
+    expect(judged).toBe(0)
+  })
+
+  test('mayRestrict without a threshold passes', async () => {
+    const pipeline = buildPipeline(
+      [{ id: 'b', type: 'budget', mayRestrict: true, restrictSkip: ['judge'] }, { id: 'a', type: 'allow' }],
+      { ...deps(), budget: () => ({ state: 'normal', triggeredBy: [], ratio: 1, restrictAt: undefined }) },
+    )
+    const result = await pipeline.run(event)
+    expect(result.restricted).toBe(false)
+  })
+})
+
+describe('the score node takes its value from the injected service', () => {
+  test('an async scorer adds its value', async () => {
+    const pipeline = buildPipeline([{ id: 's', type: 'score' }, { id: 'a', type: 'allow' }], {
+      ...deps(),
+      score: async () => 3,
+    })
+    expect((await pipeline.run(event)).score).toBe(3)
+  })
+
+  test('a scorer that fails denies with score_failed and leaves the running score alone', async () => {
+    for (const scorer of [
+      () => Number.NaN,
+      () => Number.POSITIVE_INFINITY,
+      () => {
+        throw new Error('boom')
+      },
+    ]) {
+      const pipeline = buildPipeline([{ id: 's1', type: 'score' }, { id: 's2', type: 'score' }], {
+        ...deps(),
+        score: scorer as never,
+      })
+      const result = await pipeline.run(event)
+      expect(result.decision).toBe('deny')
+      expect(result.reasons.s1).toBe('score_failed')
+      expect(result.score).toBe(0)
+    }
+  })
+
+  test('a later node reads the score the chain has so far', async () => {
+    const pipeline = buildPipeline([{ id: 's', type: 'score' }, { id: 'a', type: 'allow' }], {
+      ...deps(),
+      score: () => 4,
+      allowRules: [{ id: 'enough', reason: 'enough', matches: (_event, context) => context.score >= 4 }],
     })
     expect((await pipeline.run(event)).decision).toBe('allow')
   })
