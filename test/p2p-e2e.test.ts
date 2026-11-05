@@ -15,7 +15,7 @@ const RELAY_RESET_WINDOW_MS = 20
 /** Slack on top of the window, so a poll that wakes early cannot send inside it. */
 const RELAY_RESET_MARGIN_MS = 30
 
-const REF = '{{SECRET_4dhhwz2n}}'
+const REF = 'p2p-secret-e2e'
 const INCOMING = '[p2p from inst-a · bot-a · p2p-evt-1] hello'
 const credentials = staticCredentials({ [REF]: 'shared-value' })
 

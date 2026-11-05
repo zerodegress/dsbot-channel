@@ -6,7 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import entry from '../src/index.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
 
-const REF = '{{SECRET_boundary}}'
+const REF = 'p2p-secret-boundary'
 const credentials = staticCredentials({ [REF]: 'shared-value' })
 
 async function mount(raw: unknown): Promise<void> {

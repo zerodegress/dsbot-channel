@@ -11,7 +11,7 @@ import entry from '../src/index.js'
 import { registryPlugin } from '../src/registry-plugin.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
 
-const REF = '{{SECRET_identity}}'
+const REF = 'p2p-secret-identity'
 const credentials = staticCredentials({ [REF]: 'shared-value' })
 
 const mounted: MountedAccountSpace[] = [

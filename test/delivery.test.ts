@@ -9,7 +9,7 @@ import { compileDelivery, DEFAULT_DELIVERY } from '../src/delivery.js'
 import { ConfigError } from '../src/config.js'
 import { staticCredentials } from '../src/adapters/p2p/p2p-secrets.js'
 
-const REF = '{{SECRET_delivery}}'
+const REF = 'p2p-secret-delivery'
 const credentials = staticCredentials({ [REF]: 'shared-value' })
 
 describe('the delivery block', () => {

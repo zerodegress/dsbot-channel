@@ -635,7 +635,7 @@ describe('the auth failure counter', () => {
     const listener = await startListener({ config: baseConfig(), table: table(), stats: channel })
     open.push(listener)
     const payload = message()
-    const signature = signEnvelope('{{SECRET_wrongkey}}', payload as unknown as Envelope)
+    const signature = signEnvelope('p2p-secret-wrong', payload as unknown as Envelope)
     const reply = await post(listener.address().port, payload, { 'x-p2p-signature': signature })
 
     expect(reply.status).toBe(401)
