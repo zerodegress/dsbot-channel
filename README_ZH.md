@@ -194,6 +194,23 @@ config:
 
 两个入口都发送正文、作用域、作者 id、是否被点名以及节点的 `context`——不带历史、不带工具——并在 `pipeline.judgeTimeoutMs` 内对 `429` / `529` 重试一次。`llm` 只接受裸 JSON。同一个 profile 挂第二个 provider 会在加载期失败。其余键会在挂载期失败并在错误里点名；别的包提供的 judge 服务不报 `needsQuestion` / `maxChars` 时按 `false` / `2000` 处理。
 
+## 评分
+
+`score` 节点需要宿主服务 `dsbot-channel/score`，它以 `score(event, context)` 返回一个数，同步或异步均可。它必须**排在网关之前**：网关挂载时读取该服务。返回值累加进分数，可以为负，它自己不做判定。后续节点在 `context.score` 里能看到累计分，读它的 judge provider 可以把它并进自己的判定。内置 provider 不读这个分，所以它不会进提示词。`allowAtLeast` 比的是 judge 自己的分，不是累计分。
+
+```ts
+import type { PipelineEvent, NodeContext } from 'dsbot-channel'
+
+export function apply(ctx) {
+  ctx.provide('dsbot-channel/score')
+  ctx.set('dsbot-channel/score', {
+    score(event: PipelineEvent, context: NodeContext): number {
+      return context.score + 1
+    },
+  })
+}
+```
+
 ## 一条消息怎么被判定
 
 入站消息走三步：adapter 先去重，policy 关卡决定它能不能成为回合，pipeline 再决定这个回合放不放行。被拒绝的回合会以 `outcome: rejected` 加 gate 的 code 记进 turns 快照，具体原因写日志。
@@ -206,6 +223,7 @@ config:
 | `policy.deny.words` / `policy.deny.regexes` | `[]` | 拒绝消息的子串与正则，匹配不区分大小写 |
 | `policy.allow.peers` | `[]` | `allow` 节点匹配的 `source.peer`；命中即放行并结束链条 |
 | `policy.budget.capacity` / `policy.budget.hardLimit` | 写了 `budget` 就必填 / `1` | 每个窗口的点数，以及网关据此拒绝的比例，按硬窗口执行 |
+| `policy.budget.restrictAt` | off | `budget` 节点可以转入 restrict 的比例；大于 0 且小于 `hardLimit` |
 
 空词、非法正则、空对端名都会让挂载失败。`policy.deny` 与 `policy.allow` 要靠节点才生效：没声明 `pipeline` 的 profile 会自动补上节点，声明了就得自己加，否则规则静默失效。
 
@@ -247,13 +265,15 @@ config:
 | `deny` | `policy.deny` 命中即拒绝。没有 `policy.deny` 规则时声明 `deny` 节点会让挂载失败。 |
 | `allow` | `policy.allow` 命中即放行，并跳过后面所有 `score` 与 `judge`。没有 `policy.allow` 对端时声明 `allow` 节点会让挂载失败。 |
 | `judge` | 通过宿主 judge 服务打分；`allowAtLeast` 是阈值，节点还读取 `question` 与 `context`。 |
+| `score` | 加上宿主 score 服务返回的值；抛错或不是有限数时以 `score_failed` 拒绝。 |
+| `budget` | 读取最忙窗口的花费：hard 拒绝，`mayRestrict` 在 `restrictAt` 处转入 restrict。 |
 | `prepare` | 执行宿主提供的 prepare 钩子，然后通过。为该 bot 服务的每个 adapter 都必须带这个钩子，否则挂载失败。 |
 | `chance` | 按 `probability` 命中：命中即以 `allow` 或 `deny` 结束链条，未命中则交给下一个节点。 |
 
 | 字段 | 默认值 | 含义 |
 | --- | --- | --- |
 | `id` | required | `matched` 与 `reasons` 用它指代该节点。 |
-| `type` | required | 上面五种之一。 |
+| `type` | required | 上面七种之一。 |
 | `allowAtLeast` | off | 仅 `judge`：0 到 1 的分数。 |
 | `question` | required | 仅 `judge`：这个节点问什么。`system-one` 必须有；`llm` 节点带了会挂载失败。 |
 | `question.type` | required | `noul`、`score` 或 `choice`。 |
@@ -265,14 +285,18 @@ config:
 | `context` | off | 仅 `judge`：静态材料，字符串或「名字→字符串」映射。 |
 | `probability` | required | 仅 `chance`：0 到 1。 |
 | `outcome` | required | 仅 `chance`：`allow` 或 `deny`。 |
+| `restrictSkip` | off | 仅 `budget`：restrict 跳过什么，与 `mayRestrict` 同用时必填。`scoring` 跳过 `score` 与 `judge`；`judge` 只跳 `judge`。 |
+| `mayRestrict` | off | 仅 `budget`：比例达到 `policy.budget.restrictAt` 时转入 restrict。 |
 
 `question` 里上述字段之外的键会让挂载失败，错误带节点 id 与字段名。单个 `context` 的码点总数不得超过 provider 的 `maxChars`，映射的名字也计入；名字或值为空、类型不对或超长都会挂载失败。`context` 是配置方知道的材料，不是发生过的事：正文、作用域、作者与是否被点名本来就随事件发送，历史、会话与工具一律不读。`llm` 把它渲染在消息事实之后；`system-one` 放进 `state.context`。
 
 `chance` 节点的落桶值来自「事件键 + 节点 id」的固定哈希：同一条消息重放结果相同，同一条消息上的两个 chance 节点互相独立。它在 `reasons` 下记 `chance_allow`、`chance_deny` 或 `chance_miss`（带 `p=`），承载这条消息的 adapter 在 `counters.chance[nodeId]` 记 `{ hit, miss }`；该键只在节点实际跑过之后出现。
 
-`score` 与 `budget` 在 schema 里有声明，但这一版绑不上：score 节点需要的评分函数没有提供，budget 节点需要的会话级判定管道带不了。声明它们会在挂载期失败并给出原因；真正的花费限制由网关自己的硬窗口执行，且只有写了 `policy.budget` 的 profile 才有这个窗口。
+`score` 节点加上宿主服务 `dsbot-channel/score` 返回的值。声明了节点却没有该服务，挂载失败；调用抛错或返回的不是有限数，该消息以 `score_failed` 拒绝，累计分数保持不变。累计分数在结果里；它自己不做判定，`allowAtLeast`、`question` 与 `context` 仍只归 `judge`。
 
-adapter 用四个键调整它继承到的链条：`inherit` 指定从哪一层开始（adapter 层只能是 `global`），`remove` 按 id 删节点，`insert` 把节点插到某个 id 之前或之后，`override` 按 id 替换节点字段。`insert` 的 `after` 与 `before` 只能写一个、不能复用已有的 id；`override` 只写该节点类型拥有的字段；`remove` 或 `override` 指向不存在的 id 会让挂载失败。`question`、`context`、`probability` 与 `outcome` 可以写在 `pipeline.global`，也可以写在 adapter 的 `insert` 或 `override` 里。session 的 `insert` 只接受 `id`、`type`、`after`、`before`，带不了这几个字段；session 的 `override` 可以写。
+`budget` 节点读取最忙窗口的花费：比例取 global、bot 与 session 三者用量的最大值除以 `policy.budget.capacity`。`hardLimit` 拒绝；配了 `mayRestrict` 时，比例达到 `policy.budget.restrictAt` 就返回 restrict，跳过 `restrictSkip` 指定的节点并让链条继续。restrict 不是放行：走到链尾仍然拒绝，网关记为 `pipeline-restrict`。`restrictSkip` 没配 `mayRestrict`、`mayRestrict` 没配 `restrictAt`、或 `mayRestrict` 的 `restrictSkip` 为空，都是不会生效的字段，挂载失败。
+
+adapter 用四个键调整它继承到的链条：`inherit` 指定从哪一层开始（adapter 层只能是 `global`），`remove` 按 id 删节点，`insert` 把节点插到某个 id 之前或之后，`override` 按 id 替换节点字段。`insert` 的 `after` 与 `before` 只能写一个、不能复用已有的 id；`override` 只写该节点类型拥有的字段；`remove` 或 `override` 指向不存在的 id 会让挂载失败。`question`、`context`、`probability`、`outcome`、`restrictSkip` 与 `mayRestrict` 可以写在 `pipeline.global`，也可以写在 adapter 的 `insert` 或 `override` 里。session 的 `insert` 只接受 `id`、`type`、`after`、`before`，带不了这几个字段；session 的 `override` 可以写。
 
 ```yaml
 config:

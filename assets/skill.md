@@ -75,6 +75,7 @@ One adapter accepts one connection in `ws-reverse`; a new connection for the sam
 | `policy.relayResetMs` | `300000` | idle time that resets the count |
 | `policy.budget.capacity` | off | points per window |
 | `policy.budget.hardLimit` | `1` | ratio that refuses |
+| `policy.budget.restrictAt` | off | ratio where a `budget` node may restrict; above 0 and below `hardLimit` |
 | `policy.deny.words` / `regexes` | `[]` | refuse a message whose text matches |
 | `policy.allow.peers` | `[]` | matches `source.peer`: a peer instance on p2p, or the group or user id of a OneBot event |
 | `reply.default` | `auto` | `auto` or `tool` |
@@ -142,6 +143,25 @@ A key other than these four fails the mount and is named in the error. A judge s
 
 The provider sets no timer of its own; `pipeline.judgeTimeoutMs` bounds the call. A `429` or `529` is retried once. Only the body, the scope, the author id, whether the bot was named and the node's `context` are sent — no history, no tools. `llm` accepts bare JSON only; a fenced block fails the verdict.
 
+## Score provider
+
+A `score` node needs a host service named `dsbot-channel/score`, which answers `score(event, context)` with a number, synchronously or as a promise. Mount it before the gateway: the gateway reads the service while it mounts.
+
+```ts
+import type { PipelineEvent, NodeContext } from 'dsbot-channel'
+
+export function apply(ctx) {
+  ctx.provide('dsbot-channel/score')
+  ctx.set('dsbot-channel/score', {
+    score(event: PipelineEvent, context: NodeContext): number {
+      return context.score + 1
+    },
+  })
+}
+```
+
+The value is added to the running score; it may be negative and it decides nothing by itself. Later nodes see the running score in `context.score`, and a judge provider that reads it can fold it into its own verdict. The two built-in providers do not read it, so a score never enters their prompt. `allowAtLeast` compares the judge's own score, not the running total.
+
 ## How a message is decided
 
 An inbound message is deduplicated by the adapter, then the policy keys in the table above decide whether it may become a turn, then the pipeline decides whether the turn is allowed. A refusal is recorded as `outcome: rejected` with the gate's code, with the detail in the log. `policy.deny` and `policy.allow` need a `deny` or `allow` node: a profile that declares no `pipeline` gets it added, one that declares a pipeline must add it. A judge is a pipeline node: mount a provider, then declare the node; `allowAtLeast` makes it decide, without it the node only scores and the chain still refuses at its end.
@@ -155,6 +175,8 @@ A node is `{ id, type }` plus the fields its type reads. The chain runs in order
 | `deny` | refuses when `policy.deny` matches; no `policy.deny` rule fails the mount |
 | `allow` | allows when `policy.allow` matches and stops later `score` and `judge`; no `policy.allow` peer fails the mount |
 | `judge` | scores through the host judge service; `allowAtLeast` sets its threshold, and it reads `question` and `context` |
+| `score` | adds the value the host score service returns; a throw or a non-finite value refuses with `score_failed` |
+| `budget` | reads the spend of the busiest window: a hard state refuses, and `mayRestrict` at `restrictAt` restricts |
 | `prepare` | runs the host prepare hook, then passes; every adapter for the bot needs the hook |
 | `chance` | fires with `probability`: a hit ends the chain as an `allow` or a `deny`, a miss passes |
 
@@ -172,14 +194,18 @@ A `judge` node names what it asks and what it adds.
 | `context` | off | static material for this node: a string or a mapping of name to string |
 | `probability` | required | `chance` only: 0 to 1 |
 | `outcome` | required | `chance` only: `allow` or `deny` |
+| `restrictSkip` | off | `budget` only: what a restrict skips; required with `mayRestrict`. `scoring` skips `score` and `judge`; `judge` skips only `judge` |
+| `mayRestrict` | off | `budget` only: turn a ratio at `policy.budget.restrictAt` into a restrict |
 
 A key other than these in `question` fails the mount and names the node and the field. One `context` may total `maxChars` code points, mapping names included; an empty name or value, another type or an over-long one fails the mount. `context` carries what the profile knows, not what happened: the body, the scope, the author and whether the bot was named are sent already, and history, sessions and tools are never read. `llm` renders it after the message facts; `system-one` sends it as `state.context`.
 
-`question`, `context`, `probability` and `outcome` may be written in `pipeline.global` and in an adapter's `insert` and `override`. A session layer's `insert` takes only `id`, `type`, `after` and `before`, so it carries none of them; a session's `override` may set them.
+`question`, `context`, `probability`, `outcome`, `restrictSkip` and `mayRestrict` may be written in `pipeline.global` and in an adapter's `insert` and `override`. A session layer's `insert` takes only `id`, `type`, `after` and `before`, so it carries none of them; a session's `override` may set them.
 
 A `chance` node takes its bucket from a fixed hash of the event key and the node id: the same message replayed takes the same outcome, and two chance nodes on one message draw independently. It records `chance_allow`, `chance_deny` or `chance_miss` with `p=` under `reasons`, and the adapter that carried the message counts it under `counters.chance[nodeId]` as `{ hit, miss }`; the key appears only after the node has run.
 
-`score` and `budget` are declared in the schema but cannot bind in this version: a score node needs a scoring function, a budget node needs a session-scoped verdict. Declaring either fails the mount; the gateway's hard window limits spending, and only a profile with `policy.budget` has one. `allowAtLeast` (0 to 1), `question` and `context` are read by `judge` only.
+A `score` node adds what `dsbot-channel/score` returns. A profile that declares one without that service fails the mount; a call that throws or returns anything but a finite number refuses the turn with `score_failed` and leaves the running score untouched. The running score is in the result; it decides nothing on its own, and `allowAtLeast`, `question` and `context` stay on `judge`.
+
+A `budget` node reads the spend of the busiest window: the ratio is the largest of the global, bot and session usage divided by `policy.budget.capacity`. `hardLimit` refuses; with `mayRestrict`, a ratio at or above `policy.budget.restrictAt` returns a restrict, which skips what `restrictSkip` names and lets the chain continue. A restrict is not an allow: a chain that ends after one still refuses, with `pipeline-restrict` in the gate. `restrictSkip` without `mayRestrict`, `mayRestrict` without `restrictAt` or without a non-empty `restrictSkip`, declares a field that would do nothing and fails the mount.
 
 An adapter changes the chain it starts from with `inherit`, `remove`, `insert` and `override`: `inherit` names the layer (an adapter takes `global`), `remove` drops nodes by id, `insert` adds a node after or before a named node (one of the two, no reused id), `override` replaces fields by id and only those the type reads; an unknown id fails the mount.
 

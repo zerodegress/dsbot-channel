@@ -157,12 +157,12 @@ describe('the plugin offers the session API to its host', () => {
     expect(() => api.forSession('bot-a', 'p2p:inst-bb', {})).toThrow(/addresses no peer "inst-bb"/)
   })
 
-  test('a session layer the host could never run is refused at the call', async () => {
+  test('a session layer may insert a score node now that the host binds one', async () => {
     const api = await mount()
 
-    expect(() =>
-      api.forSession('bot-a', 'p2p:inst-b', { insert: [{ id: 'j', type: 'score', after: 'deny' }] }),
-    ).toThrow(/a score node needs a scoring function this version does not supply/)
+    api.forSession('bot-a', 'p2p:inst-b', { insert: [{ id: 'j', type: 'score', after: 'deny' }] })
+
+    expect(api.pipelineFor('bot-a', 'p2p:inst-b').map((node) => node.id)).toContain('j')
   })
 
   test('a misspelt layer field is refused through the mounted API too', async () => {
@@ -248,12 +248,12 @@ describe('a session layer that could never run is refused', () => {
     expect(() => sessions.forSession('orca', 'p2p:seal', { remove: ['ghost'] })).toThrow(/ghost/)
   })
 
-  test('a node this version cannot bind is refused, not left to run nothing', () => {
+  test('a node the host now binds is accepted, not refused', () => {
     const sessions = harness()
 
-    expect(() =>
-      sessions.forSession('orca', 'p2p:seal', { insert: [{ id: 'j', type: 'score', after: 'noise' }] }),
-    ).toThrow(/node "j": a score node needs a scoring function this version does not supply/)
+    sessions.forSession('orca', 'p2p:seal', { insert: [{ id: 'j', type: 'score', after: 'noise' }] })
+
+    expect(ids(sessions.pipelineFor('orca', 'p2p:seal'))).toContain('j')
   })
 
   test('a deny node is accepted when the bot has a deny rule', () => {

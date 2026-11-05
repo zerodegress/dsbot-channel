@@ -74,8 +74,8 @@ describe('the pipeline a profile declares', () => {
 
   test('refuses a global pipeline that cannot load, and names the layer', async () => {
     await expect(
-      mount({ adapters: [], pipeline: { global: [{ id: 'score', type: 'score' }] } }),
-    ).rejects.toThrow(/the pipeline cannot load: node "score"/)
+      mount({ adapters: [], pipeline: { global: [{ id: 'c', type: 'chance' }] } }),
+    ).rejects.toThrow(/the pipeline cannot load: global: node "c": chance needs probability/)
   })
 
   test('a soft limit on a node is an unknown field', async () => {
@@ -197,7 +197,7 @@ describe('the pipeline a profile declares', () => {
     ).rejects.toThrow(ConfigError)
   })
 
-  test('refuses a declared node that nothing can bind', () => {
+  test('a declared score node is not a scope problem on its own', () => {
     const config = parsed({
       adapters: [
         adapter({
@@ -207,13 +207,13 @@ describe('the pipeline a profile declares', () => {
       ],
       pipeline: { global: [node('allow', 'allow')] },
     })
-    expect(() => checkPipelineScopes(config, () => undefined)).toThrow(/a score node needs a scoring function/)
+    expect(() => checkPipelineScopes(config, () => undefined)).not.toThrow()
   })
 
-  test('refuses an unbound node even when no adapter is declared', async () => {
+  test('refuses a score node when nothing provides the service', async () => {
     await expect(
       mount({ adapters: [], pipeline: { global: [node('score', 'score')] } }),
-    ).rejects.toThrow(/a score node needs a scoring function/)
+    ).rejects.toThrow(/a score node needs the "dsbot-channel\/score" service/)
   })
 
   test('refuses a deny node when no adapter could ever bind a rule', async () => {
@@ -223,13 +223,13 @@ describe('the pipeline a profile declares', () => {
   })
 
   test('reports one line for a problem every layer shares', () => {
-    const layer = { insert: [{ id: 'deny2', type: 'deny', after: 'deny' }] }
+    const layer = { insert: [{ id: 'c', type: 'chance', after: 'a' }] }
     const config = parsed({
       adapters: [
-        adapter({ channel: 'p2p:one', botName: 'bot-a', pipeline: layer, policy: { deny: { words: ['spam'] } } }),
-        adapter({ channel: 'p2p:two', botName: 'bot-b', pipeline: layer, policy: { deny: { words: ['spam'] } } }),
+        adapter({ channel: 'p2p:one', botName: 'bot-a', pipeline: layer, policy: { allow: { peers: ['inst-b'] } } }),
+        adapter({ channel: 'p2p:two', botName: 'bot-b', pipeline: layer, policy: { allow: { peers: ['inst-b'] } } }),
       ],
-      pipeline: { global: [node('score', 'score')] },
+      pipeline: { global: [node('a', 'allow')] },
     })
     let message = ''
     try {
@@ -237,7 +237,7 @@ describe('the pipeline a profile declares', () => {
     } catch (error) {
       message = (error as Error).message
     }
-    expect(message.match(/a score node needs a scoring function/g)?.length).toBe(1)
+    expect(message.match(/chance needs probability between 0 and 1/g)?.length).toBe(1)
   })
 
   test('refuses a deny node with no rule to match', () => {
