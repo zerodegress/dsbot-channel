@@ -335,11 +335,12 @@ A node is `{ id, type }` plus the fields its type reads. The chain runs in order
 | `budget` | Reads the spend of the busiest window: a hard state refuses, and `mayRestrict` at `restrictAt` restricts. |
 | `prepare` | Runs the host prepare hook, then passes. Every adapter answering for the bot must carry the hook, or the mount fails. |
 | `chance` | Fires with `probability`: a hit ends the chain as an `allow` or a `deny`, a miss passes to the next node. |
+| `when` | Decides by a Matcher: a match returns its `outcome`, no match passes. |
 
 | Field | Default | Meaning |
 | --- | --- | --- |
 | `id` | required | Names the node in `matched` and `reasons`. |
-| `type` | required | One of the seven above. |
+| `type` | required | One of the eight above. |
 | `allowAtLeast` | off | `judge` only: a score from 0 to 1. |
 | `question` | required | `judge` only: what this node asks. `system-one` needs one; an `llm` node may not carry it. |
 | `question.type` | required | `noul`, `score` or `choice`. |
@@ -350,11 +351,25 @@ A node is `{ id, type }` plus the fields its type reads. The chain runs in order
 | `question.min` / `.max` | off | `score` only: convert a raw score; equal values fail the verdict. |
 | `context` | off | `judge` only: static material, a string or a mapping of name to string. |
 | `probability` | required | `chance` only: 0 to 1. |
-| `outcome` | required | `chance` only: `allow` or `deny`. |
+| `outcome` | required | `when`: `allow`, `deny` or `pass`; `chance`: `allow` or `deny`. |
+| `test` | required for `when` | the Matcher a `when` node reads. |
+| `when` | off | `chance` only: the Matcher it rolls behind. |
 | `restrictSkip` | off | `budget` only: what a restrict skips; required with `mayRestrict`. `scoring` skips `score` and `judge`; `judge` skips only `judge`. |
 | `mayRestrict` | off | `budget` only: turn a ratio at `policy.budget.restrictAt` into a restrict. |
 
 A key other than these inside `question` fails the mount and names the node and the field. One `context` may total the provider's `maxChars` in code points, mapping names included; an empty name or value, another type or an over-long one fails the mount. `context` is what the profile knows, not what happened: the body, the scope, the author and the mention flag are sent already, and no history, session or tool is read. `llm` renders it after the message facts; `system-one` sends it as `state.context`.
+
+A `when` node decides by a Matcher: a match returns its `outcome`, no match passes. The same Matcher guards a `chance` node; a guard that does not hold passes without rolling, without a `counters.chance` entry and without a `chance_miss` reason.
+
+| Matcher key | Values | Meaning |
+| --- | --- | --- |
+| `scope` | `c2c`, `group`, `p2p` | the conversation kind |
+| `peer` | a string, or `{ in: [...] }` / `{ notIn: [...] }` | the peer the event names; a missing peer is never in a list and is not in a `notIn` list |
+| `mentioned` | `true` / `false` | this bot or everyone was named |
+| `replyToMe` | `true` / `false` | the message quotes something this bot sent on the same channel |
+| `ownRecent` | `true` / `false` | this bot spoke within the last ten messages of the conversation |
+
+At least one key is required and every key present must hold. `ownRecent` is counted by the gateway; `replyToMe` is reported by the adapter, false when the transport carries no parent message id, and both are false for non-message events.
 
 A `chance` node takes its bucket from a fixed hash of the event key and the node id, so the same message replayed takes the same outcome and two chance nodes on one message draw independently. It records `chance_allow`, `chance_deny` or `chance_miss` with `p=` under `reasons`, and the adapter that carried the message counts it under `counters.chance[nodeId]` as `{ hit, miss }`; that key appears only after the node has run.
 

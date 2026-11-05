@@ -215,6 +215,7 @@ A node is `{ id, type }` plus the fields its type reads. The chain runs in order
 | `budget` | reads the spend of the busiest window: a hard state refuses, and `mayRestrict` at `restrictAt` restricts |
 | `prepare` | runs the host prepare hook, then passes; every adapter for the bot needs the hook |
 | `chance` | fires with `probability`: a hit ends the chain as an `allow` or a `deny`, a miss passes |
+| `when` | decides by a Matcher: a match returns its `outcome`, no match passes |
 
 A `judge` node names what it asks and what it adds.
 
@@ -229,7 +230,9 @@ A `judge` node names what it asks and what it adds.
 | `question.min` / `question.max` | off | `score` only: convert a raw score; equal values fail the verdict |
 | `context` | off | static material for this node: a string or a mapping of name to string |
 | `probability` | required | `chance` only: 0 to 1 |
-| `outcome` | required | `chance` only: `allow` or `deny` |
+| `outcome` | required | `when`: `allow`, `deny` or `pass`; `chance`: `allow` or `deny` |
+| `test` | required for `when` | the Matcher a `when` node reads |
+| `when` | off | `chance` only: the Matcher it rolls behind |
 | `restrictSkip` | off | `budget` only: what a restrict skips; required with `mayRestrict`. `scoring` skips `score` and `judge`; `judge` skips only `judge` |
 | `mayRestrict` | off | `budget` only: turn a ratio at `policy.budget.restrictAt` into a restrict |
 
