@@ -56,6 +56,8 @@ config:
 | `status` | `true` | 注册只读状态路由 |
 | `skill` | `true` | 宿主有 skills 服务时注册包内技能 |
 
+声明 `outbound: false` 的 adapter 永不回写：core 不调它的 `send` 与 `refuse`，`send_text` 工具对它返回 `unsupported`，它的会话也没有可继承的地址。它的回合照常运行，所以允许它开回合的 profile 必须让回复路径始终选 `tool`，否则挂载失败。
+
 `channel` 是 adapter 唯一的名字。`reply`、`turn`、`policy`、`delivery` 也可以写在顶层；adapter 没写的键一律继承，写了的键整值替换，数组按原样生效、不逐项合并。`pipeline` 自成一层：顶层写 `global` 节点、`maxTurnMs`、`judgeTimeoutMs` 与 `judgePoints`，adapter 上写 `inherit`、`remove`、`insert`、`override`。`events` 只在 adapter 上读；`impressions` 与 `identity` 只能写在顶层。插件状态在 `config[].layers` 里标出每个键来自哪一层。`secret` 与 `accessToken` 是宿主任凭服务里的引用名，不是密钥。路径按 POSIX 解释，不支持 Windows。
 
 ## 对端
@@ -114,9 +116,9 @@ config:
 | `transport.sendTimeoutMs` | `10000` | 单次动作超时 |
 | `transport.history.group` / `.private` | `false` | 按地址种类允许 `read_history` |
 | `transport.fileFromUrl` | `false` | 允许 `send_file` 用 http(s) url |
-| `events.turn` | `[]` | 允许开回合的非消息事件类 |
+| `events.turn` | `[]` | 允许开回合的非消息事件类；adapter 自己的动作用 `action.<type>` |
 
-一个 adapter 只用一种协议；属于另一种协议的字段在加载期被拒。一个实现只对应一个 adapter，不是两个。`events.turn` 填 `notice.group_recall`、`request.friend` 这类类名；其余非消息事件只被记录与计数、不开回合，`meta_event` 与自己的回声永不开回合，写了 OneBot 不发的事件类会在加载期报错，被点名的类跳过提及要求。
+一个 adapter 只用一种协议；属于另一种协议的字段在加载期被拒。一个实现只对应一个 adapter，不是两个。`events.turn` 按 `<kind>.<type>` 填类名：OneBot 自己的 `notice.group_recall`、`request.friend` 这类，或 adapter 为 push、CI、定时器事件定义的 `action.<type>`。其余非消息事件只被记录与计数、不开回合，`meta_event` 与自己的回声永不开回合，写了未知类名会在加载期报错，被点名的类跳过提及要求。
 
 ## 回合与切段
 

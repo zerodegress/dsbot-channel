@@ -56,6 +56,8 @@ config:
 | `status` | `true` | register the read-only status route |
 | `skill` | `true` | register the packaged skill when the host has a skills service |
 
+An adapter that declares `outbound: false` is never written back: core does not call its `send` or `refuse`, the `send_text` tool answers `unsupported` for it, and a session of it has no address to inherit. Its turns still run, so a profile that lets such an adapter start turns needs a reply block that always chooses `tool`, or the mount fails.
+
 `channel` is the adapter's only name. `reply`, `turn`, `policy` and `delivery` may also be written at the top level; an adapter inherits every key it does not write and replaces the whole value of each key it does write, so an array is taken as written and not merged item by item. `pipeline` is a layer of its own: `global` nodes, `maxTurnMs`, `judgeTimeoutMs` and `judgePoints` at the top level, and `inherit`, `remove`, `insert` and `override` on an adapter. `events` is read on the adapter only; `impressions` and `identity` only at the top level. The plugin status names the level behind each key under `config[].layers`. `secret` and `accessToken` are reference names in the host credentials service, not secrets. Paths are POSIX; Windows is not supported.
 
 ## Peers
@@ -114,9 +116,9 @@ config:
 | `transport.sendTimeoutMs` | `10000` | one action |
 | `transport.history.group` / `.private` | `false` | allow `read_history` per address kind |
 | `transport.fileFromUrl` | `false` | allow `send_file` from an http(s) url |
-| `events.turn` | `[]` | non-message classes that may start a turn |
+| `events.turn` | `[]` | non-message classes that may start a turn; an adapter names its own `action.<type>` |
 
-One adapter speaks one protocol; a field of another protocol is refused at load. One implementation reaches one adapter, not two. `events.turn` names classes such as `notice.group_recall` or `request.friend`; every other non-message event is recorded and counted without starting a turn, `meta_event` or a self echo never starts one, a name outside the classes OneBot sends fails the load, and a named class skips the mention requirement.
+One adapter speaks one protocol; a field of another protocol is refused at load. One implementation reaches one adapter, not two. `events.turn` names classes as `<kind>.<type>`: OneBot's own, such as `notice.group_recall` or `request.friend`, or an adapter's `action.<type>` for push, CI and timer events. Every other non-message event is recorded and counted without starting a turn, `meta_event` or a self echo never starts one, an unknown name fails the load, and a named class skips the mention requirement.
 
 ## Turns and delivery
 

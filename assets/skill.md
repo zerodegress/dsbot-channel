@@ -61,9 +61,11 @@ config:
 | `sendTimeoutMs` | `10000` | |
 | `history.group` / `history.private` | `false` | allow `read_history` per address kind |
 | `fileFromUrl` | `false` | allow `send_file` from an http(s) url |
-| `events.turn` | `[]` | non-message classes that may start a turn |
+| `events.turn` | `[]` | non-message classes that may start a turn; an adapter names its own `action.<type>` |
 
-One adapter accepts one connection in `ws-reverse`; a new connection for the same account replaces the old one. A named class skips the mention requirement; a name outside the classes OneBot sends fails the mount.
+One adapter accepts one connection in `ws-reverse`; a new connection for the same account replaces the old one. A named class is `<kind>.<type>`: OneBot's own names, or an adapter's `action.<type>`; it skips the mention requirement, and an unknown name fails the mount.
+
+An adapter that declares `outbound: false` is never written back: core does not call its `send` or `refuse`, and the `send_text` tool answers `unsupported` for it. Its turns still run, so a profile that lets such an adapter start turns needs a reply block that always chooses `tool`, or the mount fails.
 
 ### Behaviour blocks
 
