@@ -335,11 +335,12 @@ config:
 | `budget` | 读取最忙窗口的花费：hard 拒绝，`mayRestrict` 在 `restrictAt` 处转入 restrict。 |
 | `prepare` | 执行宿主提供的 prepare 钩子，然后通过。为该 bot 服务的每个 adapter 都必须带这个钩子，否则挂载失败。 |
 | `chance` | 按 `probability` 命中：命中即以 `allow` 或 `deny` 结束链条，未命中则交给下一个节点。 |
+| `when` | 用一个 Matcher 判定：命中返回它的 `outcome`，未命中直接通过。 |
 
 | 字段 | 默认值 | 含义 |
 | --- | --- | --- |
 | `id` | required | `matched` 与 `reasons` 用它指代该节点。 |
-| `type` | required | 上面七种之一。 |
+| `type` | required | 上面八种之一。 |
 | `allowAtLeast` | off | 仅 `judge`：0 到 1 的分数。 |
 | `question` | required | 仅 `judge`：这个节点问什么。`system-one` 必须有；`llm` 节点带了会挂载失败。 |
 | `question.type` | required | `noul`、`score` 或 `choice`。 |
@@ -350,11 +351,33 @@ config:
 | `question.min` / `.max` | off | 仅 `score`：换算原始分；两者相等判失败。 |
 | `context` | off | 仅 `judge`：静态材料，字符串或「名字→字符串」映射。 |
 | `probability` | required | 仅 `chance`：0 到 1。 |
-| `outcome` | required | 仅 `chance`：`allow` 或 `deny`。 |
+| `outcome` | required | `when`：`allow`、`deny` 或 `pass`；`chance`：`allow` 或 `deny`。 |
+| `test` | required | 仅 `when`：它读取的 Matcher。 |
+| `when` | off | 仅 `chance`：它掷骰前要满足的 Matcher。 |
 | `restrictSkip` | off | 仅 `budget`：restrict 跳过什么，与 `mayRestrict` 同用时必填。`scoring` 跳过 `score` 与 `judge`；`judge` 只跳 `judge`。 |
 | `mayRestrict` | off | 仅 `budget`：比例达到 `policy.budget.restrictAt` 时转入 restrict。 |
 
 `question` 里上述字段之外的键会让挂载失败，错误带节点 id 与字段名。单个 `context` 的码点总数不得超过 provider 的 `maxChars`，映射的名字也计入；名字或值为空、类型不对或超长都会挂载失败。`context` 是配置方知道的材料，不是发生过的事：正文、作用域、作者与是否被点名本来就随事件发送，历史、会话与工具一律不读。`llm` 把它渲染在消息事实之后；`system-one` 放进 `state.context`。
+
+`when` 节点用一个 Matcher 判定：命中返回它的 `outcome`，未命中直接通过。同一个 Matcher 也可以给 `chance` 做前置条件；条件不成立时直接通过，不掷骰、不记 `counters.chance`、不写 `chance_miss`。
+
+| Matcher 键 | 取值 | 含义 |
+| --- | --- | --- |
+| `scope` | `c2c`、`group`、`p2p` | 会话类型 |
+| `peer` | 字符串，或 `{ in: [...] }` / `{ notIn: [...] }` | 事件里的对端；事件没有 `peer` 时 `in` 不匹配、`notIn` 匹配 |
+| `mentioned` | `true` / `false` | 本 bot 或所有人被点名 |
+| `replyToMe` | `true` / `false` | 这条消息引用了本 bot 在同一 channel 上发出的消息 |
+| `ownRecent` | `true` / `false` | 本 bot 最近十分钟内在本会话说过话，且此后收到的消息少于十条 |
+
+至少写一个键，写了多个必须同时成立。本 bot 成功发出消息会把 `ownRecent` 归零，发送失败不归零；本 bot 上次说话满十分钟后过期。`replyToMe` 由 adapter 给出，没有父消息 id 时恒为 false；非消息事件两者都为 false。没有键、未知键、`in` 与 `notIn` 同时写、空列表或非布尔值都会让挂载失败。命中会把 `when_allow` 或 `when_deny` 记进 `reasons`；`pass` 与未命中不记。
+
+```yaml
+config:
+  pipeline:
+    global:
+      - { id: named, type: when, test: { mentioned: true }, outcome: allow }
+      - { id: roll, type: chance, when: { ownRecent: false }, probability: 0.99, outcome: deny }
+```
 
 `chance` 节点的落桶值来自「事件键 + 节点 id」的固定哈希：同一条消息重放结果相同，同一条消息上的两个 chance 节点互相独立。它在 `reasons` 下记 `chance_allow`、`chance_deny` 或 `chance_miss`（带 `p=`），承载这条消息的 adapter 在 `counters.chance[nodeId]` 记 `{ hit, miss }`；该键只在节点实际跑过之后出现。
 
@@ -362,7 +385,7 @@ config:
 
 `budget` 节点读取最忙窗口的花费：比例取 global、bot 与 session 三者用量的最大值除以 `policy.budget.capacity`。`hardLimit` 拒绝；配了 `mayRestrict` 时，比例达到 `policy.budget.restrictAt` 就返回 restrict，跳过 `restrictSkip` 指定的节点并让链条继续。restrict 不是放行：走到链尾仍然拒绝，网关记为 `pipeline-restrict`。`restrictSkip` 没配 `mayRestrict`、`mayRestrict` 没配 `restrictAt`、或 `mayRestrict` 的 `restrictSkip` 为空，都是不会生效的字段，挂载失败。
 
-adapter 用四个键调整它继承到的链条：`inherit` 指定从哪一层开始（adapter 层只能是 `global`），`remove` 按 id 删节点，`insert` 把节点插到某个 id 之前或之后，`override` 按 id 替换节点字段。`insert` 的 `after` 与 `before` 只能写一个、不能复用已有的 id；`override` 只写该节点类型拥有的字段；`remove` 或 `override` 指向不存在的 id 会让挂载失败。`question`、`context`、`probability`、`outcome`、`restrictSkip` 与 `mayRestrict` 可以写在 `pipeline.global`，也可以写在 adapter 的 `insert` 或 `override` 里。session 的 `insert` 只接受 `id`、`type`、`after`、`before`，带不了这几个字段；session 的 `override` 可以写。
+adapter 用四个键调整它继承到的链条：`inherit` 指定从哪一层开始（adapter 层只能是 `global`），`remove` 按 id 删节点，`insert` 把节点插到某个 id 之前或之后，`override` 按 id 替换节点字段。`insert` 的 `after` 与 `before` 只能写一个、不能复用已有的 id；`override` 只写该节点类型拥有的字段；`remove` 或 `override` 指向不存在的 id 会让挂载失败。`question`、`context`、`probability`、`outcome`、`test`、`when`、`restrictSkip` 与 `mayRestrict` 可以写在 `pipeline.global`，也可以写在 adapter 的 `insert` 或 `override` 里。session 的 `insert` 只接受 `id`、`type`、`after`、`before`，带不了这几个字段；session 的 `override` 可以写。
 
 ```yaml
 config:

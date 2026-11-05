@@ -1,7 +1,7 @@
 import type { Mentioned, Scope } from './event-types.js'
 import type { JudgeContext, JudgeQuestion } from './judge-question.js'
 
-export const NODE_TYPES = ['deny', 'budget', 'allow', 'score', 'judge', 'prepare', 'chance'] as const
+export const NODE_TYPES = ['deny', 'budget', 'allow', 'score', 'judge', 'prepare', 'chance', 'when'] as const
 export type NodeType = (typeof NODE_TYPES)[number]
 
 /** What a node may ask the chain to skip; no built-in node produces a restrict in this version. */
@@ -20,6 +20,10 @@ export interface PipelineEvent {
   peer?: string
   /** Who wrote the message, as the adapter reported it. */
   authorId?: string
+  /** The message quotes something this bot sent on the same channel. */
+  replyToMe?: boolean
+  /** This bot spoke within the last few messages of this conversation. */
+  ownRecent?: boolean
 }
 
 export interface DenyOutput {

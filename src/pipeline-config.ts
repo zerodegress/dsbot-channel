@@ -1,5 +1,7 @@
 import type { NodeType, SkipTarget } from './pipeline.js'
 import type { JudgeContext, JudgeQuestion } from './judge-question.js'
+import { matchProblems } from './match-spec.js'
+import type { MatchSpec } from './match-spec.js'
 import { questionProblems } from './judge-question.js'
 import { DEFAULT_MAX_TURN_MS, NODE_TYPES, SKIP_TARGETS } from './pipeline.js'
 
@@ -16,8 +18,12 @@ export interface PipelineNodeSpec {
   context?: JudgeContext
   /** A chance node: the probability its outcome fires, 0 to 1. */
   probability?: number
-  /** A chance node: what a hit decides. */
-  outcome?: 'allow' | 'deny'
+  /** A `when` node's condition, or the guard a `chance` node rolls behind. */
+  test?: MatchSpec
+  /** `when`: allow, deny or pass; `chance`: allow or deny. */
+  outcome?: 'allow' | 'deny' | 'pass'
+  /** A `chance` node: the condition it rolls behind; absent rolls always. */
+  when?: MatchSpec
 }
 
 export const CHANCE_OUTCOMES = ['allow', 'deny'] as const
@@ -81,15 +87,31 @@ export function checkPipeline(nodes: readonly PipelineNodeSpec[]): CheckReport {
         }
       }
     }
-    if (node.type === 'chance') {
-      if (typeof node.probability !== 'number' || !Number.isFinite(node.probability) || node.probability < 0 || node.probability > 1) {
-        fatal.push(`node "${node.id}": chance needs probability between 0 and 1`)
+    if (node.type === 'chance' || node.type === 'when') {
+      if (node.type === 'chance') {
+        if (typeof node.probability !== 'number' || !Number.isFinite(node.probability) || node.probability < 0 || node.probability > 1) {
+          fatal.push(`node "${node.id}": chance needs probability between 0 and 1`)
+        }
+        if (node.outcome === undefined || !(CHANCE_OUTCOMES as readonly string[]).includes(node.outcome)) {
+          fatal.push(`node "${node.id}": chance needs outcome allow or deny`)
+        }
+        if (node.test !== undefined) fatal.push(`node "${node.id}": only a when node may declare test`)
+        if (node.when !== undefined) {
+          for (const problem of matchProblems(node.when)) fatal.push(`node "${node.id}": when ${problem}`)
+        }
+      } else {
+        if (node.test === undefined) fatal.push(`node "${node.id}": when needs a test`)
+        else for (const problem of matchProblems(node.test)) fatal.push(`node "${node.id}": test ${problem}`)
+        if (node.outcome === undefined || !(['allow', 'deny', 'pass'] as readonly string[]).includes(node.outcome)) {
+          fatal.push(`node "${node.id}": when needs outcome allow, deny or pass`)
+        }
+        if (node.when !== undefined) fatal.push(`node "${node.id}": only a chance node may declare when`)
+        if (node.probability !== undefined) fatal.push(`node "${node.id}": only a chance node may declare probability`)
       }
-      if (node.outcome === undefined || !(CHANCE_OUTCOMES as readonly string[]).includes(node.outcome)) {
-        fatal.push(`node "${node.id}": chance needs outcome allow or deny`)
-      }
-    } else if (node.probability !== undefined || node.outcome !== undefined) {
-      fatal.push(`node "${node.id}": only a chance node may declare probability and outcome`)
+    } else {
+      if (node.probability !== undefined) fatal.push(`node "${node.id}": only a chance node may declare probability`)
+      if (node.test !== undefined) fatal.push(`node "${node.id}": only a when node may declare test`)
+      if (node.when !== undefined) fatal.push(`node "${node.id}": only a chance node may declare when`)
     }
     if (node.allowAtLeast !== undefined) {
       if (node.type !== 'judge') {

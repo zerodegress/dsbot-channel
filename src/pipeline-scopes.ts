@@ -21,6 +21,9 @@ export interface InsertSpec {
   /** A budget node inserted by a layer may carry its soft threshold switch. */
   restrictSkip?: unknown
   mayRestrict?: unknown
+  /** A when node may carry its condition and outcome; a chance node its guard. */
+  test?: unknown
+  when?: unknown
 }
 
 /** What a bot or a session adds to the layer above it: a difference, never a whole pipeline. */
@@ -51,7 +54,8 @@ export const OVERRIDABLE_BY_TYPE: Record<NodeType, readonly string[]> = {
   allow: COMMON,
   score: COMMON,
   judge: [...COMMON, 'allowAtLeast', 'question', 'context'],
-  chance: [...COMMON, 'probability', 'outcome'],
+  chance: [...COMMON, 'probability', 'outcome', 'when'],
+  when: [...COMMON, 'test', 'outcome'],
   prepare: COMMON,
 }
 
@@ -108,6 +112,8 @@ function applyLayer(
       ...(spec.outcome === undefined ? {} : { outcome: spec.outcome as 'allow' | 'deny' }),
       ...(spec.restrictSkip === undefined ? {} : { restrictSkip: spec.restrictSkip as NonNullable<PipelineNodeSpec['restrictSkip']> }),
       ...(spec.mayRestrict === undefined ? {} : { mayRestrict: spec.mayRestrict as boolean }),
+      ...(spec.test === undefined ? {} : { test: spec.test as NonNullable<PipelineNodeSpec['test']> }),
+      ...(spec.when === undefined ? {} : { when: spec.when as NonNullable<PipelineNodeSpec['when']> }),
     })
     ids.add(spec.id)
   }

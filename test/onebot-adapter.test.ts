@@ -298,6 +298,77 @@ describe('the onebot sender', () => {
     expect(nothing).toMatchObject({ ok: false, code: 'rejected' })
   })
 
+  test('a reply to a text message names this bot', async () => {
+    const api = createServer((request, response) => {
+      request.resume()
+      request.on('end', () => {
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({ status: 'ok', retcode: 0, data: { message_id: 77 } }))
+      })
+    })
+    await new Promise<void>((resolve) => api.listen(0, '127.0.0.1', resolve))
+    const apiPort = (api.address() as AddressInfo).port
+    stops.push(async () => {
+      api.close()
+    })
+    const { adapter, port, seen } = await startAdapter({
+      accessToken: REF,
+      api: { url: `http://127.0.0.1:${apiPort}`, timeoutMs: 1000 },
+    })
+
+    const sent = await adapter.send({ target: 'group:12345', eventId: 'evt-1', body: 'hello', sender: 'bot-a', instance: 'onebot:a' })
+    expect(sent).toMatchObject({ ok: true, messageId: '77' })
+
+    expect(await post(port, '/onebot/event', event({
+      message_id: '4002',
+      message: [{ type: 'reply', data: { id: '77' } }, { type: 'text', data: { text: 'thanks' } }],
+    }), `Bearer ${TOKEN}`)).toEqual({ status: 204 })
+    await waitFor(() => seen.length > 0)
+    expect(seen[0]).toMatchObject({ replyToMe: true, rawText: 'thanks' })
+  })
+
+  test('a file send is remembered so a reply to it names this bot', async () => {
+    const calls: { path: string; body: Record<string, unknown> }[] = []
+    const api = createServer((request, response) => {
+      let raw = ''
+      request.on('data', (chunk: string) => {
+        raw += chunk
+      })
+      request.on('end', () => {
+        calls.push({ path: (request.url ?? '').replace(/^\//, ''), body: JSON.parse(raw) as Record<string, unknown> })
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({ status: 'ok', retcode: 0, data: { file_id: '901' } }))
+      })
+    })
+    await new Promise<void>((resolve) => api.listen(0, '127.0.0.1', resolve))
+    const apiPort = (api.address() as AddressInfo).port
+    stops.push(async () => {
+      api.close()
+    })
+    const { adapter, port, seen } = await startAdapter({
+      accessToken: REF,
+      api: { url: `http://127.0.0.1:${apiPort}`, timeoutMs: 1000 },
+    })
+
+    const sent = await adapter.send({
+      target: 'group:12345',
+      eventId: 'evt-file',
+      body: '',
+      media: [{ type: 'file', url: null, handle: 'ab12.file', name: 'a.txt' }],
+      sender: 'bot-a',
+      instance: 'onebot:a',
+    })
+    expect(sent).toMatchObject({ ok: true, messageId: '901' })
+    expect(calls[0]).toMatchObject({ path: 'upload_group_file', body: { group_id: '12345', name: 'a.txt' } })
+
+    expect(await post(port, '/onebot/event', event({
+      message_id: '4001',
+      message: [{ type: 'reply', data: { id: '901' } }, { type: 'text', data: { text: 'got it' } }],
+    }), `Bearer ${TOKEN}`)).toEqual({ status: 204 })
+    await waitFor(() => seen.length > 0)
+    expect(seen[0]).toMatchObject({ replyToMe: true, rawText: 'got it' })
+  })
+
   test('a refused credential and a server error map to distinct codes', async () => {
     const api = createServer((request, response) => {
       request.resume()

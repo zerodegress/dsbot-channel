@@ -45,6 +45,8 @@ export interface InboundMessage {
   requestId: string
   /** The adapter already knows this turn must not answer: the sender declined, or it answered elsewhere. */
   suppressed?: boolean | undefined
+  /** The message quotes something this bot sent on the same channel. */
+  replyToMe?: boolean | undefined
   /** The root event of the conversation, from the adapter; core never derives it. */
   chainId: string
   source: Source
