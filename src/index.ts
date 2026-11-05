@@ -30,6 +30,8 @@ export {
 export { registryPlugin } from './registry-plugin.js'
 export { createWebhookAdapter, parseWebhookConfig, WebhookAdapter } from './adapters/webhook/index.js'
 export { classOf as webhookClassOf, mapWebhook } from './adapters/webhook/mapping.js'
+export { createMailAdapter, parseMailConfig, MailAdapter } from './adapters/mail/index.js'
+export { mapMail } from './adapters/mail/mapping.js'
 export { default as systemOneJudge, Config as systemOneJudgeConfig } from './system-one.js'
 export { default as llmJudge, Config as llmJudgeConfig } from './llm.js'
 export { JUDGE_SERVICE } from './judge-providers.js'
