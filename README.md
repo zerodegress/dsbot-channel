@@ -205,6 +205,47 @@ Two entries fill that service; mount one of them **before** the gateway.
 
 Both entries send the body, the scope, the author id and whether the bot was named — no history, no tools — and retry once on `429` or `529` inside `pipeline.judgeTimeoutMs`. `llm` accepts bare JSON only. A second provider on one profile fails at load.
 
+## How a message is decided
+
+An inbound message goes through three steps: the adapter drops a duplicate, the policy gate decides whether it may become a turn at all, and the pipeline decides whether the turn is allowed. A refusal at any step names its reason in the status.
+
+| Policy key | Default | What it decides |
+| --- | --- | --- |
+| `policy.requireMention` | `false` | a group message must name the bot or everyone; a transport that cannot tell mentions (`p2p`) refuses this at mount |
+| `policy.groupBots` | `whenMentioned` | how another bot's group message is treated: `whenMentioned`, `silent` or `answer` |
+| `policy.relayLimit` / `policy.relayResetMs` | `3` / `300000` | how many turns in a row one peer may hold, and the idle time that resets it |
+| `policy.deny.words` / `policy.deny.regexes` | `[]` | substrings and regular expressions that refuse a message; matching is case-insensitive |
+| `policy.allow.peers` | `[]` | `source.peer` values that are allowed before the rest of the chain runs |
+| `policy.budget.capacity` / `policy.budget.hardLimit` | required once `budget` is written / `1` | points per window and the ratio at which the gateway refuses, set as a hard window |
+
+A judge enters as one node of the pipeline, not as a gate: mount a provider first, then declare the node. Without `allowAtLeast` the node only adds its score; with it, a score at or above the threshold allows the message and one below refuses it.
+
+Three starting points:
+
+```yaml
+# a group where the bot answers only when named
+config:
+  policy: { requireMention: true }
+```
+
+```yaml
+# refuse spam words before any judge runs
+config:
+  policy:
+    deny: { words: [spam], regexes: ['^\\s*$'] }
+  pipeline:
+    global:
+      - { id: guard, type: deny }
+```
+
+```yaml
+# answer when the judge is reasonably sure, with a provider mounted first
+config:
+  pipeline:
+    global:
+      - { id: verdict, type: judge, allowAtLeast: 0.6 }
+```
+
 ## Pipeline nodes
 
 A node is `{ id, type }` plus the fields its type reads. The chain runs in order; the first `deny` or `allow` ends it, and a chain that reaches the end refuses.

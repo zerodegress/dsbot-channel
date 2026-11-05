@@ -205,6 +205,47 @@ config:
 
 两个入口都只发送正文、作用域、作者 id 与是否被点名——不带历史、不带工具——并在 `pipeline.judgeTimeoutMs` 内对 `429` / `529` 重试一次。`llm` 只接受裸 JSON。同一个 profile 挂第二个 provider 会在加载期失败。
 
+## 一条消息怎么被判定
+
+入站消息走三步：adapter 先去重，policy 关卡决定它能不能成为回合，pipeline 再决定这个回合放不放行。任何一步拒绝都会在状态里写明原因。
+
+| policy 键 | 默认 | 决定什么 |
+| --- | --- | --- |
+| `policy.requireMention` | `false` | 群消息必须点名机器人或 @全体；分辨不了提及的传输（`p2p`）在挂载期直接拒绝这个配置 |
+| `policy.groupBots` | `whenMentioned` | 另一个机器人的群消息怎么处理：`whenMentioned`、`silent` 或 `answer` |
+| `policy.relayLimit` / `policy.relayResetMs` | `3` / `300000` | 一个对端最多连续占几轮，以及重置这个计数的空闲时间 |
+| `policy.deny.words` / `policy.deny.regexes` | `[]` | 拒绝消息的子串与正则，匹配不区分大小写 |
+| `policy.allow.peers` | `[]` | 命中 `source.peer` 就放行，不再走后面的链条 |
+| `policy.budget.capacity` / `policy.budget.hardLimit` | 写了 `budget` 就必填 / `1` | 每个窗口的点数，以及网关据此拒绝的比例，按硬窗口执行 |
+
+judge 是**管道里的一个节点**，不是关卡：先挂 provider，再声明节点。不带 `allowAtLeast` 时它只加分；带了就按阈值判定，达到放行、低于拒绝。
+
+三种常见起点：
+
+```yaml
+# 群里只在被点名时回复
+config:
+  policy: { requireMention: true }
+```
+
+```yaml
+# 在 judge 运行前先挡住垃圾词
+config:
+  policy:
+    deny: { words: [spam], regexes: ['^\\s*$'] }
+  pipeline:
+    global:
+      - { id: guard, type: deny }
+```
+
+```yaml
+# 先挂 provider，再按 judge 的置信度放行
+config:
+  pipeline:
+    global:
+      - { id: verdict, type: judge, allowAtLeast: 0.6 }
+```
+
 ## 管道节点
 
 节点是 `{ id, type }` 加上该类型读取的字段。链条按顺序执行，遇到第一个 `deny` 或 `allow` 就结束；走到末尾仍未放行的按拒绝处理。

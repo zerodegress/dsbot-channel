@@ -148,6 +148,10 @@ Mount one of two entries. Both provide `dsbot-channel/judge`, so a profile mount
 
 The provider sets no timer of its own; `pipeline.judgeTimeoutMs` bounds the call. A `429` or `529` is retried once. Only the body, the scope, the author id and whether the bot was named are sent — no history, no tools. `llm` accepts bare JSON only; a fenced block fails the verdict.
 
+## How a message is decided
+
+An inbound message is deduplicated by the adapter, then the policy gate decides whether it may become a turn, then the pipeline decides whether the turn is allowed; each refusal names its reason. `policy.requireMention` needs a transport that can tell mentions, `policy.groupBots` sets how another bot's group message is treated (`whenMentioned`, `silent`, `answer`), `policy.relayLimit` / `policy.relayResetMs` cap one peer's consecutive turns, `policy.deny.words` / `policy.deny.regexes` match case-insensitively, `policy.allow.peers` matches `source.peer`, and `policy.budget` sets a points window with a hard ratio. A judge is a pipeline node: mount a provider, then declare the node; `allowAtLeast` makes it decide, without it the node only scores.
+
 ## Pipeline nodes
 
 A node is `{ id, type }` plus the fields its type reads. The chain runs in order; the first `deny` or `allow` ends it, and a chain that reaches the end refuses. `id` names the node in `matched` and `reasons`.
