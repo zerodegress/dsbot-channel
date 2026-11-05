@@ -248,11 +248,12 @@ A node is `{ id, type }` plus the fields its type reads. The chain runs in order
 | `allow` | Allows when `policy.allow` matches, and stops every later `score` and `judge`. An `allow` node with no `policy.allow` peer fails the mount. |
 | `judge` | Scores through the host judge service; `allowAtLeast` sets its threshold, and it reads `question` and `context`. |
 | `prepare` | Runs the host prepare hook, then passes. Every adapter answering for the bot must carry the hook, or the mount fails. |
+| `chance` | Fires with `probability`: a hit ends the chain as an `allow` or a `deny`, a miss passes to the next node. |
 
 | Field | Default | Meaning |
 | --- | --- | --- |
 | `id` | required | Names the node in `matched` and `reasons`. |
-| `type` | required | One of the four above. |
+| `type` | required | One of the five above. |
 | `allowAtLeast` | off | `judge` only: a score from 0 to 1. |
 | `question` | required | `judge` only: what this node asks. `system-one` needs one; an `llm` node may not carry it. |
 | `question.type` | required | `noul`, `score` or `choice`. |
@@ -262,12 +263,16 @@ A node is `{ id, type }` plus the fields its type reads. The chain runs in order
 | `question.target` | required | `choice` only: one of `question.options`; its probability becomes the score. |
 | `question.min` / `.max` | off | `score` only: convert a raw score; equal values fail the verdict. |
 | `context` | off | `judge` only: static material, a string or a mapping of name to string. |
+| `probability` | required | `chance` only: 0 to 1. |
+| `outcome` | required | `chance` only: `allow` or `deny`. |
 
 A key other than these inside `question` fails the mount and names the node and the field. One `context` may total the provider's `maxChars` in code points, mapping names included; an empty name or value, another type or an over-long one fails the mount. `context` is what the profile knows, not what happened: the body, the scope, the author and the mention flag are sent already, and no history, session or tool is read. `llm` renders it after the message facts; `system-one` sends it as `state.context`.
 
+A `chance` node takes its bucket from a fixed hash of the event key and the node id, so the same message replayed takes the same outcome and two chance nodes on one message draw independently. It records `chance_allow`, `chance_deny` or `chance_miss` with `p=` under `reasons`, and the adapter that carried the message counts it under `counters.chance[nodeId]` as `{ hit, miss }`; that key appears only after the node has run.
+
 `score` and `budget` are declared in the schema but cannot bind in this version: a score node needs a scoring function the pipeline does not supply, and a budget node needs a session-scoped verdict it cannot carry yet. Declaring either fails the mount and names the reason; the gateway's own hard window is what limits spending, and only a profile that writes `policy.budget` has one.
 
-An adapter changes the chain it starts from with four keys: `inherit` names the layer it starts from, which for an adapter is `global`; `remove` drops nodes by id, `insert` adds a node after or before a named node, and `override` replaces fields of a node by id. `insert` sets exactly one of `after` or `before` and cannot reuse an existing id; `override` writes only fields the node's type reads; `remove` or `override` naming an id that is not there fails the mount. `question` and `context` may be written in `pipeline.global` and in an adapter's `insert` or `override`. A session's `insert` takes only `id`, `type`, `after` and `before`, so it carries neither; a session's `override` may set both.
+An adapter changes the chain it starts from with four keys: `inherit` names the layer it starts from, which for an adapter is `global`; `remove` drops nodes by id, `insert` adds a node after or before a named node, and `override` replaces fields of a node by id. `insert` sets exactly one of `after` or `before` and cannot reuse an existing id; `override` writes only fields the node's type reads; `remove` or `override` naming an id that is not there fails the mount. `question`, `context`, `probability` and `outcome` may be written in `pipeline.global` and in an adapter's `insert` or `override`. A session's `insert` takes only `id`, `type`, `after` and `before`, so it carries none of them; a session's `override` may set them.
 
 ```yaml
 config:

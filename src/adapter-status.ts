@@ -86,6 +86,8 @@ export interface AdapterCounters {
   lastFailure: { at: number; reason: string } | null
   /** Non-message events this transport read, by its own class. */
   events?: Record<string, number> | undefined
+  /** Chance nodes that ran over this adapter's messages, by node id. */
+  chance?: Record<string, { hit: number; miss: number }> | undefined
 }
 
 export type Health = ConnectionHealth | ListenerHealth
