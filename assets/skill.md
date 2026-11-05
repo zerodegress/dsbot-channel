@@ -15,7 +15,7 @@ config:
         peers: { peer-a: PEER_A_REFERENCE }
 ```
 
-`reply`, `turn`, `policy`, `delivery`, `pipeline` and `impressions` may also be written at the top level as defaults. An adapter replaces the keys it writes whole — an object or an array is taken as written, never merged field by field. The plugin status names the level that supplied each key under `config[].layers`.
+`reply`, `turn`, `policy` and `delivery` may also be written at the top level; an adapter inherits every key it does not write and replaces the whole value of each key it writes, so an array is taken as written and not merged item by item. `pipeline` is a layer of its own: `global` nodes, `maxTurnMs`, `judgeTimeoutMs` and `judgePoints` at the top level, `inherit`, `remove`, `insert` and `override` on an adapter. `events` is read on the adapter only; `impressions` and `identity` only at the top level. The plugin status names the level that supplied each key under `config[].layers`.
 
 | Field | Default | Meaning |
 | --- | --- | --- |
@@ -51,18 +51,19 @@ config:
 | `listen.host` | `127.0.0.1` | concrete address only |
 | `listen.port` | `7331` | |
 | `listen.path` | `/onebot/event` (`http`), `/onebot/ws` (`ws-reverse`) | |
-| `api.url` | required for `http` and `ws-forward` | `http(s)` for `http`; `ws(s)` for `ws-forward` |
+| `api.url` | required | `http(s)` for `http`, `ws(s)` for `ws-forward` |
 | `event.url` | same as `api.url` | `ws-forward` only; both sockets must be up for `online` |
 | `reconnect` | `{ initialMs: 500, maxMs: 30000, factor: 2 }` | `ws-forward` only; `false` keeps the link offline |
 | `heartbeat` | off | both socket protocols; `intervalMs` 0, `timeoutMs` must exceed it |
 | `accessToken` | | reference name |
 | `selfId` | from the event | a mismatched event is dropped |
-| `bots` | empty | accept only these bot ids |
+| `bots` | `[]` | ids treated as bots, not as people |
 | `sendTimeoutMs` | `10000` | |
 | `history.group` / `history.private` | `false` | allow `read_history` per address kind |
 | `fileFromUrl` | `false` | allow `send_file` from an http(s) url |
+| `events.turn` | `[]` | non-message classes that may start a turn |
 
-One adapter accepts one connection in `ws-reverse`; a new connection for the same account replaces the old one.
+One adapter accepts one connection in `ws-reverse`; a new connection for the same account replaces the old one. A named class skips the mention requirement; a name outside the classes OneBot sends fails the mount.
 
 ### Behaviour blocks
 
@@ -74,9 +75,11 @@ One adapter accepts one connection in `ws-reverse`; a new connection for the sam
 | `policy.relayResetMs` | `300000` | idle time that resets the count |
 | `policy.budget.capacity` | off | points per window |
 | `policy.budget.hardLimit` | `1` | ratio that refuses |
+| `policy.deny.words` / `regexes` | `[]` | refuse a message whose text matches |
+| `policy.allow.peers` | `[]` | matches `source.peer`: a peer instance on p2p, or the group or user id of a OneBot event |
 | `reply.default` | `auto` | `auto` or `tool` |
-| `reply.byScope` | | mode per scope: `c2c`, `group`, `p2p` |
-| `reply.rules` | | ordered rules; first match wins |
+| `reply.byScope` | off | mode per scope: `c2c`, `group`, `p2p` |
+| `reply.rules` | off | ordered rules; first match wins |
 | `turn.coalesceMs` | `0` | merge window |
 | `turn.maxBatch` | `10` | messages per batch |
 | `turn.maxChars` | `8000` | batch budget |
@@ -88,11 +91,17 @@ One adapter accepts one connection in `ws-reverse`; a new connection for the sam
 | `delivery.pacing.charsPerSecond` | `14` | reading speed for the wait |
 | `delivery.pacing.minMs` | `700` | shortest wait between parts |
 | `delivery.pacing.maxMs` | `5000` | longest wait between parts |
+| `pipeline.maxTurnMs` | `120000` | one turn's budget |
 | `pipeline.judgeTimeoutMs` | `8000` | one judge call, retries included |
 | `pipeline.judgePoints` | `1` | points a verdict costs |
 | `allowAtLeast` (judge node) | off | score that allows the message |
 | `impressions.dir` | off | absolute notes root; the library is off without it |
+| `impressions.import` | off | once: `{ path, as: { personId } }` or `{ path, as: { groupKey } }` |
+| `turn.impressions.chars` | `400` | notes injected into a turn, `0` to `2000`; `0` injects none |
+| `identity.people` / `identity.bots` | `[]` | nodes `{ id, accounts: [{ kind, instance, accountId }] }`; an account fills `author.personId` |
 | `session` / `cwd` / `agentPreset` / `model` | | run turns in one session; `model` is `provider/model` |
+
+The impression library is off until a top-level `impressions` block names an absolute `dir`. It keeps short notes about the person a turn answers or about its group; `impression_put`, `impression_get` and `impression_forget` read and write them, `turn.impressions.chars` caps how much goes in front of a turn. `impressions.import` runs once per bot at mount from a file in the host memory format; `path` is absolute, `as.personId` must be a declared person, `as.groupKey` is `<channel>|<sessionKey>` on a mounted channel, it reads bullet lines only, and a second run adds nothing. Notes are injected for `c2c` and `group` turns only; on `p2p` the three tools answer `unsupported`. `impression_put` writes about the counterpart, which needs a `personId`, or with `about: "group"` about its group; `impression_get` takes `about: "group"` too; `impression_forget` takes `all: true` or `about: "group"`. `identity` declares `people` and `bots` nodes of `{ id, accounts: [{ kind, instance, accountId }] }`; ids and accounts appear once, `accounts` may not be empty, a built-in instance must be mounted, a configured p2p peer counts, a third-party kind is only warned about, and a resolved account fills `author.personId`.
 
 ## Judge provider
 
@@ -129,12 +138,12 @@ Mount one of two entries. Both provide `dsbot-channel/judge`, so a profile mount
 | `baseUrl` | required | absolute http(s) URL; `llm` posts to `{baseUrl}/chat/completions` |
 | `model` | required | model id |
 | `maxChars` | `2000` (`system-one`), `6000` (`llm`) | body is truncated to this |
-| `question` | required for `system-one` | the typed question |
+| `question` | required | the typed question, for `system-one` |
 | `question.type` | required | `noul`, `score` or `choice` |
 | `question.instructions` | required | one question or statement |
 | `question.criteria` | `noul`: `{ true, false }`; `score`: 2 to 10 ordered levels | |
-| `question.options` | required for `choice` | |
-| `question.target` | required for `choice` | the option whose probability becomes the score |
+| `question.options` | required | options, for `choice` |
+| `question.target` | required | for `choice`: the option whose probability becomes the score |
 | `question.min` / `question.max` | `score` only | used when a reply carries no normalized score; equal values fail the verdict |
 
 The provider sets no timer of its own; `pipeline.judgeTimeoutMs` bounds the call. A `429` or `529` is retried once. Only the body, the scope, the author id and whether the bot was named are sent — no history, no tools. `llm` accepts bare JSON only; a fenced block fails the verdict.

@@ -107,3 +107,5 @@ The work is divided into functions:
 ## Editing this file
 
 Keep each rule self-contained and link out for background. Delete a rule when it no longer constrains anything; do not grow the file for completeness. A new rule belongs in the section it actually governs.
+
+The repository owner maintains this file. An agent changes it only when the owner asks for that change in the same task.
