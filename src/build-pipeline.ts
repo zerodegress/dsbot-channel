@@ -1,4 +1,4 @@
-import type { LimitLevel } from './budget-ledger.js'
+import type { BudgetLedger, LimitLevel } from './budget-ledger.js'
 import { Pipeline } from './pipeline.js'
 import { chanceBucket, chanceHits } from './chance.js'
 import type { NodeContext, PipelineEvent, PipelineNode, PipelineOptions } from './pipeline.js'
@@ -19,12 +19,34 @@ export interface JudgeVerdict {
 export interface BudgetVerdict {
   state: LimitLevel
   triggeredBy: string[]
+  /** How much of the capacity the busiest window has spent, 0 to 1 and above. */
+  ratio: number
+  /** The soft threshold that turns a normal state into a restrict; absent leaves it off. */
+  restrictAt?: number | undefined
+}
+
+/** What a budget node reads: the busiest window's share of capacity and the soft threshold, if any. */
+export function budgetVerdictOf(
+  ledger: BudgetLedger,
+  botId: string,
+  session: string,
+  restrictAt?: number,
+): BudgetVerdict {
+  const state = ledger.peek(botId, session)
+  const spent = ledger.usage(botId, session)
+  const ratio = Math.max(...Object.values(spent)) / ledger.limitsView().capacity
+  return {
+    state: state.aggregate,
+    triggeredBy: state.triggeredBy,
+    ratio,
+    ...(restrictAt === undefined ? {} : { restrictAt }),
+  }
 }
 
 export interface PipelineDeps {
   denyRules?: readonly MatchRule[] | undefined
   allowRules?: readonly MatchRule[] | undefined
-  score?: ((context: NodeContext) => number) | undefined
+  score?: ((context: NodeContext) => number | Promise<number>) | undefined
   judge?: ((event: PipelineEvent, context: NodeContext) => Promise<JudgeVerdict>) | undefined
   prepare?: ((context: NodeContext) => void) | undefined
   budget?: (() => BudgetVerdict) | undefined
@@ -85,7 +107,20 @@ export function buildPipeline(
       }
       case 'score': {
         const scorer = require(spec.id, 'score', 'score', deps.score)
-        return { id: spec.id, type: 'score', run: (context) => ({ kind: 'score', value: scorer(context) }) }
+        return {
+          id: spec.id,
+          type: 'score',
+          run: async (context) => {
+            let value: number
+            try {
+              value = await scorer(context)
+            } catch {
+              return { kind: 'deny', reason: 'score_failed' }
+            }
+            if (typeof value !== 'number' || !Number.isFinite(value)) return { kind: 'deny', reason: 'score_failed' }
+            return { kind: 'score', value }
+          },
+        }
       }
       case 'judge': {
         const judge = require(spec.id, 'judge', 'judge', deps.judge)
@@ -128,12 +163,18 @@ export function buildPipeline(
       }
       case 'budget': {
         const budget = require(spec.id, 'budget', 'budget', deps.budget)
+        const mayRestrict = spec.mayRestrict === true
+        const skip = spec.restrictSkip ?? []
         return {
           id: spec.id,
           type: 'budget',
           run: () => {
             const verdict = budget()
             if (verdict.state === 'hard') return { kind: 'deny', reason: `hard limit: ${verdict.triggeredBy.join(', ')}` }
+            if (mayRestrict && verdict.restrictAt !== undefined && verdict.ratio >= verdict.restrictAt) {
+              const by = verdict.triggeredBy.length === 0 ? 'soft limit' : verdict.triggeredBy.join(', ')
+              return { kind: 'restrict', skip, reason: `budget restrict: ${by}` }
+            }
             return { kind: 'pass' }
           },
         }

@@ -4,9 +4,9 @@ import Schema from '@deepseek-ai/schemastery'
 import { REGISTRY_SERVICE, checkAdapterKind } from './adapter-registry.js'
 import type { AdapterRegistry } from './adapter-registry.js'
 import type { AdapterMount } from './adapter-registry.js'
-import { buildPipeline } from './build-pipeline.js'
+import { budgetVerdictOf, buildPipeline } from './build-pipeline.js'
 import type { PipelineDeps } from './build-pipeline.js'
-import { createLedger } from './budget-config.js'
+import { DEFAULT_HARD_LIMIT, createLedger } from './budget-config.js'
 import type { BudgetConfig } from './budget-config.js'
 import type { Hold } from './budget-ledger.js'
 import { ClosedChains } from './chain-closer.js'
@@ -35,8 +35,8 @@ import { usageSnapshot } from './usage-view.js'
 import type { BotLedger } from './usage-view.js'
 import { PeerSessions } from './peer-sessions.js'
 import type { ModelRoute, SessionControllerLike, SessionEventLike } from './peer-sessions.js'
-import type { PipelineEvent } from './pipeline.js'
-import { unboundReason, unboundRuleReason } from './pipeline-bindable.js'
+import type { NodeContext, PipelineEvent } from './pipeline.js'
+import { unboundRuleReason } from './pipeline-bindable.js'
 import type { PipelineNodeSpec, PipelineSettings } from './pipeline-config.js'
 import { contextProblems } from './judge-question.js'
 import { DEFAULT_PIPELINE } from './pipeline-config.js'
@@ -180,6 +180,8 @@ const layerSchema = Schema.object({
       context: Schema.any(),
       probability: Schema.number(),
       outcome: Schema.string(),
+      restrictSkip: Schema.any(),
+      mayRestrict: Schema.boolean(),
     }),
   ).default([]),
   override: Schema.dict(Schema.any()).default({}),
@@ -238,6 +240,7 @@ export const Config: any = Schema.object({
           budget: Schema.object({
             capacity: Schema.number(),
             hardLimit: Schema.number(),
+            restrictAt: Schema.number(),
           }).default(undefined as never),
         }).default({}),
         pipeline: (layerSchema as any).default(undefined),
@@ -467,12 +470,6 @@ export function checkPipelineScopes(
     fatal.push(...report.layer.fatal, ...report.pipeline.fatal)
     for (const warning of [...report.layer.warnings, ...report.pipeline.warnings]) warnings.add(warning)
   }
-  for (const one of scopes) {
-    for (const node of resolvePipeline(one).nodes) {
-      const reason = unboundReason(node)
-      if (reason !== undefined) fatal.push(`node "${node.id}": ${reason}`)
-    }
-  }
   const sources: (AdapterConfig | undefined)[] = config.adapters.length === 0 ? [undefined] : config.adapters
   for (const adapter of sources) {
     const nodes =
@@ -491,6 +488,18 @@ export function checkPipelineScopes(
     for (const node of nodes) {
       const reason = unboundRuleReason(node, bindings)
       if (reason !== undefined) fatal.push(`${whose}${reason}`)
+      if (node.type !== 'budget') continue
+      const policy = adapter === undefined ? globalPolicy : effectivePolicy(globalPolicy, written(adapter)?.policy)
+      const block = asRecord(policy).budget as { restrictAt?: number } | undefined
+      if (block === undefined) fatal.push(`${whose}a budget node needs policy.budget`)
+      if (node.mayRestrict === true) {
+        if (block?.restrictAt === undefined) fatal.push(`node "${node.id}": mayRestrict needs policy.budget.restrictAt`)
+        if ((node.restrictSkip ?? []).length === 0) {
+          fatal.push(`node "${node.id}": mayRestrict needs a non-empty restrictSkip`)
+        }
+      } else if (node.restrictSkip !== undefined) {
+        fatal.push(`node "${node.id}": restrictSkip has no effect without mayRestrict`)
+      }
     }
   }
   const problems = [...new Set(fatal)]
@@ -577,6 +586,16 @@ function checkPolicyValues(
       `budget hardLimit must be above 0 and at most 1: ${budget.hardLimit}`,
       path('budget.hardLimit'),
     )
+  }
+  const restrictAt = (budget as { restrictAt?: number } | undefined)?.restrictAt
+  if (restrictAt !== undefined) {
+    const ceiling = budget?.hardLimit ?? DEFAULT_HARD_LIMIT
+    if (!Number.isFinite(restrictAt) || restrictAt <= 0 || restrictAt >= ceiling) {
+      throw new ConfigError(
+        `budget restrictAt must be above 0 and below hardLimit: ${String(restrictAt)}`,
+        path('budget.restrictAt'),
+      )
+    }
   }
 }
 
@@ -796,6 +815,9 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   const bots = botScopes(config, written, rawProfile.policy)
   const pipelines = new SessionPipelines({ bots })
   const channels = mountAdapters(config, settings, warn, registry, (index) => writtenAdapters[index], rawProfile.policy)
+  const scoreService = ctx.get('dsbot-channel/score') as
+    | { score?: (event: PipelineEvent, context: unknown) => number | Promise<number> }
+    | undefined
   const judgeService = ctx.get('dsbot-channel/judge') as
     | {
         judge?: (event: PipelineEvent, context: unknown) => Promise<{ score: number; reason?: string }>
@@ -808,6 +830,13 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   if (declaresJudge && (judgeService === undefined || typeof judgeService.judge !== 'function')) {
     throw new ConfigError(
       'a judge node needs the "dsbot-channel/judge" service: mount a plugin that provides it',
+      ['pipeline'],
+    )
+  }
+  const declaresScore = declaredPipelines.some((nodes) => nodes.some((node) => node.type === 'score'))
+  if (declaresScore && (scoreService === undefined || typeof scoreService.score !== 'function')) {
+    throw new ConfigError(
+      'a score node needs the "dsbot-channel/score" service: mount a plugin that provides it',
       ['pipeline'],
     )
   }
@@ -1263,7 +1292,23 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
                 runtime.billing.judge(adapter.botName, message.sessionKey, judgeEvent.eventKey)
                 return verdict
               }
-        const deps = judge === undefined ? runtime.deps : { ...runtime.deps, judge }
+        const score =
+          scoreService?.score === undefined
+            ? undefined
+            : (context: NodeContext) => scoreService.score!(context.event, context)
+        const budgetDeps =
+          ledger === undefined
+            ? undefined
+            : () => {
+                const budgetConfig = policyBlock.budget as BudgetConfig | undefined
+                return budgetVerdictOf(ledger, adapter.botName, message.sessionKey, budgetConfig?.restrictAt)
+              }
+        const perTurn = {
+          ...(judge === undefined ? {} : { judge }),
+          ...(score === undefined ? {} : { score }),
+          ...(budgetDeps === undefined ? {} : { budget: budgetDeps }),
+        }
+        const deps = Object.keys(perTurn).length === 0 ? runtime.deps : { ...runtime.deps, ...perTurn }
         const pipeline =
           specs.length > 0
             ? buildPipeline(specs, bindPrepare(deps, transport, event, message.sessionKey, warn), {

@@ -126,7 +126,8 @@ export class Pipeline {
     const context = (): NodeContext => ({ event, runtime, score, skip: new Set(skip) })
 
     for (const node of this.nodes) {
-      if (skip.has('scoring') && (node.type === 'score' || node.type === 'judge')) continue
+      if (node.type === 'score' && skip.has('scoring')) continue
+      if (node.type === 'judge' && (skip.has('judge') || skip.has('scoring'))) continue
       const output = await this.withTimeout(node, context(), maxTurnMs)
       if (output === null) {
         return { decision: 'deny', score, matched, reasons, restricted, skip, dropped: 'timeout' }

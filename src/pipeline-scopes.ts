@@ -18,6 +18,9 @@ export interface InsertSpec {
   /** A chance node inserted by a layer may carry its own odds. */
   probability?: unknown
   outcome?: unknown
+  /** A budget node inserted by a layer may carry its soft threshold switch. */
+  restrictSkip?: unknown
+  mayRestrict?: unknown
 }
 
 /** What a bot or a session adds to the layer above it: a difference, never a whole pipeline. */
@@ -103,6 +106,8 @@ function applyLayer(
       ...(spec.context === undefined ? {} : { context: spec.context as NonNullable<PipelineNodeSpec['context']> }),
       ...(spec.probability === undefined ? {} : { probability: spec.probability as number }),
       ...(spec.outcome === undefined ? {} : { outcome: spec.outcome as 'allow' | 'deny' }),
+      ...(spec.restrictSkip === undefined ? {} : { restrictSkip: spec.restrictSkip as NonNullable<PipelineNodeSpec['restrictSkip']> }),
+      ...(spec.mayRestrict === undefined ? {} : { mayRestrict: spec.mayRestrict as boolean }),
     })
     ids.add(spec.id)
   }

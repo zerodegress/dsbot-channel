@@ -7,6 +7,8 @@ export interface BudgetConfig {
   /** Points one window may spend before the ratios apply. */
   capacity: number
   hardLimit?: number | undefined
+  /** The share of capacity where a budget node may restrict instead of passing; absent leaves it off. */
+  restrictAt?: number | undefined
 }
 
 export interface LedgerOptions {

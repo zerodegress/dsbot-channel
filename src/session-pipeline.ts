@@ -1,5 +1,5 @@
 import { ConfigError } from './config.js'
-import { unboundReason, unboundRuleReason } from './pipeline-bindable.js'
+import { unboundRuleReason } from './pipeline-bindable.js'
 import type { PipelineNodeSpec } from './pipeline-config.js'
 import type { PipelineLayer } from './pipeline-scopes.js'
 import { resolveAndCheck, resolvePipeline } from './pipeline-scopes.js'
@@ -114,7 +114,7 @@ export class SessionPipelines {
           ['pipeline'],
         )
       }
-      const reason = unboundReason(node) ?? unboundRuleReason(node, rules)
+      const reason = unboundRuleReason(node, rules)
       if (reason !== undefined) throw new ConfigError(`node "${node.id}": ${reason}`, ['pipeline'])
     }
   }
