@@ -58,7 +58,7 @@ config:
 
 `channel`、`botName`、`transport` 必填，`channel` 不能重复。`reply`、`turn`、`policy` 也可以写在顶层作为默认值；adapter 写哪个键就整块替换那个键，对象和数组按写的那样整体生效，不逐项合并。插件级状态里的 `config[].layers` 标明每个键来自哪一层。两个 adapter 服务同一个 bot、落在同一个会话键时，会话仍然共享，但合并窗口与上下文缓冲各有一份。`channel` 是 adapter 唯一的名字，对端在线路上看到的也是它。`kind` 默认 `p2p`；另一个内置是 `onebot`，第三方传输用 `x-[a-z0-9-]+` 的名字，最长 32 字符。`secret` 与 `accessToken` 填的是宿主任凭服务里的引用名，不是密钥本身。配置里的路径按 POSIX 解释，暂不支持 Windows。
 
-同一个 peer instance 的两个条目必须引用不同的 secret；同一引用写两次会在挂载时被拒绝。
+`peers[].instance` 是对端的名字，不是这条链路的名字：这是唯一一处名字不是该 adapter 的 `channel` 的地方。同一个 peer instance 的两个条目必须引用不同的 secret；同一引用写两次会在挂载时被拒绝。
 
 一条 OneBot adapter 只用一种协议：`transport.protocol` 取 `http`（默认）、`ws-forward` 或 `ws-reverse`。属于另一种协议的字段会在加载配置时报错。每个 adapter 是一条链路：同一个实现只走一种协议，就只声明一个 OneBot adapter。
 
@@ -73,6 +73,8 @@ adapter 可以用 `session` 指定每回合都跑在某个已有会话里，用 
 | --- | --- | --- |
 | `policy.requireMention` | `false` | 群消息必须点名 |
 | `policy.groupBots` | `whenMentioned` | 群内 Bot 消息 |
+| `policy.relayLimit` | `3` | 单个对端连续占用的回合数 |
+| `policy.relayResetMs` | `300000` | 空闲多久重置计数 |
 | `policy.budget.capacity` | 关闭 | 每窗口点数 |
 | `policy.budget.hardLimit` | `1` | 拒绝比例 |
 | `reply.default` | `auto` | 回合怎么答 |
@@ -93,6 +95,20 @@ adapter 可以用 `session` 指定每回合都跑在某个已有会话里，用 
 | `pipeline.judgePoints` | `1` | 一次判定扣的点数 |
 | `allowAtLeast`（judge 节点） | 关闭 | 达到该分数才放行 |
 | `impressions.dir` | 关闭 | 笔记根目录 |
+| `session` / `cwd` / `agentPreset` / `model` | — | 固定会话、其目录、预设与模型 |
+| `transport.listen.host` | `127.0.0.1` | 只接受具体地址 |
+| `transport.listen.port` | `7123` / `7331` | p2p / OneBot |
+| `transport.listen.path` | `/onebot/event`、`/onebot/ws` | OneBot：事件路径 |
+| `transport.dedupe.ttlMs` / `transport.dedupe.limit` | — | p2p：重放窗口与容量 |
+| `transport.inflightTtlMs` | `300000` | p2p：在途占用的回收时限 |
+| `transport.sentAtWindowMs` | `300000` | p2p：签名新鲜度窗口 |
+| `transport.maxBodyBytes` | — | p2p：请求体上限 |
+| `transport.waitMs` | — | p2p：重复消息的等待时长 |
+| `transport.api.url` | — | OneBot `http`/`ws-forward`：动作端点 |
+| `transport.event.url` | 同 `api.url` | OneBot `ws-forward`：事件 socket |
+| `transport.selfId` | 取事件里的值 | OneBot：期望的账号 id |
+| `transport.bots` | 空 | OneBot：接受的 Bot id |
+| `transport.sendTimeoutMs` | `10000` | OneBot：单次动作 |
 | `transport.protocol` | `http` | OneBot：连接方式 |
 | `transport.heartbeat` | 关闭 | OneBot 走 socket：存活检查 |
 | `transport.reconnect` | 退避重试 | OneBot `ws-forward`：退避重试，`false` 表示不重连 |
@@ -100,6 +116,7 @@ adapter 可以用 `session` 指定每回合都跑在某个已有会话里，用 
 | `transport.history.private` | `false` | OneBot：读私聊历史 |
 | `transport.fileFromUrl` | `false` | OneBot：用 url 发文件 |
 | `status` | `true` | 状态路由 |
+| `skill` | `true` | 向宿主注册包内技能 |
 
 空回答不发送：内容为空、或者只有空白的回答，按「没有文字的回合」计数，不会把一条空消息发进对话。
 

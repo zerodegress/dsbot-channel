@@ -24,6 +24,7 @@ config:
 | `botName` | required | the bot this link answers for |
 | `transport` | required | per-kind block below |
 | `status` | `true` | register the read-only status route |
+| `skill` | `true` | register the packaged skill when the host has a skills service |
 
 `channel` is the adapter's only name. `secret`, `accessToken` and judge `credential` are reference names in the host credentials service, not secrets. Paths are read as POSIX paths; Windows is not supported.
 
