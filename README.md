@@ -146,10 +146,17 @@ Only a turn reply is split; `send_text`, decline and refusal messages go out who
 config:
   pipeline:
     global:
-      - { id: score, type: judge, allowAtLeast: 0.6 }
+      - id: worthy
+        type: judge
+        allowAtLeast: 0.6
+        question:
+          type: noul
+          instructions: Is this message worth answering?
+          criteria: { true: worth answering, false: not worth answering }
+        context: This bot answers questions about the project only.
 ```
 
-A `judge` node needs the host service `dsbot-channel/judge`, which answers `judge(event, context)` with `{ score, reason? }`. A profile that declares the node without the service fails the mount; a judge that times out or throws refuses the message with `judge_timeout` or `judge_failed`, and a score that is not a finite number from 0 to 1 fails it the same way. `allowAtLeast` may also be inserted or overridden on a bot or session layer. `judgeTimeoutMs` must not exceed `maxTurnMs`.
+A `judge` node needs the host service `dsbot-channel/judge`, which answers `judge(event, context)` with `{ score, reason? }`. A profile that declares the node without the service fails the mount; a judge that times out or throws refuses the message with `judge_timeout` or `judge_failed`, and a score that is not a finite number from 0 to 1 fails it the same way. `allowAtLeast`, `question` and `context` may also be set by an adapter's `insert` or `override`, or by a session's `override`; the fields a judge node reads are listed under `Pipeline nodes`. `judgeTimeoutMs` must not exceed `maxTurnMs`.
 
 | Field | Default | Meaning |
 | --- | --- | --- |
@@ -167,9 +174,6 @@ Two entries fill that service; mount one of them **before** the gateway.
     credential: JUDGE_KEY
     baseUrl: https://api.typesafe.ai/v1/systemone
     model: jev-latest
-    question:
-      type: noul
-      instructions: Is this message worth answering?
 ```
 
 ```yaml
@@ -186,16 +190,9 @@ Two entries fill that service; mount one of them **before** the gateway.
 | `credential` | required | reference name |
 | `baseUrl` | required | absolute http(s) URL; `llm` posts to `{baseUrl}/chat/completions` |
 | `model` | required | model id |
-| `maxChars` | `2000` (`system-one`), `6000` (`llm`) | body is truncated to this |
-| `question` | required | the typed question, for `system-one` |
-| `question.type` | required | `noul`, `score` or `choice` |
-| `question.instructions` | required | one question or statement |
-| `question.criteria` | `noul`: `{ true, false }`; `score`: 2 to 10 ordered levels | |
-| `question.options` | required | options, for `choice` |
-| `question.target` | required | for `choice`: the option whose probability becomes the score |
-| `question.min` / `.max` | off | `score` only: convert a raw score; equal values fail the verdict |
+| `maxChars` | `2000` (`system-one`), `6000` (`llm`) | body is truncated to this; one node's `context` is capped at it too |
 
-Both entries send the body, the scope, the author id and whether the bot was named — no history, no tools — and retry once on `429` or `529` inside `pipeline.judgeTimeoutMs`. `llm` accepts bare JSON only. A second provider on one profile fails at load.
+Both entries send the body, the scope, the author id, whether the bot was named and the node's `context` — no history, no tools — and retry once on `429` or `529` inside `pipeline.judgeTimeoutMs`. `llm` accepts bare JSON only. A second provider on one profile fails at load. Any other key fails the mount and is named in the error; a judge service from another package that reports no `needsQuestion` or `maxChars` is read as `false` / `2000`.
 
 ## How a message is decided
 
@@ -249,7 +246,7 @@ A node is `{ id, type }` plus the fields its type reads. The chain runs in order
 | --- | --- |
 | `deny` | Refuses when `policy.deny` matches. A `deny` node with no `policy.deny` rule fails the mount. |
 | `allow` | Allows when `policy.allow` matches, and stops every later `score` and `judge`. An `allow` node with no `policy.allow` peer fails the mount. |
-| `judge` | Scores through the host judge service; its threshold is `allowAtLeast`. |
+| `judge` | Scores through the host judge service; `allowAtLeast` sets its threshold, and it reads `question` and `context`. |
 | `prepare` | Runs the host prepare hook, then passes. Every adapter answering for the bot must carry the hook, or the mount fails. |
 
 | Field | Meaning |
@@ -257,10 +254,20 @@ A node is `{ id, type }` plus the fields its type reads. The chain runs in order
 | `id` | Names the node in `matched` and `reasons`. |
 | `type` | One of the four above. |
 | `allowAtLeast` | `judge` only: a score from 0 to 1. |
+| `question` | `judge` only: what this node asks. `system-one` needs one; an `llm` node may not carry it. |
+| `question.type` | `noul`, `score` or `choice`. |
+| `question.instructions` | One question or statement. |
+| `question.criteria` | `noul`: `{ true, false }`; `score`: 2 to 10 ordered levels, low to high. |
+| `question.options` | `choice` only: at least two options. |
+| `question.target` | `choice` only: one of `question.options`; its probability becomes the score. |
+| `question.min` / `.max` | `score` only: convert a raw score; equal values fail the verdict. |
+| `context` | `judge` only: static material, a string or a mapping of name to string. |
+
+A key other than these inside `question` fails the mount and names the node and the field. One `context` may total the provider's `maxChars` in code points, mapping names included; an empty value, another type or an over-long one fails the mount. `context` is what the profile knows, not what happened: the body, the scope, the author and the mention flag are sent already, and no history, session or tool is read. `llm` renders it after the message facts; `system-one` sends it as `state.context`.
 
 `score` and `budget` are declared in the schema but cannot bind in this version: a score node needs a scoring function the pipeline does not supply, and a budget node needs a session-scoped verdict it cannot carry yet. Declaring either fails the mount and names the reason; the gateway's own hard window is what limits spending, and only a profile that writes `policy.budget` has one.
 
-An adapter changes the chain it starts from with four keys: `inherit` names the layer it starts from, which for an adapter is `global`; `remove` drops nodes by id, `insert` adds a node after or before a named node, and `override` replaces fields of a node by id. `insert` sets exactly one of `after` or `before` and cannot reuse an existing id; `override` writes only fields the node's type reads; `remove` or `override` naming an id that is not there fails the mount.
+An adapter changes the chain it starts from with four keys: `inherit` names the layer it starts from, which for an adapter is `global`; `remove` drops nodes by id, `insert` adds a node after or before a named node, and `override` replaces fields of a node by id. `insert` sets exactly one of `after` or `before` and cannot reuse an existing id; `override` writes only fields the node's type reads; `remove` or `override` naming an id that is not there fails the mount. `question` and `context` may be written in `pipeline.global` and in an adapter's `insert` or `override`. A session's `insert` takes only `id`, `type`, `after` and `before`, so it carries neither; a session's `override` may set both.
 
 ```yaml
 config:
@@ -280,7 +287,7 @@ config:
         insert: [{ id: extra, type: deny, after: guard }]
 ```
 
-`override` replaces fields by id and is what a judge node uses to change `allowAtLeast`; a judge node also needs one provider mounted. The chain above has no `allow` node and no judge threshold, so it refuses every message; it shows the layer operations only.
+`override` replaces fields by id and is what a judge node uses to change `allowAtLeast`, `question` and `context`; a judge node also needs one provider mounted. The chain above has no `allow` node and no judge threshold, so it refuses every message; it shows the layer operations only.
 
 ## Identity and impressions
 

@@ -146,10 +146,17 @@ config:
 config:
   pipeline:
     global:
-      - { id: score, type: judge, allowAtLeast: 0.6 }
+      - id: worthy
+        type: judge
+        allowAtLeast: 0.6
+        question:
+          type: noul
+          instructions: Is this message worth answering?
+          criteria: { true: worth answering, false: not worth answering }
+        context: This bot answers questions about the project only.
 ```
 
-`judge` 节点需要宿主服务 `dsbot-channel/judge`，它以 `{ score, reason? }` 回应 `judge(event, context)`。声明了节点但没有该服务，挂载失败；判定超时或抛错分别以 `judge_timeout`、`judge_failed` 拒绝该消息，分数不是 0–1 的有限数同样判失败。`allowAtLeast` 也可以在 bot 或 session 层 insert/override。`judgeTimeoutMs` 不得超过 `maxTurnMs`。
+`judge` 节点需要宿主服务 `dsbot-channel/judge`，它以 `{ score, reason? }` 回应 `judge(event, context)`。声明了节点但没有该服务，挂载失败；判定超时或抛错分别以 `judge_timeout`、`judge_failed` 拒绝该消息，分数不是 0–1 的有限数同样判失败。`allowAtLeast`、`question` 与 `context` 也可以由 adapter 的 `insert` 或 `override` 写入，或由 session 的 `override` 写入；judge 节点读哪些字段见「管道节点」。`judgeTimeoutMs` 不得超过 `maxTurnMs`。
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -167,9 +174,6 @@ config:
     credential: JUDGE_KEY
     baseUrl: https://api.typesafe.ai/v1/systemone
     model: jev-latest
-    question:
-      type: noul
-      instructions: Is this message worth answering?
 ```
 
 ```yaml
@@ -186,16 +190,9 @@ config:
 | `credential` | required | 引用名 |
 | `baseUrl` | required | 绝对 http(s) 地址；`llm` 向 `{baseUrl}/chat/completions` 发请求 |
 | `model` | required | 模型 id |
-| `maxChars` | `2000`（`system-one`）、`6000`（`llm`） | 正文截断上限 |
-| `question` | required | 要问的类型化问题，`system-one` 用 |
-| `question.type` | required | `noul`、`score` 或 `choice` |
-| `question.instructions` | required | 一句问题或陈述 |
-| `question.criteria` | `noul`：`{ true, false }`；`score`：2 到 10 档有序 | |
-| `question.options` | required | 选项，`choice` 用 |
-| `question.target` | required | `choice` 用：取哪一项的概率作为分数 |
-| `question.min` / `.max` | off | 仅 `score`：换算原始分；两者相等判失败 |
+| `maxChars` | `2000`（`system-one`）、`6000`（`llm`） | 正文截断上限；同时也是单个节点 `context` 的码点上限 |
 
-两个入口都只发送正文、作用域、作者 id 与是否被点名——不带历史、不带工具——并在 `pipeline.judgeTimeoutMs` 内对 `429` / `529` 重试一次。`llm` 只接受裸 JSON。同一个 profile 挂第二个 provider 会在加载期失败。
+两个入口都发送正文、作用域、作者 id、是否被点名以及节点的 `context`——不带历史、不带工具——并在 `pipeline.judgeTimeoutMs` 内对 `429` / `529` 重试一次。`llm` 只接受裸 JSON。同一个 profile 挂第二个 provider 会在加载期失败。其余键会在挂载期失败并在错误里点名；别的包提供的 judge 服务不报 `needsQuestion` / `maxChars` 时按 `false` / `2000` 处理。
 
 ## 一条消息怎么被判定
 
@@ -249,7 +246,7 @@ config:
 | --- | --- |
 | `deny` | `policy.deny` 命中即拒绝。没有 `policy.deny` 规则时声明 `deny` 节点会让挂载失败。 |
 | `allow` | `policy.allow` 命中即放行，并跳过后面所有 `score` 与 `judge`。没有 `policy.allow` 对端时声明 `allow` 节点会让挂载失败。 |
-| `judge` | 通过宿主 judge 服务打分；阈值是 `allowAtLeast`。 |
+| `judge` | 通过宿主 judge 服务打分；`allowAtLeast` 是阈值，节点还读取 `question` 与 `context`。 |
 | `prepare` | 执行宿主提供的 prepare 钩子，然后通过。为该 bot 服务的每个 adapter 都必须带这个钩子，否则挂载失败。 |
 
 | 字段 | 含义 |
@@ -257,10 +254,20 @@ config:
 | `id` | `matched` 与 `reasons` 用它指代该节点。 |
 | `type` | 上面四种之一。 |
 | `allowAtLeast` | 仅 `judge`：0 到 1 的分数。 |
+| `question` | 仅 `judge`：这个节点问什么。`system-one` 必须有；`llm` 节点带了会挂载失败。 |
+| `question.type` | `noul`、`score` 或 `choice`。 |
+| `question.instructions` | 一句问题或陈述。 |
+| `question.criteria` | `noul`：`{ true, false }`；`score`：2 到 10 档，由低到高。 |
+| `question.options` | 仅 `choice`：至少两项。 |
+| `question.target` | 仅 `choice`：`question.options` 中的一项，取它的概率作为分数。 |
+| `question.min` / `.max` | 仅 `score`：换算原始分；两者相等判失败。 |
+| `context` | 仅 `judge`：静态材料，字符串或「名字→字符串」映射。 |
+
+`question` 里上述字段之外的键会让挂载失败，错误带节点 id 与字段名。单个 `context` 的码点总数不得超过 provider 的 `maxChars`，映射的名字也计入；值为空、类型不对或超长都会挂载失败。`context` 是配置方知道的材料，不是发生过的事：正文、作用域、作者与是否被点名本来就随事件发送，历史、会话与工具一律不读。`llm` 把它渲染在消息事实之后；`system-one` 放进 `state.context`。
 
 `score` 与 `budget` 在 schema 里有声明，但这一版绑不上：score 节点需要的评分函数没有提供，budget 节点需要的会话级判定管道带不了。声明它们会在挂载期失败并给出原因；真正的花费限制由网关自己的硬窗口执行，且只有写了 `policy.budget` 的 profile 才有这个窗口。
 
-adapter 用四个键调整它继承到的链条：`inherit` 指定从哪一层开始（adapter 层只能是 `global`），`remove` 按 id 删节点，`insert` 把节点插到某个 id 之前或之后，`override` 按 id 替换节点字段。`insert` 的 `after` 与 `before` 只能写一个、不能复用已有的 id；`override` 只写该节点类型拥有的字段；`remove` 或 `override` 指向不存在的 id 会让挂载失败。
+adapter 用四个键调整它继承到的链条：`inherit` 指定从哪一层开始（adapter 层只能是 `global`），`remove` 按 id 删节点，`insert` 把节点插到某个 id 之前或之后，`override` 按 id 替换节点字段。`insert` 的 `after` 与 `before` 只能写一个、不能复用已有的 id；`override` 只写该节点类型拥有的字段；`remove` 或 `override` 指向不存在的 id 会让挂载失败。`question` 与 `context` 可以写在 `pipeline.global`，也可以写在 adapter 的 `insert` 或 `override` 里。session 的 `insert` 只接受 `id`、`type`、`after`、`before`，带不了这两个字段；session 的 `override` 可以写。
 
 ```yaml
 config:
@@ -280,7 +287,7 @@ config:
         insert: [{ id: extra, type: deny, after: guard }]
 ```
 
-`override` 按 id 替换节点字段，judge 节点用它改 `allowAtLeast`；judge 节点还需要先挂上一个 provider。上面的链条没有 `allow` 节点也没有 judge 阈值，因此会拒绝每一条消息，只用于演示层操作。
+`override` 按 id 替换节点字段，judge 节点用它改 `allowAtLeast`、`question` 与 `context`；judge 节点还需要先挂上一个 provider。上面的链条没有 `allow` 节点也没有 judge 阈值，因此会拒绝每一条消息，只用于演示层操作。
 
 ## 身份与印象库
 
