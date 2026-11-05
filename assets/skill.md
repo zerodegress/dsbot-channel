@@ -107,7 +107,9 @@ The impression library is off until a top-level `impressions` block names an abs
 
 Mount one of two entries. Both provide `dsbot-channel/judge`, so a profile mounts one; a second mount fails at load with `one judge service per instance`. Mount the provider before the gateway: the gateway reads the service while it mounts.
 
-`system-one` asks a typed question and reads a probability.
+A provider holds the connection; what to ask is written on the judge node, in the fields listed under `Pipeline nodes`.
+
+`system-one` asks the question its node names and reads a probability.
 
 ```yaml
 - id: dsbot-channel/system-one
@@ -116,9 +118,6 @@ Mount one of two entries. Both provide `dsbot-channel/judge`, so a profile mount
     credential: JUDGE_KEY
     baseUrl: https://api.typesafe.ai/v1/systemone
     model: jev-latest
-    question:
-      type: noul
-      instructions: Is this message worth answering?
 ```
 
 `llm` asks an OpenAI-compatible chat completion for bare JSON `{"score","reason"}`.
@@ -137,13 +136,64 @@ Mount one of two entries. Both provide `dsbot-channel/judge`, so a profile mount
 | `credential` | required | reference name |
 | `baseUrl` | required | absolute http(s) URL; `llm` posts to `{baseUrl}/chat/completions` |
 | `model` | required | model id |
-| `maxChars` | `2000` (`system-one`), `6000` (`llm`) | body is truncated to this |
-| `question` | required | the typed question, for `system-one` |
+| `maxChars` | `2000` (`system-one`), `6000` (`llm`) | body is truncated to this; one node's `context` is capped at it too |
+
+A key other than these four fails the mount and is named in the error. A judge service from another package that reports no `needsQuestion` or `maxChars` counts as `false` and `2000`: its nodes take a `context` of 2000 code points at most and no `question`.
+
+The provider sets no timer of its own; `pipeline.judgeTimeoutMs` bounds the call. A `429` or `529` is retried once. Only the body, the scope, the author id, whether the bot was named and the node's `context` are sent — no history, no tools. `llm` accepts bare JSON only; a fenced block fails the verdict.
+
+## How a message is decided
+
+An inbound message is deduplicated by the adapter, then the policy keys in the table above decide whether it may become a turn, then the pipeline decides whether the turn is allowed. A refusal is recorded as `outcome: rejected` with the gate's code, with the detail in the log. `policy.deny` and `policy.allow` need a `deny` or `allow` node: a profile that declares no `pipeline` gets it added, one that declares a pipeline must add it. A judge is a pipeline node: mount a provider, then declare the node; `allowAtLeast` makes it decide, without it the node only scores and the chain still refuses at its end.
+
+## Pipeline nodes
+
+A node is `{ id, type }` plus the fields its type reads. The chain runs in order; the first `deny` or `allow` ends it, and a chain that reaches the end refuses. `id` names the node in `matched` and `reasons`.
+
+| Node | Effect |
+| --- | --- |
+| `deny` | refuses when `policy.deny` matches; no `policy.deny` rule fails the mount |
+| `allow` | allows when `policy.allow` matches and stops later `score` and `judge`; no `policy.allow` peer fails the mount |
+| `judge` | scores through the host judge service; `allowAtLeast` sets its threshold, and it reads `question` and `context` |
+| `prepare` | runs the host prepare hook, then passes; every adapter for the bot needs the hook |
+
+A `judge` node names what it asks and what it adds.
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `question` | required | what this node asks; `system-one` needs one, an `llm` node may not carry it |
 | `question.type` | required | `noul`, `score` or `choice` |
 | `question.instructions` | required | one question or statement |
-| `question.criteria` | `noul`: `{ true, false }`; `score`: 2 to 10 ordered levels | |
-| `question.options` | required | options, for `choice` |
-| `question.target` | required | for `choice`: the option whose probability becomes the score |
-| `question.min` / `question.max` | `score` only | used when a reply carries no normalized score; equal values fail the verdict |
+| `question.criteria` | required | `noul`: `{ true, false }`; `score`: 2 to 10 ordered levels, low to high |
+| `question.options` | required | for `choice`: at least two options |
+| `question.target` | required | for `choice`: one of `question.options`; its probability becomes the score |
+| `question.min` / `question.max` | off | `score` only: convert a raw score; equal values fail the verdict |
+| `context` | off | static material for this node: a string or a mapping of name to string |
 
-The provider sets no timer of its own; `pipeline.judgeTimeoutMs` bounds the call. A `429` or `529` is retried once. Only the body, the scope, the author id and whether the bot was named are sent — no history, no tools. `llm` accepts bare JSON only; a fenced block fails the verdict.
+A key other than these in `question` fails the mount and names the node and the field. One `context` may total `maxChars` code points, mapping names included; an empty name or value, another type or an over-long one fails the mount. `context` carries what the profile knows, not what happened: the body, the scope, the author and whether the bot was named are sent already, and history, sessions and tools are never read. `llm` renders it after the message facts; `system-one` sends it as `state.context`.
+
+`question` and `context` may be written in `pipeline.global` and in an adapter's `insert` and `override`. A session layer's `insert` takes only `id`, `type`, `after` and `before`, so it carries neither; a session's `override` may set both.
+
+`score` and `budget` are declared in the schema but cannot bind in this version: a score node needs a scoring function, a budget node needs a session-scoped verdict. Declaring either fails the mount; the gateway's hard window limits spending, and only a profile with `policy.budget` has one. `allowAtLeast` (0 to 1), `question` and `context` are read by `judge` only.
+
+An adapter changes the chain it starts from with `inherit`, `remove`, `insert` and `override`: `inherit` names the layer (an adapter takes `global`), `remove` drops nodes by id, `insert` adds a node after or before a named node (one of the two, no reused id), `override` replaces fields by id and only those the type reads; an unknown id fails the mount.
+
+```yaml
+config:
+  policy:
+    deny: { words: [spam] }
+  pipeline:
+    global:
+      - { id: guard, type: deny }
+      - { id: shadow, type: deny }
+  adapters:
+    - kind: p2p
+      channel: p2p:peer-a
+      botName: self-bot
+      transport: { listen: { host: 127.0.0.1, port: 7123 }, peers: { peer-b: PEER_B_REFERENCE } }
+      pipeline:
+        remove: [shadow]
+        insert: [{ id: extra, type: deny, after: guard }]
+```
+
+`override` replaces fields by id; a judge node uses it for `allowAtLeast`, `question` and `context`, and needs one provider mounted. A chain with no `allow` node and no judge threshold refuses every message.

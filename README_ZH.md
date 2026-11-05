@@ -137,16 +137,8 @@ config:
 | `delivery.pacing.charsPerSecond` | `14` | 计算等待的阅读速度 |
 | `delivery.pacing.minMs` | `700` | 段间最短等待 |
 | `delivery.pacing.maxMs` | `5000` | 段间最长等待 |
-| `policy.requireMention` | `false` | 群消息必须点名本 Bot 或所有人；需要能分辨提及的通道，`p2p` 写了会在挂载期被拒 |
-| `policy.groupBots` | `whenMentioned` | `whenMentioned`、`silent` 或 `answer` |
-| `policy.relayLimit` | `3` | 同一对端连续占用的轮数 |
-| `policy.relayResetMs` | `300000` | 空闲多久复位计数 |
-| `policy.budget.capacity` | off | 每窗口点数 |
-| `policy.budget.hardLimit` | `1` | 拒绝比例 |
-| `policy.deny.words` / `regexes` | `[]` | 正文命中即拒 |
-| `policy.allow.peers` | `[]` | 匹配 `source.peer`：p2p 上是对端实例名，OneBot 上是群号或用户号 |
 
-只有回合回复会被切段；`send_text`、拒绝与婉拒消息整条发出。任何地方都没写 `delivery` 时回复整条发出。一批只计费一次、只留一条记录；写了 `policy.budget` 后 `policy.budget.capacity` 就是必填。`policy.deny.words` 按大小写不敏感的子串匹配，空词在挂载期被拒；`policy.deny.regexes` 按大小写不敏感编译，非法正则在挂载期被拒；`policy.allow.peers` 匹配 `source.peer`，空名被拒。三者任一非空就自动加上 `deny` 或 `allow` 节点，命中即拒绝或放行。每段前的等待是「该段码点数 ÷ `charsPerSecond`」，夹在 `minMs` 与 `maxMs` 之间，最后一段之后不等待。`maxChars: 0` 关闭硬切，空的 `delivery` 块不添加任何键。某段失败即停止，回复按失败记录已发出的段数。
+只有回合回复会被切段；`send_text`、拒绝与婉拒消息整条发出。任何地方都没写 `delivery` 时回复整条发出。一批只计费一次、只留一条记录。每段前的等待是「该段码点数 ÷ `charsPerSecond`」，夹在 `minMs` 与 `maxMs` 之间，最后一段之后不等待。`maxChars: 0` 关闭硬切，空的 `delivery` 块不添加任何键。某段失败即停止，回复按失败记录已发出的段数。
 
 ## 判定
 
@@ -154,10 +146,17 @@ config:
 config:
   pipeline:
     global:
-      - { id: score, type: judge, allowAtLeast: 0.6 }
+      - id: worthy
+        type: judge
+        allowAtLeast: 0.6
+        question:
+          type: noul
+          instructions: Is this message worth answering?
+          criteria: { true: worth answering, false: not worth answering }
+        context: This bot answers questions about the project only.
 ```
 
-`judge` 节点需要宿主服务 `dsbot-channel/judge`，它以 `{ score, reason? }` 回应 `judge(event, context)`。声明了节点但没有该服务，挂载失败；判定超时或抛错分别以 `judge_timeout`、`judge_failed` 拒绝该消息，分数不是 0–1 的有限数同样判失败。`allowAtLeast` 也可以在 bot 或 session 层 insert/override。`judgeTimeoutMs` 不得超过 `maxTurnMs`。
+`judge` 节点需要宿主服务 `dsbot-channel/judge`，它以 `{ score, reason? }` 回应 `judge(event, context)`。声明了节点但没有该服务，挂载失败；判定超时或抛错分别以 `judge_timeout`、`judge_failed` 拒绝该消息，分数不是 0–1 的有限数同样判失败。`allowAtLeast` 也可以由 adapter 的 `insert` 或 `override` 写入，或由 session 的 `override` 写入；judge 节点读哪些字段、能写在哪一层，见「管道节点」。`judgeTimeoutMs` 不得超过 `maxTurnMs`。
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -175,9 +174,6 @@ config:
     credential: JUDGE_KEY
     baseUrl: https://api.typesafe.ai/v1/systemone
     model: jev-latest
-    question:
-      type: noul
-      instructions: Is this message worth answering?
 ```
 
 ```yaml
@@ -194,16 +190,104 @@ config:
 | `credential` | required | 引用名 |
 | `baseUrl` | required | 绝对 http(s) 地址；`llm` 向 `{baseUrl}/chat/completions` 发请求 |
 | `model` | required | 模型 id |
-| `maxChars` | `2000`（`system-one`）、`6000`（`llm`） | 正文截断上限 |
-| `question` | required | 要问的类型化问题，`system-one` 用 |
-| `question.type` | required | `noul`、`score` 或 `choice` |
-| `question.instructions` | required | 一句问题或陈述 |
-| `question.criteria` | `noul`：`{ true, false }`；`score`：2 到 10 档有序 | |
-| `question.options` | required | 选项，`choice` 用 |
-| `question.target` | required | `choice` 用：取哪一项的概率作为分数 |
-| `question.min` / `.max` | off | 仅 `score`：换算原始分；两者相等判失败 |
+| `maxChars` | `2000`（`system-one`）、`6000`（`llm`） | 正文截断上限；同时也是单个节点 `context` 的码点上限 |
 
-两个入口都只发送正文、作用域、作者 id 与是否被点名——不带历史、不带工具——并在 `pipeline.judgeTimeoutMs` 内对 `429` / `529` 重试一次。`llm` 只接受裸 JSON。同一个 profile 挂第二个 provider 会在加载期失败。
+两个入口都发送正文、作用域、作者 id、是否被点名以及节点的 `context`——不带历史、不带工具——并在 `pipeline.judgeTimeoutMs` 内对 `429` / `529` 重试一次。`llm` 只接受裸 JSON。同一个 profile 挂第二个 provider 会在加载期失败。其余键会在挂载期失败并在错误里点名；别的包提供的 judge 服务不报 `needsQuestion` / `maxChars` 时按 `false` / `2000` 处理。
+
+## 一条消息怎么被判定
+
+入站消息走三步：adapter 先去重，policy 关卡决定它能不能成为回合，pipeline 再决定这个回合放不放行。被拒绝的回合会以 `outcome: rejected` 加 gate 的 code 记进 turns 快照，具体原因写日志。
+
+| policy 键 | 默认 | 决定什么 |
+| --- | --- | --- |
+| `policy.requireMention` | `false` | 群消息必须点名机器人或 @全体；分辨不了提及的传输（`p2p`）在挂载期直接拒绝这个配置 |
+| `policy.groupBots` | `whenMentioned` | 另一个机器人的群消息怎么处理：`whenMentioned`、`silent` 或 `answer` |
+| `policy.relayLimit` / `policy.relayResetMs` | `3` / `300000` | 一个对端最多连续占几轮，以及重置这个计数的空闲时间 |
+| `policy.deny.words` / `policy.deny.regexes` | `[]` | 拒绝消息的子串与正则，匹配不区分大小写 |
+| `policy.allow.peers` | `[]` | `allow` 节点匹配的 `source.peer`；命中即放行并结束链条 |
+| `policy.budget.capacity` / `policy.budget.hardLimit` | 写了 `budget` 就必填 / `1` | 每个窗口的点数，以及网关据此拒绝的比例，按硬窗口执行 |
+
+空词、非法正则、空对端名都会让挂载失败。`policy.deny` 与 `policy.allow` 要靠节点才生效：没声明 `pipeline` 的 profile 会自动补上节点，声明了就得自己加，否则规则静默失效。
+
+judge 是**管道里的一个节点**，不是关卡：先挂 provider，再声明节点。不带 `allowAtLeast` 时它只加分，链条走到末尾没有放行仍然拒绝；带了就按阈值判定，达到放行、低于拒绝。
+
+三种常见起点：
+
+```yaml
+# 群里只在被点名时回复
+config:
+  policy: { requireMention: true }
+```
+
+```yaml
+# 先挡垃圾词，再由 judge 判定（需先挂 provider）
+config:
+  policy:
+    deny: { words: [spam], regexes: ['^\s*$'] }
+  pipeline:
+    global:
+      - { id: guard, type: deny }
+      - { id: verdict, type: judge, allowAtLeast: 0.6 }
+```
+
+```yaml
+# 先挂 provider，再按 judge 的置信度放行
+config:
+  pipeline:
+    global:
+      - { id: verdict, type: judge, allowAtLeast: 0.6 }
+```
+
+## 管道节点
+
+节点是 `{ id, type }` 加上该类型读取的字段。链条按顺序执行，遇到第一个 `deny` 或 `allow` 就结束；走到末尾仍未放行的按拒绝处理。
+
+| 节点 | 作用 |
+| --- | --- |
+| `deny` | `policy.deny` 命中即拒绝。没有 `policy.deny` 规则时声明 `deny` 节点会让挂载失败。 |
+| `allow` | `policy.allow` 命中即放行，并跳过后面所有 `score` 与 `judge`。没有 `policy.allow` 对端时声明 `allow` 节点会让挂载失败。 |
+| `judge` | 通过宿主 judge 服务打分；`allowAtLeast` 是阈值，节点还读取 `question` 与 `context`。 |
+| `prepare` | 执行宿主提供的 prepare 钩子，然后通过。为该 bot 服务的每个 adapter 都必须带这个钩子，否则挂载失败。 |
+
+| 字段 | 默认值 | 含义 |
+| --- | --- | --- |
+| `id` | required | `matched` 与 `reasons` 用它指代该节点。 |
+| `type` | required | 上面四种之一。 |
+| `allowAtLeast` | off | 仅 `judge`：0 到 1 的分数。 |
+| `question` | required | 仅 `judge`：这个节点问什么。`system-one` 必须有；`llm` 节点带了会挂载失败。 |
+| `question.type` | required | `noul`、`score` 或 `choice`。 |
+| `question.instructions` | required | 一句问题或陈述。 |
+| `question.criteria` | required | `noul`：`{ true, false }`；`score`：2 到 10 档，由低到高。 |
+| `question.options` | required | 仅 `choice`：至少两项。 |
+| `question.target` | required | 仅 `choice`：`question.options` 中的一项，取它的概率作为分数。 |
+| `question.min` / `.max` | off | 仅 `score`：换算原始分；两者相等判失败。 |
+| `context` | off | 仅 `judge`：静态材料，字符串或「名字→字符串」映射。 |
+
+`question` 里上述字段之外的键会让挂载失败，错误带节点 id 与字段名。单个 `context` 的码点总数不得超过 provider 的 `maxChars`，映射的名字也计入；名字或值为空、类型不对或超长都会挂载失败。`context` 是配置方知道的材料，不是发生过的事：正文、作用域、作者与是否被点名本来就随事件发送，历史、会话与工具一律不读。`llm` 把它渲染在消息事实之后；`system-one` 放进 `state.context`。
+
+`score` 与 `budget` 在 schema 里有声明，但这一版绑不上：score 节点需要的评分函数没有提供，budget 节点需要的会话级判定管道带不了。声明它们会在挂载期失败并给出原因；真正的花费限制由网关自己的硬窗口执行，且只有写了 `policy.budget` 的 profile 才有这个窗口。
+
+adapter 用四个键调整它继承到的链条：`inherit` 指定从哪一层开始（adapter 层只能是 `global`），`remove` 按 id 删节点，`insert` 把节点插到某个 id 之前或之后，`override` 按 id 替换节点字段。`insert` 的 `after` 与 `before` 只能写一个、不能复用已有的 id；`override` 只写该节点类型拥有的字段；`remove` 或 `override` 指向不存在的 id 会让挂载失败。`question` 与 `context` 可以写在 `pipeline.global`，也可以写在 adapter 的 `insert` 或 `override` 里。session 的 `insert` 只接受 `id`、`type`、`after`、`before`，带不了这两个字段；session 的 `override` 可以写。
+
+```yaml
+config:
+  policy:
+    deny: { words: [spam] }
+  pipeline:
+    global:
+      - { id: guard, type: deny }
+      - { id: shadow, type: deny }
+  adapters:
+    - kind: p2p
+      channel: p2p:peer-a
+      botName: self-bot
+      transport: { listen: { host: 127.0.0.1, port: 7123 }, peers: { peer-b: PEER_B_REFERENCE } }
+      pipeline:
+        remove: [shadow]
+        insert: [{ id: extra, type: deny, after: guard }]
+```
+
+`override` 按 id 替换节点字段，judge 节点用它改 `allowAtLeast`、`question` 与 `context`；judge 节点还需要先挂上一个 provider。上面的链条没有 `allow` 节点也没有 judge 阈值，因此会拒绝每一条消息，只用于演示层操作。
 
 ## 身份与印象库
 
