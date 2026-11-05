@@ -248,11 +248,12 @@ config:
 | `allow` | `policy.allow` 命中即放行，并跳过后面所有 `score` 与 `judge`。没有 `policy.allow` 对端时声明 `allow` 节点会让挂载失败。 |
 | `judge` | 通过宿主 judge 服务打分；`allowAtLeast` 是阈值，节点还读取 `question` 与 `context`。 |
 | `prepare` | 执行宿主提供的 prepare 钩子，然后通过。为该 bot 服务的每个 adapter 都必须带这个钩子，否则挂载失败。 |
+| `chance` | 按 `probability` 命中：命中即以 `allow` 或 `deny` 结束链条，未命中则交给下一个节点。 |
 
 | 字段 | 默认值 | 含义 |
 | --- | --- | --- |
 | `id` | required | `matched` 与 `reasons` 用它指代该节点。 |
-| `type` | required | 上面四种之一。 |
+| `type` | required | 上面五种之一。 |
 | `allowAtLeast` | off | 仅 `judge`：0 到 1 的分数。 |
 | `question` | required | 仅 `judge`：这个节点问什么。`system-one` 必须有；`llm` 节点带了会挂载失败。 |
 | `question.type` | required | `noul`、`score` 或 `choice`。 |
@@ -262,12 +263,16 @@ config:
 | `question.target` | required | 仅 `choice`：`question.options` 中的一项，取它的概率作为分数。 |
 | `question.min` / `.max` | off | 仅 `score`：换算原始分；两者相等判失败。 |
 | `context` | off | 仅 `judge`：静态材料，字符串或「名字→字符串」映射。 |
+| `probability` | required | 仅 `chance`：0 到 1。 |
+| `outcome` | required | 仅 `chance`：`allow` 或 `deny`。 |
 
 `question` 里上述字段之外的键会让挂载失败，错误带节点 id 与字段名。单个 `context` 的码点总数不得超过 provider 的 `maxChars`，映射的名字也计入；名字或值为空、类型不对或超长都会挂载失败。`context` 是配置方知道的材料，不是发生过的事：正文、作用域、作者与是否被点名本来就随事件发送，历史、会话与工具一律不读。`llm` 把它渲染在消息事实之后；`system-one` 放进 `state.context`。
 
+`chance` 节点的落桶值来自「事件键 + 节点 id」的固定哈希：同一条消息重放结果相同，同一条消息上的两个 chance 节点互相独立。它在 `reasons` 下记 `chance_allow`、`chance_deny` 或 `chance_miss`（带 `p=`），承载这条消息的 adapter 在 `counters.chance[nodeId]` 记 `{ hit, miss }`；该键只在节点实际跑过之后出现。
+
 `score` 与 `budget` 在 schema 里有声明，但这一版绑不上：score 节点需要的评分函数没有提供，budget 节点需要的会话级判定管道带不了。声明它们会在挂载期失败并给出原因；真正的花费限制由网关自己的硬窗口执行，且只有写了 `policy.budget` 的 profile 才有这个窗口。
 
-adapter 用四个键调整它继承到的链条：`inherit` 指定从哪一层开始（adapter 层只能是 `global`），`remove` 按 id 删节点，`insert` 把节点插到某个 id 之前或之后，`override` 按 id 替换节点字段。`insert` 的 `after` 与 `before` 只能写一个、不能复用已有的 id；`override` 只写该节点类型拥有的字段；`remove` 或 `override` 指向不存在的 id 会让挂载失败。`question` 与 `context` 可以写在 `pipeline.global`，也可以写在 adapter 的 `insert` 或 `override` 里。session 的 `insert` 只接受 `id`、`type`、`after`、`before`，带不了这两个字段；session 的 `override` 可以写。
+adapter 用四个键调整它继承到的链条：`inherit` 指定从哪一层开始（adapter 层只能是 `global`），`remove` 按 id 删节点，`insert` 把节点插到某个 id 之前或之后，`override` 按 id 替换节点字段。`insert` 的 `after` 与 `before` 只能写一个、不能复用已有的 id；`override` 只写该节点类型拥有的字段；`remove` 或 `override` 指向不存在的 id 会让挂载失败。`question`、`context`、`probability` 与 `outcome` 可以写在 `pipeline.global`，也可以写在 adapter 的 `insert` 或 `override` 里。session 的 `insert` 只接受 `id`、`type`、`after`、`before`，带不了这几个字段；session 的 `override` 可以写。
 
 ```yaml
 config:

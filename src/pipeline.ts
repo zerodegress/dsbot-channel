@@ -1,7 +1,7 @@
 import type { Mentioned, Scope } from './event-types.js'
 import type { JudgeContext, JudgeQuestion } from './judge-question.js'
 
-export const NODE_TYPES = ['deny', 'budget', 'allow', 'score', 'judge', 'prepare'] as const
+export const NODE_TYPES = ['deny', 'budget', 'allow', 'score', 'judge', 'prepare', 'chance'] as const
 export type NodeType = (typeof NODE_TYPES)[number]
 
 /** What a node may ask the chain to skip; no built-in node produces a restrict in this version. */
@@ -46,6 +46,8 @@ export interface ScoreOutput {
 
 export interface PassOutput {
   kind: 'pass'
+  /** Why this node passed, when it has something to say; recorded under the node id. */
+  reason?: string
 }
 
 export type NodeOutput = DenyOutput | AllowOutput | RestrictOutput | ScoreOutput | PassOutput
@@ -81,6 +83,8 @@ export interface PipelineOptions {
   charge?: (context: { nodeId: string; event: PipelineEvent }) => void
   /** Called once per judge that timed out or threw, before the deny it ends in. */
   onJudgeFailure?: ((code: JudgeFailure, event: PipelineEvent) => void) | undefined
+  /** Called once per chance node run, with the outcome it took. */
+  onChance?: ((hit: 'allow' | 'deny' | 'miss', nodeId: string, event: PipelineEvent) => void) | undefined
 }
 
 export interface PipelineResult {
@@ -151,6 +155,7 @@ export class Pipeline {
           if (output.reason) reasons[node.id] = output.reason
           break
         case 'pass':
+          if (output.reason) reasons[node.id] = output.reason
           break
         default:
           throw new Error(`unknown node output`)

@@ -156,6 +156,7 @@ A node is `{ id, type }` plus the fields its type reads. The chain runs in order
 | `allow` | allows when `policy.allow` matches and stops later `score` and `judge`; no `policy.allow` peer fails the mount |
 | `judge` | scores through the host judge service; `allowAtLeast` sets its threshold, and it reads `question` and `context` |
 | `prepare` | runs the host prepare hook, then passes; every adapter for the bot needs the hook |
+| `chance` | fires with `probability`: a hit ends the chain as an `allow` or a `deny`, a miss passes |
 
 A `judge` node names what it asks and what it adds.
 
@@ -169,10 +170,14 @@ A `judge` node names what it asks and what it adds.
 | `question.target` | required | for `choice`: one of `question.options`; its probability becomes the score |
 | `question.min` / `question.max` | off | `score` only: convert a raw score; equal values fail the verdict |
 | `context` | off | static material for this node: a string or a mapping of name to string |
+| `probability` | required | `chance` only: 0 to 1 |
+| `outcome` | required | `chance` only: `allow` or `deny` |
 
 A key other than these in `question` fails the mount and names the node and the field. One `context` may total `maxChars` code points, mapping names included; an empty name or value, another type or an over-long one fails the mount. `context` carries what the profile knows, not what happened: the body, the scope, the author and whether the bot was named are sent already, and history, sessions and tools are never read. `llm` renders it after the message facts; `system-one` sends it as `state.context`.
 
-`question` and `context` may be written in `pipeline.global` and in an adapter's `insert` and `override`. A session layer's `insert` takes only `id`, `type`, `after` and `before`, so it carries neither; a session's `override` may set both.
+`question`, `context`, `probability` and `outcome` may be written in `pipeline.global` and in an adapter's `insert` and `override`. A session layer's `insert` takes only `id`, `type`, `after` and `before`, so it carries none of them; a session's `override` may set them.
+
+A `chance` node takes its bucket from a fixed hash of the event key and the node id: the same message replayed takes the same outcome, and two chance nodes on one message draw independently. It records `chance_allow`, `chance_deny` or `chance_miss` with `p=` under `reasons`, and the adapter that carried the message counts it under `counters.chance[nodeId]` as `{ hit, miss }`; the key appears only after the node has run.
 
 `score` and `budget` are declared in the schema but cannot bind in this version: a score node needs a scoring function, a budget node needs a session-scoped verdict. Declaring either fails the mount; the gateway's hard window limits spending, and only a profile with `policy.budget` has one. `allowAtLeast` (0 to 1), `question` and `context` are read by `judge` only.
 
