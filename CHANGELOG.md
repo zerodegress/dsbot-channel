@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-06
+
+### Added
+
+- A `judge` node with `allowAtLeast` may set `belowThreshold: pass`: a verdict below the threshold then continues the chain as a score, its score is added to the running score, and `reasons` records `judge_below_threshold_pass`. The default stays `deny`; the key is accepted on a judge node only, takes `deny` or `pass`, and fails the mount without `allowAtLeast`.
+
+### Changed
+
+- An adapter names one anchor: `botName` or `session`, never both. With `botName` every turn resolves the bot's current segment (falling back to the last one it resolved), so a rollover is followed and a remount continues the same session. With `session` the pinned id is checked at mount and before every turn; a segment its bot has left fails with `session_stale`, an id outside the roster with `session_unknown`.
+- `cwd` and `agentPreset` are no longer configuration keys and fail the mount; an adapter never creates a session. `model` is selected once per resolved session.
+- Internal identity is the adapter's `botName`, or its `channel` when a session is pinned; the p2p wire keeps the bot name for `to` and `sender`, falling back to `channel` only when no roster is readable.
+- One adapter runs one turn at a time; a turn that arrives while another runs waits for it to end.
+
+### Fixed
+
+- A p2p adapter now sends replies and `send_text` under the bot name it accepts inbound requests for; a pinned session previously sent the adapter's channel name.
+
 ## [0.4.1] - 2026-11-06
 
 ### Fixed
