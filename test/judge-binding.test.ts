@@ -249,6 +249,18 @@ describe('a judge node binds the decision service', () => {
     expect(usageOf(ctx)).toBe(1)
   })
 
+  test('below the threshold with belowThreshold pass keeps the chain going', async () => {
+    queue = [message('e-judge-threshold-pass')]
+    verdicts = []
+    await mount({
+      judge: () => Promise.resolve({ score: 0.2 }),
+      pipeline: { global: [{ id: 'j', type: 'judge', allowAtLeast: 0.5, belowThreshold: 'pass' }] },
+    })
+
+    expect(verdicts[0]).toMatchObject({ ok: false, code: 'rejected' })
+    expect(String((verdicts[0] as { reason?: string }).reason)).toContain('judge_below_threshold_pass')
+  })
+
   test('a returned verdict is charged once at the judge price', async () => {
     queue = [message('e-judge-1')]
     verdicts = []
