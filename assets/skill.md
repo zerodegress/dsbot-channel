@@ -132,6 +132,7 @@ A thread is a room keyed by its root: `mail:<thread-root>`; the root is the firs
 | `pipeline.judgeTimeoutMs` | `8000` | one judge call, retries included |
 | `pipeline.judgePoints` | `1` | points a verdict costs |
 | `allowAtLeast` (judge node) | off | score that allows the message |
+| `belowThreshold` (judge node) | `deny` | what a score below `allowAtLeast` does: `deny` or `pass`; fails the mount without `allowAtLeast` |
 | `impressions.dir` | off | absolute notes root; the library is off without it |
 | `impressions.import` | off | once: `{ path, as: { personId } }` or `{ path, as: { groupKey } }` |
 | `turn.impressions.chars` | `400` | notes injected into a turn, `0` to `2000`; `0` injects none |
@@ -200,7 +201,7 @@ The value is added to the running score; it may be negative and it decides nothi
 
 ## How a message is decided
 
-An inbound message is deduplicated by the adapter, then the policy keys in the table above decide whether it may become a turn, then the pipeline decides whether the turn is allowed. A refusal is recorded as `outcome: rejected` with the gate's code, with the detail in the log. `policy.deny` and `policy.allow` need a `deny` or `allow` node: a profile that declares no `pipeline` gets it added, one that declares a pipeline must add it. A judge is a pipeline node: mount a provider, then declare the node; `allowAtLeast` makes it decide, without it the node only scores and the chain still refuses at its end.
+An inbound message is deduplicated by the adapter, then the policy keys in the table above decide whether it may become a turn, then the pipeline decides whether the turn is allowed. A refusal is recorded as `outcome: rejected` with the gate's code, with the detail in the log. `policy.deny` and `policy.allow` need a `deny` or `allow` node: a profile that declares no `pipeline` gets it added, one that declares a pipeline must add it. A judge is a pipeline node: mount a provider, then declare the node; `allowAtLeast` makes it decide, without it the node only scores and the chain still refuses at its end. `belowThreshold: pass` lets a score below the threshold add its score and pass the chain on, recorded as `judge_below_threshold_pass`; a judge call costs its `judgePoints` whether it decides or only scores.
 
 ## Pipeline nodes
 
@@ -210,7 +211,7 @@ A node is `{ id, type }` plus the fields its type reads. The chain runs in order
 | --- | --- |
 | `deny` | refuses when `policy.deny` matches; no `policy.deny` rule fails the mount |
 | `allow` | allows when `policy.allow` matches and stops later `score` and `judge`; no `policy.allow` peer fails the mount |
-| `judge` | scores through the host judge service; `allowAtLeast` sets its threshold, and it reads `question` and `context` |
+| `judge` | scores through the host judge service; `allowAtLeast` sets its threshold, `belowThreshold` decides what a lower score does, and it reads `question` and `context` |
 | `score` | adds the value the host score service returns; a throw or a non-finite value refuses with `score_failed` |
 | `budget` | reads the spend of the busiest window: a hard state refuses, and `mayRestrict` at `restrictAt` restricts |
 | `prepare` | runs the host prepare hook, then passes; every adapter for the bot needs the hook |
@@ -286,4 +287,4 @@ config:
         insert: [{ id: extra, type: deny, after: guard }]
 ```
 
-`override` replaces fields by id; a judge node uses it for `allowAtLeast`, `question` and `context`, and needs one provider mounted. A chain with no `allow` node and no judge threshold refuses every message.
+`override` replaces fields by id; a judge node uses it for `allowAtLeast`, `belowThreshold`, `question` and `context`, and needs one provider mounted. A chain with no `allow` node and no judge threshold refuses every message.

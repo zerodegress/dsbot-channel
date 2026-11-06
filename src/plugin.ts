@@ -166,6 +166,7 @@ const nodeSpecSchema = Schema.object({
   probability: Schema.number(),
   outcome: Schema.string(),
   allowAtLeast: Schema.number(),
+  belowThreshold: Schema.string(),
   test: Schema.any(),
   when: Schema.any(),
 })
@@ -180,6 +181,7 @@ const layerSchema = Schema.object({
       after: Schema.string(),
       before: Schema.string(),
       allowAtLeast: Schema.number(),
+      belowThreshold: Schema.string(),
       question: Schema.any(),
       context: Schema.any(),
       probability: Schema.number(),

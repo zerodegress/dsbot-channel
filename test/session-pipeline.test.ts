@@ -242,6 +242,16 @@ describe('a session layer that could never run is refused', () => {
     ).toThrow(/insert "x" names a field no insert has: "bogus"/)
   })
 
+  test('a session insert cannot decide what a low score does', () => {
+    const sessions = harness()
+
+    expect(() =>
+      sessions.forSession('orca', 'group:1', {
+        insert: [{ id: 'g', type: 'judge', after: 'allow', allowAtLeast: 0.5, belowThreshold: 'pass' } as never],
+      }),
+    ).toThrow(/belowThreshold/)
+  })
+
   test('a difference that cannot be applied is refused', () => {
     const sessions = harness()
 

@@ -222,7 +222,7 @@ config:
         context: This bot answers questions about the project only.
 ```
 
-`judge` 节点需要宿主服务 `dsbot-channel/judge`，它以 `{ score, reason? }` 回应 `judge(event, context)`。声明了节点但没有该服务，挂载失败；判定超时或抛错分别以 `judge_timeout`、`judge_failed` 拒绝该消息，分数不是 0–1 的有限数同样判失败。`allowAtLeast` 也可以由 adapter 的 `insert` 或 `override` 写入，或由 session 的 `override` 写入；judge 节点读哪些字段、能写在哪一层，见「管道节点」。`judgeTimeoutMs` 不得超过 `maxTurnMs`。
+`judge` 节点需要宿主服务 `dsbot-channel/judge`，它以 `{ score, reason? }` 回应 `judge(event, context)`。声明了节点但没有该服务，挂载失败；判定超时或抛错分别以 `judge_timeout`、`judge_failed` 拒绝该消息，分数不是 0–1 的有限数同样判失败。`allowAtLeast` 与 `belowThreshold` 也可以由 adapter 的 `insert` 或 `override` 写入，或由 session 的 `override` 写入；judge 节点读哪些字段、能写在哪一层，见「管道节点」。`judgeTimeoutMs` 不得超过 `maxTurnMs`。
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -230,6 +230,7 @@ config:
 | `pipeline.judgeTimeoutMs` | `8000` | 一次判定，含重试 |
 | `pipeline.judgePoints` | `1` | 一次判定扣的点数 |
 | `allowAtLeast`（judge 节点） | off | 达到该分数就放行 |
+| `belowThreshold`（judge 节点） | `deny` | 低于 `allowAtLeast` 的分数怎么处理：`deny` 拒绝、`pass` 继续 |
 
 两个入口提供该服务，二选一，并且必须**排在网关之前**。
 
@@ -293,7 +294,7 @@ export function apply(ctx) {
 
 空词、非法正则、空对端名都会让挂载失败。`policy.deny` 与 `policy.allow` 要靠节点才生效：没声明 `pipeline` 的 profile 会自动补上节点，声明了就得自己加，否则规则静默失效。
 
-judge 是**管道里的一个节点**，不是关卡：先挂 provider，再声明节点。不带 `allowAtLeast` 时它只加分，链条走到末尾没有放行仍然拒绝；带了就按阈值判定，达到放行、低于拒绝。
+judge 是**管道里的一个节点**，不是关卡：先挂 provider，再声明节点。不带 `allowAtLeast` 时它只加分，链条走到末尾没有放行仍然拒绝；带了就按阈值判定，达到放行；低于阈值默认拒绝，写 `belowThreshold: pass` 时照常加分并继续往下走，记作 `judge_below_threshold_pass`。每次 judge 调用都照常扣 `judgePoints`，作决议还是只打分都一样，`belowThreshold` 不改变这一点。
 
 三种常见起点：
 
@@ -330,7 +331,7 @@ config:
 | --- | --- |
 | `deny` | `policy.deny` 命中即拒绝。没有 `policy.deny` 规则时声明 `deny` 节点会让挂载失败。 |
 | `allow` | `policy.allow` 命中即放行，并跳过后面所有 `score` 与 `judge`。没有 `policy.allow` 对端时声明 `allow` 节点会让挂载失败。 |
-| `judge` | 通过宿主 judge 服务打分；`allowAtLeast` 是阈值，节点还读取 `question` 与 `context`。 |
+| `judge` | 通过宿主 judge 服务打分；`allowAtLeast` 是阈值，`belowThreshold` 决定低于阈值怎么处理，节点还读取 `question` 与 `context`。 |
 | `score` | 加上宿主 score 服务返回的值；抛错或不是有限数时以 `score_failed` 拒绝。 |
 | `budget` | 读取最忙窗口的花费：hard 拒绝，`mayRestrict` 在 `restrictAt` 处转入 restrict。 |
 | `prepare` | 执行宿主提供的 prepare 钩子，然后通过。为该 bot 服务的每个 adapter 都必须带这个钩子，否则挂载失败。 |
@@ -342,6 +343,7 @@ config:
 | `id` | required | `matched` 与 `reasons` 用它指代该节点。 |
 | `type` | required | 上面八种之一。 |
 | `allowAtLeast` | off | 仅 `judge`：0 到 1 的分数。 |
+| `belowThreshold` | `deny` | 仅 `judge`：`deny` 或 `pass`，低于 `allowAtLeast` 时拒绝还是继续；没有 `allowAtLeast` 时写它挂载失败。 |
 | `question` | required | 仅 `judge`：这个节点问什么。`system-one` 必须有；`llm` 节点带了会挂载失败。 |
 | `question.type` | required | `noul`、`score` 或 `choice`。 |
 | `question.instructions` | required | 一句问题或陈述。 |

@@ -12,6 +12,8 @@ export interface PipelineNodeSpec {
   mayRestrict?: boolean
   /** A judge at or above this score allows the message, below it denies; absent keeps it a scorer. */
   allowAtLeast?: number
+  /** A judge below allowAtLeast: deny, the default, or pass and keep its score. */
+  belowThreshold?: 'deny' | 'pass'
   /** What this judge node asks; the provider no longer carries one. */
   question?: JudgeQuestion
   /** Static material for this judge node; never conversation history. */
@@ -123,6 +125,15 @@ export function checkPipeline(nodes: readonly PipelineNodeSpec[]): CheckReport {
         node.allowAtLeast > 1
       ) {
         fatal.push(`node "${node.id}": allowAtLeast must be between 0 and 1: ${String(node.allowAtLeast)}`)
+      }
+    }
+    if (node.belowThreshold !== undefined) {
+      if (node.type !== 'judge') {
+        fatal.push(`node "${node.id}": only a judge node may declare belowThreshold`)
+      } else if (node.belowThreshold !== 'deny' && node.belowThreshold !== 'pass') {
+        fatal.push(`node "${node.id}": belowThreshold must be deny or pass: ${String(node.belowThreshold)}`)
+      } else if (node.allowAtLeast === undefined) {
+        fatal.push(`node "${node.id}": belowThreshold needs allowAtLeast`)
       }
     }
   }

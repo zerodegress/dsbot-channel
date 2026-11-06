@@ -199,6 +199,20 @@ describe('a difference that cannot be applied refuses the load', () => {
     expect(checked.nodes.find((node) => node.id === 'gate')).toMatchObject({ type: 'judge', allowAtLeast: 0.4 })
   })
 
+  test('an inserted judge keeps what a low score does', () => {
+    const checked = resolveAndCheck({
+      global: templateNodes(),
+      bot: { insert: [{ id: 'gate', type: 'judge', after: 'score', allowAtLeast: 0.4, belowThreshold: 'pass' }] },
+    })
+
+    expect(checked.layer.fatal).toEqual([])
+    expect(checked.nodes.find((node) => node.id === 'gate')).toMatchObject({
+      type: 'judge',
+      allowAtLeast: 0.4,
+      belowThreshold: 'pass',
+    })
+  })
+
   test('a judge threshold can be overridden', () => {
     const checked = resolveAndCheck({
       global: templateNodes(),
@@ -207,6 +221,16 @@ describe('a difference that cannot be applied refuses the load', () => {
 
     expect(checked.layer.fatal).toEqual([])
     expect(checked.nodes.find((node) => node.id === 'judge')).toMatchObject({ allowAtLeast: 0.7 })
+  })
+
+  test('what a low score does can be overridden with the threshold', () => {
+    const checked = resolveAndCheck({
+      global: templateNodes(),
+      bot: { override: { judge: { allowAtLeast: 0.7, belowThreshold: 'pass' } } },
+    })
+
+    expect(checked.layer.fatal).toEqual([])
+    expect(checked.nodes.find((node) => node.id === 'judge')).toMatchObject({ allowAtLeast: 0.7, belowThreshold: 'pass' })
   })
 
   test('a threshold written on another node type is still a mistake', () => {

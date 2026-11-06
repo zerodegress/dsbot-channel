@@ -12,6 +12,8 @@ export interface InsertSpec {
   before?: string
   /** A judge inserted by a layer may carry its threshold like one declared in the profile. */
   allowAtLeast?: number
+  /** A judge inserted by a layer may decide what a score below its threshold does. */
+  belowThreshold?: 'deny' | 'pass'
   /** A judge inserted by a layer may ask its own question with its own material. */
   question?: unknown
   context?: unknown
@@ -53,7 +55,7 @@ export const OVERRIDABLE_BY_TYPE: Record<NodeType, readonly string[]> = {
   budget: COMMON,
   allow: COMMON,
   score: COMMON,
-  judge: [...COMMON, 'allowAtLeast', 'question', 'context'],
+  judge: [...COMMON, 'allowAtLeast', 'belowThreshold', 'question', 'context'],
   chance: [...COMMON, 'probability', 'outcome', 'when'],
   when: [...COMMON, 'test', 'outcome'],
   prepare: COMMON,
@@ -106,6 +108,7 @@ function applyLayer(
       id: spec.id,
       type: spec.type as PipelineNodeSpec['type'],
       ...(spec.allowAtLeast === undefined ? {} : { allowAtLeast: spec.allowAtLeast }),
+      ...(spec.belowThreshold === undefined ? {} : { belowThreshold: spec.belowThreshold }),
       ...(spec.question === undefined ? {} : { question: spec.question as NonNullable<PipelineNodeSpec['question']> }),
       ...(spec.context === undefined ? {} : { context: spec.context as NonNullable<PipelineNodeSpec['context']> }),
       ...(spec.probability === undefined ? {} : { probability: spec.probability as number }),
