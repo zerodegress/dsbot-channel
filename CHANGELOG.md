@@ -15,10 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- An adapter names one anchor: `botName` or `session`, never both. With `botName` every turn resolves the bot's current session segment before the prompt, so a segment rollover is followed and a remount no longer starts a per-peer history. With `session` the pinned id is checked at mount and before every turn; a closed segment fails with `session_stale`, an id outside the roster with `session_unknown`.
-- `cwd` and `agentPreset` are removed because a turn no longer creates a session; writing either fails the mount. `model` is still selected once per resolved session id.
+- An adapter names one anchor: `botName` or `session`, never both. With `botName` every turn runs in the bot's current segment, so a rollover is followed and a remount continues the same session. With `session` the pinned id is checked at mount and before every turn; a segment its bot has left fails with `session_stale`, an id outside the roster with `session_unknown`.
+- `cwd` and `agentPreset` are no longer configuration keys and fail the mount; an adapter never creates a session. `model` is selected once per resolved session.
 - Internal identity is the adapter's `botName`, or its `channel` when a session is pinned; the p2p wire keeps the bot name for `to` and `sender`, falling back to `channel` only when no roster is readable.
-- One adapter runs one turn at a time, because its peers share the bot's session and a concurrent turn would overwrite the reply owner.
+- One adapter runs one turn at a time; a turn that arrives while another runs waits for it to end.
 
 ### Fixed
 
