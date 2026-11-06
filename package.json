@@ -1,6 +1,6 @@
 {
   "name": "dsbot-channel",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "A message gateway for ds-bot: events from several external platforms reach one bot, and answers go back to the conversation they came from",
   "keywords": [
     "cordis",
@@ -59,7 +59,8 @@
     "node": "^20.19.0 || >=22.12.0"
   },
   "scripts": {
-    "build": "pnpm clean && rolldown -c && tsc -p tsconfig.json",
+    "build": "pnpm build:dist && pnpm verify:dist",
+    "build:dist": "pnpm clean && rolldown -c && tsc -p tsconfig.json",
     "build:debug": "SOURCE_MAP=1 pnpm build",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "typecheck": "tsc -p tsconfig.test.json",
@@ -67,8 +68,9 @@
     "lint:fix": "eslint . --fix",
     "test": "vitest run",
     "test:watch": "vitest",
+    "verify:dist": "node scripts/verify-dist.mjs",
     "prepack": "pnpm build",
-    "prepublishOnly": "pnpm lint && pnpm typecheck && pnpm test && pnpm audit:prod",
+    "prepublishOnly": "pnpm lint && pnpm typecheck && pnpm test && pnpm audit:prod && pnpm build",
     "audit:prod": "pnpm audit --prod"
   },
   "peerDependencies": {
@@ -78,7 +80,7 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "~4.0.5",
-    "@deepseek-ai/dsh-tools": "0.2.1-rc.4",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.5",
     "@deepseek-ai/schemastery": "~3.18.5",
     "@eslint/js": "~10.0.1",
     "@types/node": "~22.20.5",

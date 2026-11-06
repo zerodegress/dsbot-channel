@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-06
+
+### Fixed
+
+- The `0.4.0` package failed to load in a host that imports it as an ES module: its build kept `__require` calls to Node builtins, so the import threw on `events`. The build now keeps Node builtins and `imapflow` and `nodemailer` out of the bundle, and an entry that cannot be imported fails the build.
+
 ## [0.4.0] - 2026-11-06
 
 ### Added
