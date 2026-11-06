@@ -7,10 +7,19 @@ export default defineConfig({
     'system-one': 'src/system-one.ts',
     llm: 'src/llm.ts',
   },
+  platform: 'node',
   output: {
     dir: 'dist',
     format: 'esm',
     sourcemap: process.env.SOURCE_MAP === '1',
   },
-  external: ['@deepseek-ai/cordis', '@deepseek-ai/dsh-tools', '@deepseek-ai/schemastery', 'ws', /^node:/],
+  external: [
+    '@deepseek-ai/cordis',
+    '@deepseek-ai/dsh-tools',
+    '@deepseek-ai/schemastery',
+    'ws',
+    'imapflow',
+    'nodemailer',
+    /^node:/,
+  ],
 })

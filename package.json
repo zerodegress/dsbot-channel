@@ -59,7 +59,8 @@
     "node": "^20.19.0 || >=22.12.0"
   },
   "scripts": {
-    "build": "pnpm clean && rolldown -c && tsc -p tsconfig.json",
+    "build": "pnpm build:dist && pnpm verify:dist",
+    "build:dist": "pnpm clean && rolldown -c && tsc -p tsconfig.json",
     "build:debug": "SOURCE_MAP=1 pnpm build",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "typecheck": "tsc -p tsconfig.test.json",
@@ -67,8 +68,9 @@
     "lint:fix": "eslint . --fix",
     "test": "vitest run",
     "test:watch": "vitest",
+    "verify:dist": "node scripts/verify-dist.mjs",
     "prepack": "pnpm build",
-    "prepublishOnly": "pnpm lint && pnpm typecheck && pnpm test && pnpm audit:prod",
+    "prepublishOnly": "pnpm lint && pnpm typecheck && pnpm test && pnpm audit:prod && pnpm build",
     "audit:prod": "pnpm audit --prod"
   },
   "peerDependencies": {
