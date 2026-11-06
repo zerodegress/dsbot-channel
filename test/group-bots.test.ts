@@ -110,12 +110,27 @@ class GroupAdapter implements ChannelAdapter {
   }
 }
 
+let forks: { dispose: () => Promise<void> }[] = []
+
+const waitFor = async (check: () => boolean, timeoutMs = 1000): Promise<void> => {
+  const started = Date.now()
+  while (!check()) {
+    if (Date.now() - started > timeoutMs) throw new Error('timed out waiting for the turn')
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+}
+
 async function mount(
   policy: Record<string, unknown>,
   options: { mention?: boolean; kind?: string; transport?: Record<string, unknown> } = {},
 ): Promise<void> {
   const kind = options.kind ?? 'x-group'
   const ctx = new Context()
+  forks = []
+  const install = async (plugin: unknown, config?: unknown): Promise<void> => {
+    const fork = (await ctx.plugin(plugin as never, config as never)) as unknown as { dispose(): Promise<void> }
+    forks.push(fork)
+  }
   warnings = []
   ctx.logger.exporter({
     levels: { default: 3 },
@@ -123,7 +138,7 @@ async function mount(
       warnings.push(message.args.map((arg) => String(arg)).join(' '))
     },
   })
-  await ctx.plugin({
+  await install({
     name: 'probe-services',
     apply(scope: Context) {
       scope.provide('credentials')
@@ -141,11 +156,11 @@ async function mount(
       })
     },
   })
-  await ctx.plugin(registryPlugin)
+  await install(registryPlugin)
   if (kind === 'x-group') {
-    await ctx.plugin(defineAdapterPlugin({ kind: 'x-group', create: () => new GroupAdapter(options.mention ?? true) }))
+    await install(defineAdapterPlugin({ kind: 'x-group', create: () => new GroupAdapter(options.mention ?? true) }))
   }
-  await ctx.plugin(entry, {
+  await install(entry, {
     adapters: [
       {
         kind,
@@ -165,7 +180,8 @@ async function deliver(...messages: InboundMessage[]): Promise<void> {
 const quiet: Mentioned = { self: false, others: false, all: false }
 const namedSelf: Mentioned = { self: true, others: false, all: false }
 
-afterEach(() => {
+afterEach(async () => {
+  for (const fork of forks.splice(0).reverse()) await fork.dispose()
   ports = undefined
   verdicts = []
   prompts = []
@@ -182,7 +198,7 @@ describe('a bot speaking in a group', () => {
     expect(verdicts[0]).toMatchObject({ ok: false, code: 'rejected' })
     const verdict = verdicts[0]!
     if (!verdict.ok) expect(verdict.reason).toContain('bot-speaker')
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await new Promise((resolve) => setTimeout(resolve, 20))
     expect(prompts).toHaveLength(0)
     expect(created).toEqual([])
   })
@@ -192,7 +208,7 @@ describe('a bot speaking in a group', () => {
     await deliver(message({ eventKey: 'b-2', kind: 'bot', mentioned: namedSelf }))
 
     expect(verdicts).toEqual([{ ok: true }])
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => prompts.length === 1)
     expect(prompts).toHaveLength(1)
   })
 
@@ -203,7 +219,7 @@ describe('a bot speaking in a group', () => {
     const verdict = verdicts[0]!
     expect(verdict).toMatchObject({ ok: false, code: 'rejected' })
     if (!verdict.ok) expect(verdict.reason).toContain('bot-speaker')
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await new Promise((resolve) => setTimeout(resolve, 20))
     expect(prompts).toHaveLength(0)
   })
 
@@ -212,7 +228,7 @@ describe('a bot speaking in a group', () => {
     await deliver(message({ eventKey: 'b-4', kind: 'bot', mentioned: quiet }))
 
     expect(verdicts).toEqual([{ ok: true }])
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => prompts.length === 1)
     expect(prompts).toHaveLength(1)
   })
 })
@@ -223,7 +239,7 @@ describe('anyone else', () => {
     await deliver(message({ eventKey: 'p-1', kind: 'person', mentioned: quiet }))
 
     expect(verdicts).toEqual([{ ok: true }])
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => prompts.length === 1)
     expect(prompts).toHaveLength(1)
   })
 
@@ -232,7 +248,7 @@ describe('anyone else', () => {
     await deliver(message({ eventKey: 'b-5', kind: 'bot', scope: 'c2c', mentioned: quiet }))
 
     expect(verdicts).toEqual([{ ok: true }])
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitFor(() => prompts.length === 1)
     expect(prompts).toHaveLength(1)
   })
 })
