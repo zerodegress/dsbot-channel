@@ -756,7 +756,7 @@ describe('the configured session', () => {
     const sent = await sendToPeer({
       peer: { instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${port}` },
       credentials,
-      to: 'inst-a',
+      to: 'main',
       body: 'hello',
       eventId: 'evt-1',
       sender: 'bot-b',
@@ -767,6 +767,24 @@ describe('the configured session', () => {
     await waitFor(() => sessions.prompted.length > 0)
     expect(sessions.prompted[0]?.sessionId).toBe('session-main')
     expect(sessions.created).toHaveLength(0)
+  })
+
+  test('a pinned session answers to the name of the Bot it belongs to', async () => {
+    const { sessions, port } = await mountWithSession('session-seal')
+
+    const sent = await sendToPeer({
+      peer: { instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${port}` },
+      credentials,
+      to: 'seal',
+      body: 'hello',
+      eventId: 'evt-wire',
+      sender: 'bot-b',
+      instance: 'inst-b',
+    })
+    expect(sent.ok).toBe(true)
+
+    await waitFor(() => sessions.prompted.length > 0)
+    expect(sessions.prompted[0]?.sessionId).toBe('session-seal')
   })
 })
 

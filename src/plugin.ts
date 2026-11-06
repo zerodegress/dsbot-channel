@@ -777,6 +777,12 @@ export function normalizeConfig(config: RawChannelConfig): ChannelConfig {
     }
     const botName = adapter.botName
     const session = adapter.session
+    if (botName !== undefined && botName.trim().length === 0) {
+      throw new ConfigError('botName must be a non-empty string', path('botName'))
+    }
+    if (session !== undefined && session.trim().length === 0) {
+      throw new ConfigError('session must be a non-empty string', path('session'))
+    }
     if (botName !== undefined && session !== undefined) {
       throw new ConfigError('an adapter names botName or session, not both', path('session'))
     }
@@ -812,15 +818,23 @@ function readConfig(raw: unknown): ChannelConfig {
 }
 
 /** Reads the bot roster once and proves what can be proved before any adapter starts. */
-async function checkAnchors(config: ChannelConfig, warn: (message: string) => void): Promise<void> {
-  let bots: BotRecord[] | undefined
+async function loadRoster(warn: (message: string) => void): Promise<BotRecord[] | undefined> {
   try {
-    bots = await readBots(defaultBotStatePath())
+    return await readBots(defaultBotStatePath())
   } catch (error) {
     if (!(error instanceof BotRosterMissing)) {
       warn(`dsbot-channel: the bot roster cannot be read: ${String(error)}`)
     }
+    return undefined
   }
+}
+
+async function checkAnchors(
+  config: ChannelConfig,
+  bots: readonly BotRecord[] | undefined,
+  warn: (message: string) => void,
+): Promise<void> {
+  if (bots === undefined) return
   for (const [index, adapter] of config.adapters.entries()) {
     if (adapter.anchor !== 'session' || adapter.session === undefined) continue
     const anchor = new SessionAnchor({
@@ -831,7 +845,6 @@ async function checkAnchors(config: ChannelConfig, warn: (message: string) => vo
     })
     await anchor.mountCheck(bots)
   }
-  if (bots === undefined) return
   const followed = new Set(config.adapters.filter((adapter) => adapter.anchor === 'bot').map((adapter) => adapter.botName))
   for (const adapter of config.adapters) {
     if (adapter.anchor !== 'session' || adapter.session === undefined) continue
@@ -871,14 +884,15 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     )
   }
   const config = readConfig(raw)
-  await checkAnchors(config, createWarn(ctx))
+  const warn = createWarn(ctx)
+  const roster = await loadRoster(warn)
+  await checkAnchors(config, roster, warn)
   const writtenAdapters = Array.isArray((raw as { adapters?: unknown } | null)?.adapters)
     ? ((raw as { adapters: Record<string, unknown>[] }).adapters ?? [])
     : []
   const written = (adapter: AdapterConfig): Record<string, unknown> | undefined =>
     writtenAdapters[config.adapters.indexOf(adapter)]
   const rawProfile = (raw ?? {}) as { reply?: unknown; turn?: unknown; policy?: unknown; delivery?: unknown }
-  const warn = createWarn(ctx)
   registerSkill(ctx, config.skill !== false, warn)
   const flushFailures = { count: 0 }
   const judgeFailures = { count: 0 }
@@ -902,7 +916,15 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   checkPipelineScopes(config, warn, written, rawProfile.policy)
   const bots = botScopes(config, written, rawProfile.policy)
   const pipelines = new SessionPipelines({ bots })
-  const channels = mountAdapters(config, settings, warn, registry, (index) => writtenAdapters[index], rawProfile.policy)
+  const channels = mountAdapters(
+    config,
+    settings,
+    warn,
+    registry,
+    (index) => writtenAdapters[index],
+    rawProfile.policy,
+    roster,
+  )
   const scoreService = ctx.get('dsbot-channel/score') as
     | { score?: (event: PipelineEvent, context: unknown) => number | Promise<number> }
     | undefined
@@ -1529,7 +1551,9 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
                 ...(code === undefined ? {} : { code }),
                 mergedKeys: batch.map((one) => one.eventKey),
               })
-              warn(`dsbot-channel: peer turn for ${first.replyTarget} failed: ${String(error)}`)
+              if (!(error instanceof AnchorTurnError)) {
+                warn(`dsbot-channel: peer turn for ${first.replyTarget} failed: ${String(error)}`)
+              }
             })
           }, 0)
         }
@@ -1710,6 +1734,7 @@ function mountAdapters(
   registry: AdapterRegistry,
   written: (index: number) => Record<string, unknown> | undefined,
   globalPolicy: unknown,
+  bots: readonly BotRecord[] | undefined,
 ): MountedChannel[] {
   const seen = new Set<string>()
   return config.adapters.map((adapter, index) => {
@@ -1752,10 +1777,15 @@ function mountAdapters(
     }
     const kind = adapter.kind ?? 'p2p'
     checkAdapterKind(kind)
+    const owner = adapter.session === undefined || bots === undefined ? undefined : botOfSession(bots, adapter.session)
+    const ownerName = owner === undefined ? undefined : botNameOf(owner)
+    const wireBotName =
+      adapter.anchor === 'bot' ? adapter.botName : ownerName === undefined || ownerName.length === 0 ? adapter.channel : ownerName
     const mount: AdapterMount = {
       kind,
       channel: adapter.channel,
       botName: adapter.botName,
+      ...(wireBotName === adapter.botName ? {} : { wireBotName }),
       transport: adapter.transport ?? {},
       ...(adapter.status === undefined ? {} : { status: adapter.status }),
     }

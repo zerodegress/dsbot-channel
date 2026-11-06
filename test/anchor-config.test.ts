@@ -23,6 +23,14 @@ describe('the anchor a profile writes', () => {
     expect(() => normalizeConfig(profile({}))).toThrow(/needs botName or session/)
   })
 
+  test('an empty botName is refused', () => {
+    expect(() => normalizeConfig(profile({ botName: ' ' }))).toThrow(/botName must be a non-empty string/)
+  })
+
+  test('an empty session is refused', () => {
+    expect(() => normalizeConfig(profile({ session: '' }))).toThrow(/session must be a non-empty string/)
+  })
+
   test('cwd is refused as a removed field', () => {
     expect(() => normalizeConfig(profile({ session: 'session-a', cwd: '/tmp/work' }))).toThrow(/cwd is no longer supported/)
   })

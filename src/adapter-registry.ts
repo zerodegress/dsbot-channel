@@ -8,6 +8,8 @@ export interface AdapterMount {
   /** The one name this adapter answers to, on the wire and in the profile. */
   channel: string
   botName: string
+  /** The name peers address this Bot by; a pinned adapter may differ from its identity. */
+  wireBotName?: string | undefined
   /** The transport block the profile declared; only the adapter knows its shape. */
   transport: Record<string, unknown>
   /** Whether this adapter answers its own status route; the transport decides what that means. */

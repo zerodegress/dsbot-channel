@@ -61,6 +61,21 @@ describe('resolving a bot current segment', () => {
     })
   })
 
+  test('a differently cased name still resolves', async () => {
+    const path = await writeState(await dirs(), { one: bot('Seal', 'session-a') })
+    expect(await anchor(path, { botName: 'seal' }).resolve()).toEqual({ ok: true, sessionId: 'session-a' })
+  })
+
+  test('an exact name wins over a differently cased one', async () => {
+    const path = await writeState(await dirs(), { one: bot('seal', 'session-a'), two: bot('Seal', 'session-b') })
+    expect(await anchor(path, { botName: 'seal' }).resolve()).toEqual({ ok: true, sessionId: 'session-a' })
+  })
+
+  test('two bots of one case-insensitive name are ambiguous', async () => {
+    const path = await writeState(await dirs(), { one: bot('Seal', 'session-a'), two: bot('SEAL', 'session-b') })
+    expect(await anchor(path, { botName: 'seal' }).resolve()).toMatchObject({ ok: false, code: 'session_ambiguous' })
+  })
+
   test('two bots of one name are ambiguous', async () => {
     const path = await writeState(await dirs(), { one: bot('seal', 'session-a'), two: bot('seal', 'session-b') })
     expect(await anchor(path, { botName: 'seal' }).resolve()).toMatchObject({
