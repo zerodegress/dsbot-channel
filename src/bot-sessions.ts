@@ -191,9 +191,18 @@ export class SessionAnchor {
       const reason = missing ? 'state.json is missing' : 'state.json is unreadable'
       return this.#fail('session_unresolved', reason, missing)
     }
-    const exact = bots.filter((bot) => botNameOf(bot) === wanted)
-    const loose = exact.length > 0 ? exact : bots.filter((bot) => botNameOf(bot).toLowerCase() === wanted.toLowerCase())
-    const matches = loose.length > 0 ? loose : bots.filter((bot) => stringOf(bot.id) === wanted)
+    const wantedLower = wanted.toLowerCase()
+    const tiers: ((bot: BotRecord) => boolean)[] = [
+      (bot) => botNameOf(bot) === wanted,
+      (bot) => stringOf(bot.id) === wanted,
+      (bot) => botNameOf(bot).toLowerCase() === wantedLower,
+      (bot) => (stringOf(bot.id) ?? '').toLowerCase() === wantedLower,
+    ]
+    let matches: BotRecord[] = []
+    for (const tier of tiers) {
+      matches = bots.filter(tier)
+      if (matches.length > 0) break
+    }
     if (matches.length > 1) {
       return this.#fail('session_ambiguous', `more than one Bot is named "${wanted}"`)
     }
