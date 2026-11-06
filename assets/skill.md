@@ -132,7 +132,7 @@ A thread is a room keyed by its root: `mail:<thread-root>`; the root is the firs
 | `pipeline.judgeTimeoutMs` | `8000` | one judge call, retries included |
 | `pipeline.judgePoints` | `1` | points a verdict costs |
 | `allowAtLeast` (judge node) | off | score that allows the message |
-| `belowThreshold` (judge node) | `deny` | what a score below `allowAtLeast` does: `deny` or `pass` |
+| `belowThreshold` (judge node) | `deny` | what a score below `allowAtLeast` does: `deny` or `pass`; fails the mount without `allowAtLeast` |
 | `impressions.dir` | off | absolute notes root; the library is off without it |
 | `impressions.import` | off | once: `{ path, as: { personId } }` or `{ path, as: { groupKey } }` |
 | `turn.impressions.chars` | `400` | notes injected into a turn, `0` to `2000`; `0` injects none |
