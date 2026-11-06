@@ -47,14 +47,14 @@ config:
 | --- | --- | --- |
 | `kind` | `p2p` | `p2p`、`onebot`、`webhook`、`mail`，第三方传输用 `x-[a-z0-9-]+` |
 | `channel` | required | 链路唯一名字，对端在线上也看到它 |
-| `botName` | required | 这条链路服务的 Bot |
+| `botName` | off | 这条链路跟随的 Bot；`botName` 与 `session` 二选一 |
 | `transport` | required | 按 kind 的配置块，见「对端」「OneBot」「Webhook」与「邮件」 |
-| `session` | off | 所有回合都跑在同一个已有会话里 |
-| `cwd` | off | 它创建的会话所在目录 |
-| `agentPreset` | off | 它创建的会话所用 preset |
-| `model` | off | 这些会话的模型，写作 `provider/model` |
+| `session` | off | 一个已有会话，所有回合都跑在里面；`botName` 与 `session` 二选一 |
+| `model` | off | adapter 解析出的会话使用 `provider/model` |
 | `status` | `true` | 注册只读状态路由 |
 | `skill` | `true` | 宿主有 skills 服务时注册包内技能 |
+
+一个 adapter 的回合只锚定 `botName` 与 `session` 中的一个：两个都写或都不写，挂载失败。`botName` 跟随该 Bot 的当前段，每个回合都从宿主名册 `$DSH_HOME/bot/state.json` 读取（未设 `DSH_HOME` 时为 `~/.dsh/bot/state.json`），所以 Bot 换段后自动跟到新段。名字先按 name、再按 id 精确匹配，只有都不中时才忽略大小写，所以 `botName: seal` 能匹配名为 `Seal` 的记录；同一步命中多个条目时以 `session_ambiguous` 失败。配置里的 `botName` 就是对端寻址用的名字：`p2p` 回合把它原样写进 `to` 与 `sender`，不会换成名册里的写法。名册不存在时静默沿用上次解析出的会话，没有可用会话时该回合以 `session_unresolved` 失败并只警告一次；名册读不出来时警告一次并沿用上次的会话，没有可用会话时该回合失败。`session` 钉住一个已有会话：挂载期与每个回合都会校验，Bot 已离开该段时为 `session_stale`，名册里没有该段时为 `session_unknown`。同一个 Bot 只能有一种锚定：钉住已被另一个 adapter 跟随的 Bot 的会话，挂载被拒；挂载时名册读不出来则回合以 `session_anchor_conflict` 失败。`cwd` 与 `agentPreset` 不是配置键：adapter 不再创建会话，写任一都会让挂载失败。adapter 的内部身份是 `botName`，钉住 `session` 时是 `channel`；钉住的 adapter 在名册可读时把会话所属 Bot 的 `name` 作为 `p2p` 回合的发送名，读不到时用 `channel`。同一 adapter 的回合串行执行，`model` 对每个解析出的会话只选一次。
 
 `capabilities.outbound` 为 `false` 的 adapter 永不回写：core 不调它的 `send` 与 `refuse`，`send_text` 工具对它返回 `unsupported`，它的会话也没有可继承的地址。它的回合照常运行，所以允许它开回合的 profile 必须让回复路径始终选 `tool`，否则挂载失败。
 
