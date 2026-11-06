@@ -244,9 +244,9 @@ A `when` node decides by a Matcher: a match returns its `outcome`, no match pass
 | `peer` | a string, or `{ in: [...] }` / `{ notIn: [...] }` | the peer the event names; when the event names no peer, `in` does not match and `notIn` does |
 | `mentioned` | `true` / `false` | this bot or everyone was named |
 | `replyToMe` | `true` / `false` | the message quotes something this bot sent on the same channel |
-| `ownRecent` | `true` / `false` | the bot spoke here within the last ten minutes and fewer than ten messages have arrived since |
+| `ownRecent` | `true` / `false` | this bot has spoken here, the conversation has been quiet for less than ten minutes, and fewer than ten messages have arrived since |
 
-At least one key is required and every key present must hold. A successful send by the bot resets `ownRecent` and a failed send does not; it expires ten minutes after the bot last spoke. `replyToMe` is reported by the adapter, false when the transport carries no parent message id; both are false for non-message events. A matcher with no key, an unknown key, both `in` and `notIn`, an empty list or a non-boolean flag fails the mount. A match records `when_allow` or `when_deny` under `reasons`; `pass` and a miss record nothing.
+At least one key is required and every key present must hold. A successful send by the bot resets `ownRecent` and a failed send does not; it expires after ten minutes without a message in the conversation, and a message in the conversation refreshes it. `replyToMe` is reported by the adapter, false when the transport carries no parent message id; both are false for non-message events. A matcher with no key, an unknown key, both `in` and `notIn`, an empty list or a non-boolean flag fails the mount. A match records `when_allow` or `when_deny` under `reasons`; `pass` and a miss record nothing.
 
 ```yaml
 config:

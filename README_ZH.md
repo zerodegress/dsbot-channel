@@ -367,9 +367,9 @@ config:
 | `peer` | 字符串，或 `{ in: [...] }` / `{ notIn: [...] }` | 事件里的对端；事件没有 `peer` 时 `in` 不匹配、`notIn` 匹配 |
 | `mentioned` | `true` / `false` | 本 bot 或所有人被点名 |
 | `replyToMe` | `true` / `false` | 这条消息引用了本 bot 在同一 channel 上发出的消息 |
-| `ownRecent` | `true` / `false` | 本 bot 最近十分钟内在本会话说过话，且此后收到的消息少于十条 |
+| `ownRecent` | `true` / `false` | 本 bot 在本会话说过话、会话静默不足十分钟，且此后收到的消息少于十条 |
 
-至少写一个键，写了多个必须同时成立。本 bot 成功发出消息会把 `ownRecent` 归零，发送失败不归零；本 bot 上次说话满十分钟后过期。`replyToMe` 由 adapter 给出，没有父消息 id 时恒为 false；非消息事件两者都为 false。没有键、未知键、`in` 与 `notIn` 同时写、空列表或非布尔值都会让挂载失败。命中会把 `when_allow` 或 `when_deny` 记进 `reasons`；`pass` 与未命中不记。
+至少写一个键，写了多个必须同时成立。本 bot 成功发出消息会把 `ownRecent` 归零，发送失败不归零；会话静默满十分钟后过期，期间有新消息会刷新。`replyToMe` 由 adapter 给出，没有父消息 id 时恒为 false；非消息事件两者都为 false。没有键、未知键、`in` 与 `notIn` 同时写、空列表或非布尔值都会让挂载失败。命中会把 `when_allow` 或 `when_deny` 记进 `reasons`；`pass` 与未命中不记。
 
 ```yaml
 config:
