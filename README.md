@@ -47,14 +47,14 @@ config:
 | --- | --- | --- |
 | `kind` | `p2p` | `p2p`, `onebot`, `webhook`, `mail`, or `x-[a-z0-9-]+` for a third-party transport |
 | `channel` | required | unique link name; peers see it on the wire |
-| `botName` | required | the bot this link answers for |
+| `botName` | off | the bot this link follows; an adapter names `botName` or `session` |
 | `transport` | required | per-kind block; see Peers, OneBot, Webhook and Email |
-| `session` | off | run every turn in one existing session |
-| `cwd` | off | directory for the sessions this adapter creates |
-| `agentPreset` | off | preset for the sessions it creates |
-| `model` | off | `provider/model` for those sessions |
+| `session` | off | one existing session every turn runs in; an adapter names `botName` or `session` |
+| `model` | off | `provider/model` for the session the adapter resolves |
 | `status` | `true` | register the read-only status route |
 | `skill` | `true` | register the packaged skill when the host has a skills service |
+
+An adapter anchors its turns to exactly one of `botName` and `session`: writing both or neither fails the mount. `botName` follows that bot's current segment, read from the host roster at `$DSH_HOME/bot/state.json` (`~/.dsh/bot/state.json` when `DSH_HOME` is unset) on every turn, so a bot that has moved to a new segment is followed. The name is matched exactly first, by name and then by id, and ignoring case only when nothing matches exactly, so `botName: seal` finds an entry named `Seal`; two entries matching at the same step fail with `session_ambiguous`. The configured `botName` is the name peers address: an inbound `p2p` request carries it in `to` and must match it exactly, and an outbound turn sends it in `sender` as written, never the roster's spelling. A missing roster keeps the last good session without a warning and, with none yet, fails the turn with `session_unresolved` and one warning; an unreadable roster warns once and keeps the last good session, failing the turn when there is none. `session` pins one existing session: it is checked at mount and on every turn, `session_stale` when its bot has left it and `session_unknown` when no roster names it. One bot takes one anchor: pinning the session of a bot another adapter follows refuses the mount, and the turn fails with `session_anchor_conflict` when the roster could not be read at mount. `cwd` and `agentPreset` are not configuration keys: an adapter never creates sessions, and writing either fails the mount. An adapter's internal identity is its `botName`, or its `channel` when it pins a `session`; a pinned adapter fixes its wire name at mount, the session owner's `name` when the roster is readable and its `channel` otherwise, and every turn checks `to` against that name and sends it in `sender`, unchanged when the bot moves to another segment. Turns of one adapter run one at a time, and `model` is selected once for each resolved session.
 
 An adapter whose `capabilities.outbound` is `false` is never written back: core does not call its `send` or `refuse`, the `send_text` tool answers `unsupported` for it, and a session of it has no address to inherit. Its turns still run, so a profile that lets such an adapter start turns needs a reply block that always chooses `tool`, or the mount fails.
 

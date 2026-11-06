@@ -280,7 +280,7 @@ describe('a real turn writing an impression', () => {
     await started
     const raw = await mounted.tools.get('impression_put')!.execute(
       { text: 'alice ships on Fridays', kind: 'fact' },
-      { agent: { id: 'session-1' } },
+      { agent: { id: 'session-bot-a' } },
     )
     expect(JSON.parse(String(raw))).toEqual({ ok: true, id: expect.any(String), records: 1 })
     release()

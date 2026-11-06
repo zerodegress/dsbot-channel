@@ -121,10 +121,10 @@ async function services(ctx: Context): Promise<void> {
       scope.provide('sessionController')
       scope.set('sessionController', {
         create: () => Promise.resolve({ sessionId: 'session-1' }),
-        prompt: () => {
+        prompt: (request: { sessionId: string }) => {
           prompted += 1
           const emit = (event: unknown): void => {
-            ctx.emit('session/event', { id: 'session-1' } as never, event as never)
+            ctx.emit('session/event', { id: request.sessionId } as never, event as never)
           }
           emit({ type: 'turn/start' })
           emit({ type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'ok' }] } } })
@@ -160,6 +160,7 @@ async function settle(): Promise<void> {
   while (verdicts.length === 0 && Date.now() - started < 3000) {
     await new Promise((resolve) => setTimeout(resolve, 5))
   }
+  await new Promise((resolve) => setTimeout(resolve, 50))
   await new Promise((resolve) => setImmediate(() => setImmediate(resolve)))
 }
 

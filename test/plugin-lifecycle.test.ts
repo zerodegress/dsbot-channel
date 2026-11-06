@@ -180,14 +180,13 @@ describe('plugin lifecycle', () => {
     await expect(ctx.plugin(entry.default, config({ model: 'deepseek' }))).rejects.toThrow(/provider\/model/)
   })
 
-  test('refuses an empty cwd', async () => {
+  test('refuses cwd as a removed field', async () => {
     const ctx = await contextWithCredentials()
     await ctx.plugin(registryPlugin)
-    await expect(ctx.plugin(entry.default, config({ cwd: ' ' }))).rejects.toThrow(/cwd must be a non-empty string/)
+    await expect(ctx.plugin(entry.default, config({ cwd: '/tmp/work' }))).rejects.toThrow(/cwd is no longer supported/)
   })
 
-  test('hands cwd, agentPreset and model to the bridge', async () => {
-    const creates: unknown[] = []
+  test('selects the model once on the resolved session', async () => {
     const models: unknown[] = []
     const ctx = new Context()
     await ctx.plugin(credentialsProvider)
@@ -196,10 +195,6 @@ describe('plugin lifecycle', () => {
       apply(c: Context) {
         c.provide('sessionController')
         c.set('sessionController', {
-          create: (request: unknown) => {
-            creates.push(request)
-            return Promise.resolve({ sessionId: 'session-1' })
-          },
           prompt: () => new Promise(() => undefined),
           selectModel: (request: unknown) => {
             models.push(request)
@@ -209,17 +204,13 @@ describe('plugin lifecycle', () => {
       },
     })
     await ctx.plugin(registryPlugin)
-    const fork = await ctx.plugin(
-      entry.default,
-      config({ cwd: '/tmp/work', agentPreset: 'peer', model: 'deepseek/deepseek-chat' }),
-    )
+    const fork = await ctx.plugin(entry.default, config({ model: 'deepseek/deepseek-chat' }))
     const port = (ctx.get('dsbot-channel.peers') as Listener[])[0]!.address().port
 
     expect(await post(port, message)).toBe(200)
     await waitFor(() => models.length === 1)
 
-    expect(creates[0]).toEqual({ cwd: '/tmp/work', agentPreset: 'peer' })
-    expect(models[0]).toMatchObject({ sessionId: 'session-1', provider: 'deepseek', model: 'deepseek-chat' })
+    expect(models[0]).toMatchObject({ sessionId: 'session-bot-a', provider: 'deepseek', model: 'deepseek-chat' })
     await fork.dispose()
   })
 

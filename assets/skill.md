@@ -21,12 +21,16 @@ config:
 | --- | --- | --- |
 | `kind` | `p2p` | `p2p`, `onebot`, `webhook`, `mail`, or `x-[a-z0-9-]+` (third-party) |
 | `channel` | required | unique link name; peers see it on the wire |
-| `botName` | required | the bot this link answers for |
+| `botName` | off | the bot this link follows; names `botName` or `session` |
 | `transport` | required | per-kind block below: `p2p`, `onebot`, `webhook` or `mail` |
+| `session` | off | one existing session every turn runs in; names `botName` or `session` |
+| `model` | off | `provider/model` of the session the adapter resolves |
 | `status` | `true` | register the read-only status route |
 | `skill` | `true` | register the packaged skill when the host has a skills service |
 
 `channel` is the adapter's only name. `secret`, `accessToken` and judge `credential` are reference names in the host credentials service, not secrets. Paths are read as POSIX paths; Windows is not supported.
+
+An adapter anchors its turns to exactly one of `botName` and `session`; both or neither fails the mount. `botName` follows that bot's current segment from the host roster at `$DSH_HOME/bot/state.json` (`~/.dsh/bot/state.json` when `DSH_HOME` is unset), read on every turn. The name is matched exactly first, by name and then by id, and ignoring case only when nothing matches exactly; two entries matching at the same step fail with `session_ambiguous`. The configured `botName` is the name peers address: an inbound `p2p` request carries it in `to` and must match it exactly, and an outbound turn sends it in `sender` as written. A missing roster keeps the last good session without a warning and fails the turn with `session_unresolved`, warning once, when there is none; an unreadable roster warns once and keeps the last good session, failing the turn when there is none. `session` pins one existing session, checked at mount and on every turn: `session_stale` when its bot has left it, `session_unknown` when no roster names it. One bot takes one anchor: pinning the session of a bot another adapter follows refuses the mount, and the turn fails with `session_anchor_conflict` when the roster was unreadable at mount. `cwd` and `agentPreset` are refused: sessions are never created. An adapter's internal identity is its `botName`, or its `channel` when it pins a `session`; a pinned adapter fixes its wire name at mount, the session owner's `name` when the roster is readable and its `channel` otherwise, and every turn checks `to` against that name and sends it in `sender`, unchanged when the bot moves to another segment. One adapter runs one turn at a time and selects `model` once per resolved session.
 
 ### p2p transport
 
@@ -137,7 +141,6 @@ A thread is a room keyed by its root: `mail:<thread-root>`; the root is the firs
 | `impressions.import` | off | once: `{ path, as: { personId } }` or `{ path, as: { groupKey } }` |
 | `turn.impressions.chars` | `400` | notes injected into a turn, `0` to `2000`; `0` injects none |
 | `identity.people` / `identity.bots` | `[]` | nodes `{ id, accounts: [{ kind, instance, accountId }] }`; an account fills `author.personId` |
-| `session` / `cwd` / `agentPreset` / `model` | | run turns in one session; `model` is `provider/model` |
 
 The impression library is off until a top-level `impressions` block names an absolute `dir`. It keeps short notes about the person a turn answers or about its group; `impression_put`, `impression_get` and `impression_forget` read and write them, `turn.impressions.chars` caps how much goes in front of a turn. `impressions.import` runs once per bot at mount from a file in the host memory format; `path` is absolute, `as.personId` must be a declared person, `as.groupKey` is `<channel>|<sessionKey>` on a mounted channel, it reads bullet lines only, and a second run adds nothing. Notes are injected for `c2c` and `group` turns only; on `p2p` the three tools answer `unsupported`. `impression_put` writes about the counterpart, which needs a `personId`, or with `about: "group"` about its group; `impression_get` takes `about: "group"` too; `impression_forget` takes `all: true` or `about: "group"`. `identity` declares `people` and `bots` nodes of `{ id, accounts: [{ kind, instance, accountId }] }`; ids and accounts appear once, `accounts` may not be empty, a built-in instance must be mounted, a configured p2p peer counts, a third-party kind is only warned about, and a resolved account fills `author.personId`.
 

@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, onTestFailed, test } from 'vitest'
 import { registryPlugin } from '../src/registry-plugin.js'
 import { createServer, request as httpRequest } from 'node:http'
@@ -737,7 +740,6 @@ describe('the configured session', () => {
       adapters: [
         {
           channel: 'inst-a',
-          botName: 'bot-a',
           session,
           transport: {
             peers: [{ instance: 'inst-b', secret: REF }],
@@ -757,7 +759,7 @@ describe('the configured session', () => {
     const sent = await sendToPeer({
       peer: { instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${port}` },
       credentials,
-      to: 'bot-a',
+      to: 'main',
       body: 'hello',
       eventId: 'evt-1',
       sender: 'bot-b',
@@ -768,6 +770,141 @@ describe('the configured session', () => {
     await waitFor(() => sessions.prompted.length > 0)
     expect(sessions.prompted[0]?.sessionId).toBe('session-main')
     expect(sessions.created).toHaveLength(0)
+  })
+
+  test('a pinned session answers to the name of the Bot it belongs to', async () => {
+    const { sessions, port } = await mountWithSession('session-seal')
+
+    const sent = await sendToPeer({
+      peer: { instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${port}` },
+      credentials,
+      to: 'seal',
+      body: 'hello',
+      eventId: 'evt-wire',
+      sender: 'bot-b',
+      instance: 'inst-b',
+    })
+    expect(sent.ok).toBe(true)
+
+    await waitFor(() => sessions.prompted.length > 0)
+    expect(sessions.prompted[0]?.sessionId).toBe('session-seal')
+  })
+})
+
+describe('the wire name a p2p adapter sends', () => {
+  async function mountWithRoster(
+    rosterName: string,
+    sessionId: string,
+    anchor: { session?: string; botName?: string },
+  ): Promise<{ posts: Record<string, unknown>[]; port: number; dispose: () => Promise<void> }> {
+    const dir = mkdtempSync(join(tmpdir(), 'roster-'))
+    mkdirSync(join(dir, 'bot'), { recursive: true })
+    writeFileSync(
+      join(dir, 'bot', 'state.json'),
+      JSON.stringify({ bots: { one: { name: rosterName, id: sessionId } } }),
+      'utf8',
+    )
+    const before = process.env.DSH_HOME
+    process.env.DSH_HOME = dir
+    const posts: Record<string, unknown>[] = []
+    const capture = createServer((request, response) => {
+      let raw = ''
+      request.on('data', (chunk: string) => {
+        raw += chunk
+      })
+      request.on('end', () => {
+        posts.push(JSON.parse(raw) as Record<string, unknown>)
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({ ok: true }))
+      })
+    })
+    await new Promise<void>((resolve) => capture.listen(0, '127.0.0.1', resolve))
+    const capturePort = (capture.address() as AddressInfo).port
+    const ctx = new Context()
+    captureWarnings(ctx)
+    await ctx.plugin({
+      name: 'probe-services',
+      apply(scope: Context) {
+        scope.provide('credentials')
+        scope.set('credentials', credentials)
+        scope.provide('sessionController')
+        scope.set('sessionController', {
+          prompt: (request: { sessionId: string }) => {
+            const emit = (event: unknown): void => {
+              ctx.emit('session/event', { id: request.sessionId } as never, event as never)
+            }
+            emit({ type: 'turn/start' })
+            emit({ type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'answer' }] } } })
+            emit({ type: 'turn/end' })
+            return Promise.resolve({ accepted: true })
+          },
+        })
+      },
+    })
+    await ctx.plugin(registryPlugin)
+    const fork = await ctx.plugin(entry, {
+      adapters: [
+        {
+          channel: 'inst-a',
+          ...anchor,
+          transport: {
+            peers: [{ instance: 'inst-b', secret: REF, url: `http://127.0.0.1:${capturePort}` }],
+            listen: { host: '127.0.0.1', port: 0 },
+          },
+        },
+      ],
+    })
+    return {
+      posts,
+      port: boundPort(ctx, 'inst-a'),
+      dispose: async () => {
+        await fork.dispose()
+        capture.close()
+        if (before === undefined) delete process.env.DSH_HOME
+        else process.env.DSH_HOME = before
+        rmSync(dir, { recursive: true, force: true })
+      },
+    }
+  }
+
+  test('a pinned session sends the owner name', async () => {
+    const mounted = await mountWithRoster('Seal', 'session-cap', { session: 'session-cap' })
+    try {
+      const sent = await sendToPeer({
+        peer: { instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${mounted.port}` },
+        credentials,
+        to: 'Seal',
+        body: 'hello',
+        eventId: 'evt-cap',
+        sender: 'bot-b',
+        instance: 'inst-b',
+      })
+      expect(sent.ok).toBe(true)
+      await waitFor(() => mounted.posts.length > 0)
+      expect(mounted.posts[0]).toMatchObject({ sender: 'Seal' })
+    } finally {
+      await mounted.dispose()
+    }
+  })
+
+  test('a botName anchor sends the configured spelling', async () => {
+    const mounted = await mountWithRoster('Seal', 'session-cap', { botName: 'seal' })
+    try {
+      const sent = await sendToPeer({
+        peer: { instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${mounted.port}` },
+        credentials,
+        to: 'seal',
+        body: 'hello',
+        eventId: 'evt-cap-2',
+        sender: 'bot-b',
+        instance: 'inst-b',
+      })
+      expect(sent.ok).toBe(true)
+      await waitFor(() => mounted.posts.length > 0)
+      expect(mounted.posts[0]).toMatchObject({ sender: 'seal' })
+    } finally {
+      await mounted.dispose()
+    }
   })
 })
 
