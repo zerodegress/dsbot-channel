@@ -77,15 +77,16 @@ describe('resolving a bot current segment', () => {
     })
   })
 
-  test('an unreadable state file is unresolved on the first turn', async () => {
+  test('a missing roster is unresolved on the first turn and warns once', async () => {
     const path = join(await dirs(), 'missing.json')
-    expect(await anchor(path, { botName: 'seal' }).resolve()).toMatchObject({
-      ok: false,
-      code: 'session_unresolved',
-    })
+    const lines: string[] = []
+    const subject = new SessionAnchor({ channel: 'p2p:a', botName: 'seal', statePath: path, warn: (line) => lines.push(line) })
+    expect(await subject.resolve()).toMatchObject({ ok: false, code: 'session_unresolved' })
+    expect(await subject.resolve()).toMatchObject({ ok: false, code: 'session_unresolved' })
+    expect(lines).toHaveLength(1)
   })
 
-  test('after one success an unreadable file keeps the last session and warns once', async () => {
+  test('after one success a missing roster keeps the last session without a warning', async () => {
     const dir = await dirs()
     const path = await writeState(dir, { one: bot('seal', 'session-a') })
     const lines: string[] = []
@@ -95,7 +96,24 @@ describe('resolving a bot current segment', () => {
     await rm(path)
     expect(await subject.resolve()).toEqual({ ok: true, sessionId: 'session-a' })
     expect(await subject.resolve()).toEqual({ ok: true, sessionId: 'session-a' })
-    expect(lines.filter((line) => line.includes('last session'))).toHaveLength(1)
+    expect(lines).toEqual([])
+  })
+
+  test('a failure keeps the last session and warns once until it recovers', async () => {
+    const dir = await dirs()
+    const path = await writeState(dir, { one: bot('seal', 'session-a') })
+    const lines: string[] = []
+    const subject = new SessionAnchor({ channel: 'p2p:a', botName: 'seal', statePath: path, warn: (line) => lines.push(line) })
+    expect(await subject.resolve()).toEqual({ ok: true, sessionId: 'session-a' })
+    await writeState(dir, { one: bot('other', 'session-b') })
+    expect(await subject.resolve()).toEqual({ ok: true, sessionId: 'session-a' })
+    expect(await subject.resolve()).toEqual({ ok: true, sessionId: 'session-a' })
+    expect(lines.filter((line) => line.includes('using the last session'))).toHaveLength(1)
+    await writeState(dir, { one: bot('seal', 'session-c') })
+    expect(await subject.resolve()).toEqual({ ok: true, sessionId: 'session-c' })
+    await writeState(dir, { one: bot('other', 'session-b') })
+    expect(await subject.resolve()).toEqual({ ok: true, sessionId: 'session-c' })
+    expect(lines.filter((line) => line.includes('using the last session'))).toHaveLength(2)
   })
 
   test('a rollover moves the next turn to the new segment', async () => {
@@ -105,6 +123,32 @@ describe('resolving a bot current segment', () => {
     expect(await subject.resolve()).toEqual({ ok: true, sessionId: 'session-b' })
     await writeState(dir, { one: bot('seal', 'session-a', 'session-c') })
     expect(await subject.resolve()).toEqual({ ok: true, sessionId: 'session-c' })
+  })
+})
+
+describe('a bot never takes two anchors', () => {
+  test('a pinned session of a followed bot is a conflict', async () => {
+    const path = await writeState(await dirs(), { one: bot('seal', 'session-a', 'session-b') })
+    const subject = new SessionAnchor({
+      channel: 'p2p:a',
+      session: 'session-b',
+      statePath: path,
+      followed: ['seal'],
+      warn: () => {},
+    })
+    expect(await subject.resolve()).toMatchObject({ ok: false, code: 'session_anchor_conflict' })
+  })
+
+  test('a pinned session of a bot nobody follows is fine', async () => {
+    const path = await writeState(await dirs(), { one: bot('seal', 'session-a', 'session-b') })
+    const subject = new SessionAnchor({
+      channel: 'p2p:a',
+      session: 'session-b',
+      statePath: path,
+      followed: ['other'],
+      warn: () => {},
+    })
+    expect(await subject.resolve()).toEqual({ ok: true, sessionId: 'session-b' })
   })
 })
 

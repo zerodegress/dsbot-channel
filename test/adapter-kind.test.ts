@@ -202,7 +202,10 @@ describe('the session key an adapter supplies', () => {
     const { prompts } = await mountPrompted('x-demo', 'x-group')
 
     expect(verdicts).toEqual([{ ok: true }])
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    const started = Date.now()
+    while (prompts.length === 0 && Date.now() - started < 1000) {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
     expect(prompts).toHaveLength(1)
   })
 

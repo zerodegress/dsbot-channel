@@ -737,7 +737,6 @@ describe('the configured session', () => {
       adapters: [
         {
           channel: 'inst-a',
-          botName: 'bot-a',
           session,
           transport: {
             peers: [{ instance: 'inst-b', secret: REF }],
@@ -757,7 +756,7 @@ describe('the configured session', () => {
     const sent = await sendToPeer({
       peer: { instance: 'inst-a', secret: REF, url: `http://127.0.0.1:${port}` },
       credentials,
-      to: 'bot-a',
+      to: 'inst-a',
       body: 'hello',
       eventId: 'evt-1',
       sender: 'bot-b',

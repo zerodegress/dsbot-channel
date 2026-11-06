@@ -34,7 +34,9 @@ import { GROUP_BOT_POLICIES } from './inbound-gate.js'
 import { InjectionLedger, TOOL_MODE_NOTICE, TOOL_MODE_NOTICE_MAX } from './inbound-guidance.js'
 import { usageSnapshot } from './usage-view.js'
 import type { BotLedger } from './usage-view.js'
-import { PeerSessions } from './peer-sessions.js'
+import { AnchorTurnError, PeerSessions } from './peer-sessions.js'
+import { BotRosterMissing, SessionAnchor, botNameOf, botOfSession, defaultBotStatePath, readBots } from './bot-sessions.js'
+import type { BotRecord } from './bot-sessions.js'
 import type { ModelRoute, SessionControllerLike, SessionEventLike } from './peer-sessions.js'
 import type { NodeContext, PipelineEvent } from './pipeline.js'
 import { unboundRuleReason } from './pipeline-bindable.js'
@@ -91,14 +93,13 @@ export const TURNABLE_EVENTS = [
 export interface AdapterConfig {
   kind?: string
   channel: string
+  /** The identity this adapter reports as; a pinned adapter uses its channel. */
   botName: string
-  /** Runs every turn of this adapter in one existing session instead of one per address. */
+  /** What the adapter anchors to: the Bot's current segment, or one pinned session. */
+  anchor: 'bot' | 'session'
+  /** The session a pinned adapter uses; present when anchor is "session". */
   session?: string
-  /** The directory the created sessions own. */
-  cwd?: string
-  /** The agent preset the created sessions run. */
-  agentPreset?: string
-  /** The model every session of this adapter runs on, as `provider/model`. */
+  /** The model the resolved session runs on, as `provider/model`. */
   model?: string
   /** How this adapter answers; the keys it writes replace the top-level block's keys whole. */
   reply?: unknown
@@ -225,10 +226,10 @@ export const Config: any = Schema.object({
       Schema.object({
         kind: Schema.string().default('p2p'),
         channel: Schema.string().required(),
-        botName: Schema.string().required(),
+        botName: Schema.string(),
         session: Schema.string(),
-        cwd: Schema.string(),
-        agentPreset: Schema.string(),
+        cwd: Schema.any(),
+        agentPreset: Schema.any(),
         model: Schema.string(),
         reply: Schema.any(),
         turn: Schema.any(),
@@ -752,10 +753,52 @@ function checkMergedName(raw: unknown): void {
 }
 
 /** Reads the profile, pointing an old `p2p` key at the block that replaced it. */
+/** What a profile writes per adapter, before the anchor picks one of the two names. */
+interface RawAdapterConfig extends Omit<AdapterConfig, 'botName' | 'anchor'> {
+  botName?: string
+  cwd?: unknown
+  agentPreset?: unknown
+}
+
+interface RawChannelConfig extends Omit<ChannelConfig, 'adapters'> {
+  adapters: RawAdapterConfig[]
+}
+
+/** Reads each adapter's anchor once: exactly one of botName and session, and no removed fields. */
+export function normalizeConfig(config: RawChannelConfig): ChannelConfig {
+  const adapters = config.adapters.map((adapter, index) => {
+    const path = (field: string): string[] => ['adapters', String(index), field]
+    for (const field of ['cwd', 'agentPreset'] as const) {
+      if (adapter[field] === undefined) continue
+      throw new ConfigError(
+        `${field} is no longer supported: sessions are never created; use botName or session`,
+        path(field),
+      )
+    }
+    const botName = adapter.botName
+    const session = adapter.session
+    if (botName !== undefined && session !== undefined) {
+      throw new ConfigError('an adapter names botName or session, not both', path('session'))
+    }
+    if (botName === undefined && session === undefined) {
+      throw new ConfigError('an adapter needs botName or session', path('botName'))
+    }
+    const clean: Record<string, unknown> = { ...adapter }
+    delete clean.cwd
+    delete clean.agentPreset
+    return {
+      ...clean,
+      botName: botName ?? adapter.channel,
+      anchor: session === undefined ? 'bot' : 'session',
+    } as AdapterConfig
+  })
+  return { ...config, adapters }
+}
+
 function readConfig(raw: unknown): ChannelConfig {
   checkMergedName(raw)
   try {
-    return validateConfig<ChannelConfig>(Config, raw)
+    return normalizeConfig(validateConfig<RawChannelConfig>(Config, raw))
   } catch (error) {
     if (error instanceof ConfigError && error.fields.includes('p2p')) {
       throw new ConfigError(
@@ -765,6 +808,42 @@ function readConfig(raw: unknown): ChannelConfig {
       )
     }
     throw error
+  }
+}
+
+/** Reads the bot roster once and proves what can be proved before any adapter starts. */
+async function checkAnchors(config: ChannelConfig, warn: (message: string) => void): Promise<void> {
+  let bots: BotRecord[] | undefined
+  try {
+    bots = await readBots(defaultBotStatePath())
+  } catch (error) {
+    if (!(error instanceof BotRosterMissing)) {
+      warn(`dsbot-channel: the bot roster cannot be read: ${String(error)}`)
+    }
+  }
+  for (const [index, adapter] of config.adapters.entries()) {
+    if (adapter.anchor !== 'session' || adapter.session === undefined) continue
+    const anchor = new SessionAnchor({
+      channel: adapter.channel,
+      session: adapter.session,
+      adapterIndex: index,
+      warn,
+    })
+    await anchor.mountCheck(bots)
+  }
+  if (bots === undefined) return
+  const followed = new Set(config.adapters.filter((adapter) => adapter.anchor === 'bot').map((adapter) => adapter.botName))
+  for (const adapter of config.adapters) {
+    if (adapter.anchor !== 'session' || adapter.session === undefined) continue
+    const owner = botOfSession(bots, adapter.session)
+    if (owner === undefined) continue
+    const name = botNameOf(owner)
+    const id = typeof owner.id === 'string' ? owner.id : ''
+    if (!followed.has(name) && (id === '' || !followed.has(id))) continue
+    throw new ConfigError(
+      `adapter "${adapter.channel}" pins a session of Bot "${name}", which another adapter follows; one Bot takes one anchor`,
+      ['adapters', 'session'],
+    )
   }
 }
 
@@ -792,6 +871,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     )
   }
   const config = readConfig(raw)
+  await checkAnchors(config, createWarn(ctx))
   const writtenAdapters = Array.isArray((raw as { adapters?: unknown } | null)?.adapters)
     ? ((raw as { adapters: Record<string, unknown>[] }).adapters ?? [])
     : []
@@ -935,7 +1015,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
     throw new ConfigError('the credentials service is required to resolve peer secrets', ['adapters'])
   }
   const controller = ctx.get('sessionController') as SessionControllerLike | undefined
-  if (controller === undefined || typeof controller.create !== 'function' || typeof controller.prompt !== 'function') {
+  if (controller === undefined || typeof controller.prompt !== 'function') {
     throw new ConfigError('the sessionController service is required to run peer messages', ['adapters'])
   }
   const observe = (listener: (sessionId: string, event: SessionEventLike) => void): (() => void) =>
@@ -1009,7 +1089,6 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   const runTurn = async (
     runtime: ChannelRuntime,
     message: InboundMessage,
-    sessionId: string,
     rest: readonly InboundMessage[] = [],
   ): Promise<void> => {
     const last = rest.length === 0 ? message : rest[rest.length - 1]!
@@ -1031,7 +1110,6 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
       suppressed: message.suppressed === true || chains.isClosed(message.chainId),
       pushed: false,
     }
-    activeTurns.set(sessionId, turnRef)
     turns.started()
     turns.open(message.eventKey)
     const ended = (outcome: TurnOutcome, code?: string): void => {
@@ -1076,6 +1154,14 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
       const turn = await runtime.sessions.runTurn({
         peer: message.sessionKey,
         requestId: message.requestId,
+        onSession: (sessionId) => {
+          activeTurns.set(sessionId, turnRef)
+          sources.set(sessionId, {
+            channel: adapter.channel,
+            ...(transport.capabilities.outbound === false ? {} : { replyTarget: message.replyTarget }),
+            sender: message.author.senderId,
+          })
+        },
         text:
           blocks.length === 0
             ? [message, ...rest].map((one) => one.body.text).join('\n')
@@ -1209,13 +1295,18 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
   try {
     for (const channel of channels) {
       const { config: adapter, adapter: transport } = channel
+      const anchor = new SessionAnchor({
+        channel: adapter.channel,
+        ...(adapter.anchor === 'session' ? { session: adapter.session as string } : { botName: adapter.botName }),
+        adapterIndex: channel.index,
+        followed: config.adapters.filter((one) => one.anchor === 'bot').map((one) => one.botName),
+        warn,
+      })
       const sessions = new PeerSessions({
         controller,
         observe,
+        anchor,
         warn,
-        ...(adapter.session === undefined ? {} : { session: adapter.session }),
-        ...(adapter.cwd === undefined ? {} : { cwd: adapter.cwd }),
-        ...(adapter.agentPreset === undefined ? {} : { agentPreset: adapter.agentPreset }),
         ...(channel.model === undefined ? {} : { model: channel.model }),
       })
       runtimes.push(sessions)
@@ -1417,12 +1508,6 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
           })
           return { ok: false, code: 'rejected', reason: `${decision.reason}${detail}` }
         }
-        const sessionId = await sessions.sessionFor(message.sessionKey)
-        sources.set(sessionId, {
-          channel: adapter.channel,
-          ...(transport.capabilities.outbound === false ? {} : { replyTarget: message.replyTarget }),
-          sender: message.author.senderId,
-        })
         const runBatch = (batch: readonly InboundMessage[]): void => {
           const first = batch[0]!
           for (const one of batch) {
@@ -1431,8 +1516,9 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
             }
           }
           setTimer(() => {
-            void runTurn(runtime, first, sessionId, batch.slice(1)).catch((error: unknown) => {
+            void runTurn(runtime, first, batch.slice(1)).catch((error: unknown) => {
               if (runtime.sessions.disposed) return
+              const code = error instanceof AnchorTurnError ? error.code : undefined
               turns.failed()
               turns.close({
                 eventKey: first.eventKey,
@@ -1440,6 +1526,7 @@ export async function applyWith(ctx: Context, raw: unknown, options: ChannelDeps
                 channel: adapter.channel,
                 sessionKey: first.sessionKey,
                 outcome: 'failed',
+                ...(code === undefined ? {} : { code }),
                 mergedKeys: batch.map((one) => one.eventKey),
               })
               warn(`dsbot-channel: peer turn for ${first.replyTarget} failed: ${String(error)}`)
@@ -1626,18 +1713,10 @@ function mountAdapters(
 ): MountedChannel[] {
   const seen = new Set<string>()
   return config.adapters.map((adapter, index) => {
-    if (!adapter.botName) throw new ConfigError('botName is required for each adapter', ['adapters', String(index)])
     if (seen.has(adapter.channel)) {
       throw new ConfigError(`duplicate adapter channel: ${adapter.channel}`, ['adapters', String(index), 'channel'])
     }
     seen.add(adapter.channel)
-    for (const field of ['cwd', 'agentPreset'] as const) {
-      const value = adapter[field]
-      if (value === undefined) continue
-      if (typeof value !== 'string' || value.trim().length === 0) {
-        throw new ConfigError(`${field} must be a non-empty string`, ['adapters', String(index), field])
-      }
-    }
     let model: ModelRoute | undefined
     if (adapter.model !== undefined) {
       const slash = typeof adapter.model === 'string' ? adapter.model.indexOf('/') : -1

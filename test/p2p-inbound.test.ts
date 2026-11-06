@@ -1,4 +1,7 @@
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
+import { SessionAnchor } from '../src/bot-sessions.js'
 import { PeerSessions, TurnTimeoutError } from '../src/peer-sessions.js'
 import type { PromptRequest, SessionControllerLike, SessionEventLike } from '../src/peer-sessions.js'
 
@@ -10,26 +13,16 @@ interface Recorded {
 }
 
 class FakeController implements SessionControllerLike {
-  readonly creates: unknown[] = []
   readonly prompts: Recorded[] = []
   readonly models: { sessionId: string; provider: string; model: string }[] = []
   onPrompt?: (request: PromptRequest) => void
-  failCreate: Error | undefined
   failPrompt: Error | undefined
   failModel: Error | undefined
-  #count = 0
 
   selectModel(request: { sessionId: string; provider: string; model: string }): Promise<unknown> {
     this.models.push(request)
     if (this.failModel) return Promise.reject(this.failModel)
     return Promise.resolve({ selected: { provider: request.provider, model: request.model } })
-  }
-
-  create(request: { cwd?: string; agentPreset?: string }): Promise<{ sessionId: string }> {
-    this.creates.push(request)
-    if (this.failCreate) return Promise.reject(this.failCreate)
-    this.#count += 1
-    return Promise.resolve({ sessionId: `session-${this.#count}` })
   }
 
   prompt(request: PromptRequest, signal: AbortSignal): Promise<{ accepted: boolean }> {
@@ -77,11 +70,17 @@ function turn(sessionId: string, emit: (sessionId: string, event: SessionEventLi
   emit(sessionId, { type: 'turn/end' })
 }
 
+const pinned = (session: string): SessionAnchor =>
+  new SessionAnchor({
+    channel: 'p2p:b',
+    session,
+    statePath: join(tmpdir(), 'dsbot-channel-test-no-roster', 'state.json'),
+    warn: () => {},
+  })
+
 function harness(
   options: {
     timeoutMs?: number
-    cwd?: string
-    agentPreset?: string
     session?: string
     model?: { provider: string; model: string }
     warn?: (message: string) => void
@@ -89,7 +88,14 @@ function harness(
 ) {
   const controller = new FakeController()
   const events = bus()
-  const bridge = new PeerSessions({ controller, observe: events.observe, ...options })
+  const bridge = new PeerSessions({
+    controller,
+    observe: events.observe,
+    anchor: pinned(options.session ?? 'session-main'),
+    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+    ...(options.model === undefined ? {} : { model: options.model }),
+    ...(options.warn === undefined ? {} : { warn: options.warn }),
+  })
   return { controller, events, bridge }
 }
 
@@ -157,59 +163,67 @@ describe('a turn queued behind other work', () => {
 })
 
 describe('peer sessions', () => {
-  test('creates one session per peer and reuses it', async () => {
+  test('runs both turns of a peer in the one session', async () => {
     const { controller, events, bridge } = harness()
     controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['first', 'second'])
 
     const first = await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'one' })
     const second = await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-2', text: 'two' })
 
-    expect(controller.creates).toHaveLength(1)
-    expect(first.sessionId).toBe('session-1')
-    expect(second.sessionId).toBe('session-1')
+    expect(first.sessionId).toBe('session-main')
+    expect(second.sessionId).toBe('session-main')
     expect(controller.prompts).toHaveLength(2)
   })
 
-  test('keeps a separate session for each peer', async () => {
+  test('runs one turn at a time for the whole adapter', async () => {
+    const { controller, events, bridge } = harness()
+    const started: string[] = []
+    let release: () => void = () => undefined
+    const hold = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let closed = false
+    controller.prompt = (request, signal) => {
+      signal.throwIfAborted()
+      started.push(request.requestId)
+      if (!closed) {
+        closed = true
+        void hold.then(() => turn(request.sessionId, events.emit, ['first']))
+      } else {
+        turn(request.sessionId, events.emit, ['second'])
+      }
+      return Promise.resolve({ accepted: true })
+    }
+
+    const first = bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'one' })
+    const second = bridge.runTurn({ peer: 'peer-b', requestId: 'evt-2', text: 'two' })
+    while (started.length === 0) await new Promise((resolve) => setTimeout(resolve, 5))
+
+    expect(started).toEqual(['evt-1'])
+    release()
+    await expect(first).resolves.toMatchObject({ text: 'first' })
+    await expect(second).resolves.toMatchObject({ text: 'second' })
+    expect(started).toEqual(['evt-1', 'evt-2'])
+  })
+
+  test('runs the turn on the pinned session', async () => {
+    const { controller, events, bridge } = harness()
+    controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['ok'])
+
+    const result = await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })
+
+    expect(controller.prompts[0]?.request.sessionId).toBe('session-main')
+    expect(result.sessionId).toBe('session-main')
+    expect(result.text).toBe('ok')
+  })
+
+  test('lands every peer in the one session', async () => {
     const { controller, events, bridge } = harness()
     controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['ok'])
 
     const a = await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'a' })
     const b = await bridge.runTurn({ peer: 'peer-b', requestId: 'evt-2', text: 'b' })
 
-    expect(controller.creates).toHaveLength(2)
-    expect(a.sessionId).not.toBe(b.sessionId)
-  })
-
-  test('creates the session with the configured cwd and preset', async () => {
-    const { controller, events, bridge } = harness({ cwd: '/tmp/sandbox', agentPreset: 'peer' })
-    controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['ok'])
-
-    await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })
-
-    expect(controller.creates[0]).toEqual({ cwd: '/tmp/sandbox', agentPreset: 'peer' })
-  })
-
-  test('runs the turn on the configured session and creates nothing', async () => {
-    const { controller, events, bridge } = harness({ session: 'session-main' })
-    controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['ok'])
-
-    const result = await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })
-
-    expect(controller.creates).toHaveLength(0)
-    expect(controller.prompts[0]?.request.sessionId).toBe('session-main')
-    expect(result.sessionId).toBe('session-main')
-    expect(result.text).toBe('ok')
-  })
-
-  test('lands every peer in the one configured session', async () => {
-    const { controller, events, bridge } = harness({ session: 'session-main' })
-    controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['ok'])
-
-    const a = await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'a' })
-    const b = await bridge.runTurn({ peer: 'peer-b', requestId: 'evt-2', text: 'b' })
-
-    expect(controller.creates).toHaveLength(0)
     expect(a.sessionId).toBe('session-main')
     expect(b.sessionId).toBe('session-main')
     expect(controller.prompts.map((entry) => entry.request.sessionId)).toEqual(['session-main', 'session-main'])
@@ -224,7 +238,7 @@ describe('peer sessions', () => {
     const recorded = controller.prompts[0]
     expect(recorded?.request.requestId).toBe('evt-42')
     expect(recorded?.request.mode).toBe('queue')
-    expect(recorded?.request.sessionId).toBe('session-1')
+    expect(recorded?.request.sessionId).toBe('session-main')
     expect(recorded?.signal).toBeInstanceOf(AbortSignal)
     expect(typeof recorded?.signal.throwIfAborted).toBe('function')
     expect(recorded?.signal.aborted).toBe(false)
@@ -327,7 +341,7 @@ describe('peer sessions', () => {
     }
 
     const first = bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'one' })
-    await flush()
+    while (pending.length === 0) await new Promise((resolve) => setTimeout(resolve, 5))
     const second = bridge.runTurn({ peer: 'peer-a', requestId: 'evt-2', text: 'two' })
     await flush()
 
@@ -336,14 +350,14 @@ describe('peer sessions', () => {
 
     pending[0]?.()
     await expect(first).resolves.toMatchObject({ text: 'reply evt-1' })
-    await flush()
+    while (pending.length < 2) await new Promise((resolve) => setTimeout(resolve, 5))
     expect(controller.prompts).toHaveLength(2)
 
     pending[1]?.()
     await expect(second).resolves.toMatchObject({ text: 'reply evt-2' })
   })
 
-  test('runs different peers in parallel', async () => {
+  test('holds the second peer turn until the first one answers', async () => {
     const { controller, events, bridge } = harness()
     const pending: (() => void)[] = []
     controller.onPrompt = (request) => {
@@ -352,10 +366,12 @@ describe('peer sessions', () => {
 
     const first = bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'one' })
     const second = bridge.runTurn({ peer: 'peer-b', requestId: 'evt-2', text: 'two' })
-    await flush()
+    while (pending.length === 0) await new Promise((resolve) => setTimeout(resolve, 5))
 
-    expect(controller.prompts).toHaveLength(2)
-    for (const settle of pending) settle()
+    expect(controller.prompts).toHaveLength(1)
+    pending.shift()?.()
+    while (pending.length === 0) await new Promise((resolve) => setTimeout(resolve, 5))
+    pending.shift()?.()
     await expect(first).resolves.toMatchObject({ text: 'reply evt-1' })
     await expect(second).resolves.toMatchObject({ text: 'reply evt-2' })
   })
@@ -369,18 +385,17 @@ describe('peer sessions', () => {
     )
   })
 
-  test('retries creation after the host refuses the first attempt', async () => {
+  test('a prompt failure leaves the next turn able to run', async () => {
     const { controller, events, bridge } = harness()
-    controller.failCreate = new Error('session/agent-busy')
-    controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['ok'])
+    controller.failPrompt = new Error('session/agent-busy')
 
     await expect(bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })).rejects.toThrow('agent-busy')
 
-    controller.failCreate = undefined
+    controller.failPrompt = undefined
+    controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['ok'])
     const result = await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-2', text: 'hi' })
 
     expect(result.text).toBe('ok')
-    expect(controller.creates).toHaveLength(2)
   })
 })
 
@@ -394,31 +409,21 @@ describe('the model a bridge runs', () => {
     await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'one' })
     await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-2', text: 'two' })
 
-    expect(controller.models).toEqual([{ sessionId: 'session-1', provider: 'deepseek', model: 'deepseek-chat' }])
+    expect(controller.models).toEqual([{ sessionId: 'session-main', provider: 'deepseek', model: 'deepseek-chat' }])
   })
 
-  test('selects once for each peer session', async () => {
+  test('selects once for the one session, not once per peer', async () => {
     const { controller, events, bridge } = harness({ model: route })
     controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['ok'])
 
     await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'a' })
     await bridge.runTurn({ peer: 'peer-b', requestId: 'evt-2', text: 'b' })
 
-    expect(controller.models.map((one) => one.sessionId)).toEqual(['session-1', 'session-2'])
+    expect(controller.models.map((one) => one.sessionId)).toEqual(['session-main'])
   })
 
-  test('selects on the one configured session too', async () => {
-    const { controller, events, bridge } = harness({ session: 'session-main', model: route })
-    controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['ok'])
-
-    await bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })
-
-    expect(controller.models).toEqual([{ sessionId: 'session-main', provider: 'deepseek', model: 'deepseek-chat' }])
-  })
-
-  test('two peers on one fixed session wait for the same selection', async () => {
-    const { controller, events, bridge } = harness({ session: 'session-main', model: route })
-    void events
+  test('two turns wait for the same selection', async () => {
+    const { controller, events, bridge } = harness({ model: route })
     let release: () => void = () => undefined
     const selection = new Promise<void>((resolve) => {
       release = resolve
@@ -428,54 +433,35 @@ describe('the model a bridge runs', () => {
       selects += 1
       return selection.then(() => ({}))
     }
+    controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['ok'])
 
-    const first = bridge.sessionFor('peer-a')
-    const second = bridge.sessionFor('peer-b')
-    let settled = 0
-    void first.then(() => {
-      settled += 1
-    })
-    void second.then(() => {
-      settled += 1
-    })
+    const first = bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'a' })
+    const second = bridge.runTurn({ peer: 'peer-b', requestId: 'evt-2', text: 'b' })
+    while (selects === 0) await new Promise((resolve) => setTimeout(resolve, 5))
     await flush()
 
     expect(selects).toBe(1)
-    expect(settled).toBe(0)
     release()
-    await expect(first).resolves.toBe('session-main')
-    await expect(second).resolves.toBe('session-main')
-    expect(settled).toBe(2)
+    await expect(first).resolves.toMatchObject({ text: 'ok' })
+    await expect(second).resolves.toMatchObject({ text: 'ok' })
+    expect(selects).toBe(1)
   })
 
-  test('a rejected selection still hands out the session', async () => {
-    const { controller, events, bridge } = harness({ session: 'session-main', model: route })
-    void events
-    controller.selectModel = () => Promise.reject(new Error('no such model'))
+  test('a rejected selection still runs both turns', async () => {
     const warnings: string[] = []
-    const bridgeWithWarn = new PeerSessions({
-      controller,
-      observe: events.observe,
-      session: 'session-main',
-      model: route,
-      warn: (line) => warnings.push(line),
-    })
-    void bridge
+    const { controller, events, bridge } = harness({ model: route, warn: (line) => warnings.push(line) })
+    controller.selectModel = () => Promise.reject(new Error('no such model'))
+    controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['ok'])
 
-    await expect(bridgeWithWarn.sessionFor('peer-a')).resolves.toBe('session-main')
-    await expect(bridgeWithWarn.sessionFor('peer-b')).resolves.toBe('session-main')
+    await expect(bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'a' })).resolves.toMatchObject({ text: 'ok' })
+    await expect(bridge.runTurn({ peer: 'peer-b', requestId: 'evt-2', text: 'b' })).resolves.toMatchObject({ text: 'ok' })
     expect(warnings.some((line) => line.includes('no such model'))).toBe(true)
   })
 
-  test('a host without a selector warns once across peer sessions', async () => {
+  test('a host without a selector warns once for the adapter', async () => {
     const events = bus()
     const warnings: string[] = []
-    let count = 0
     const controller = {
-      create: () => {
-        count += 1
-        return Promise.resolve({ sessionId: `session-${count}` })
-      },
       prompt: (request: PromptRequest) => {
         turn(request.sessionId, events.emit, ['ok'])
         return Promise.resolve({ accepted: true })
@@ -484,6 +470,7 @@ describe('the model a bridge runs', () => {
     const bridge = new PeerSessions({
       controller,
       observe: events.observe,
+      anchor: pinned('session-main'),
       model: route,
       warn: (line) => warnings.push(line),
     })
@@ -498,15 +485,19 @@ describe('the model a bridge runs', () => {
     const events = bus()
     const warnings: string[] = []
     const controller = {
-      create: () => Promise.resolve({ sessionId: 'session-1' }),
       prompt: (request: PromptRequest, signal: AbortSignal) => {
         signal.throwIfAborted()
-        turn('session-1', events.emit, ['ok'])
-        void request
+        turn(request.sessionId, events.emit, ['ok'])
         return Promise.resolve({ accepted: true })
       },
     }
-    const bridge = new PeerSessions({ controller, observe: events.observe, model: route, warn: (line) => warnings.push(line) })
+    const bridge = new PeerSessions({
+      controller,
+      observe: events.observe,
+      anchor: pinned('session-main'),
+      model: route,
+      warn: (line) => warnings.push(line),
+    })
 
     await expect(bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })).resolves.toMatchObject({
       text: 'ok',
@@ -543,7 +534,7 @@ describe('disposing the bridge', () => {
     controller.onPrompt = (request) => events.emit(request.sessionId, { type: 'turn/start' })
 
     const running = bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })
-    await flush()
+    while (controller.prompts.length === 0) await new Promise((resolve) => setTimeout(resolve, 5))
     expect(controller.prompts).toHaveLength(1)
 
     bridge.dispose()
@@ -585,15 +576,13 @@ describe('disposing the bridge', () => {
   })
 
   test('refuses a turn asked for after it was disposed', async () => {
-    const { controller, bridge } = harness()
+    const { bridge } = harness()
 
     bridge.dispose()
 
     await expect(bridge.runTurn({ peer: 'peer-a', requestId: 'evt-1', text: 'hi' })).rejects.toThrow(
       'the peer sessions were disposed',
     )
-    await expect(bridge.sessionFor('peer-a')).rejects.toThrow('the peer sessions were disposed')
-    expect(controller.creates).toHaveLength(0)
   })
 
   test('a turn that finishes normally leaves nothing behind', async () => {
@@ -625,10 +614,10 @@ describe('the model selection a bridge reports', () => {
     const events = bus()
     const bridge = new PeerSessions({
       controller: {
-        create: () => Promise.resolve({ sessionId: 'session-1' }),
         prompt: () => Promise.resolve({ accepted: true }),
       },
       observe: events.observe,
+      anchor: pinned('session-main'),
       model: route,
     })
 
@@ -658,7 +647,7 @@ describe('the model selection a bridge reports', () => {
     expect(bridge.modelSelection).toEqual({ requested: 'deepseek/deepseek-chat', state: 'rejected' })
   })
 
-  test('the state follows the last attempt, not the first', async () => {
+  test('a rejected selection is not tried again for the same session', async () => {
     const { controller, events, bridge } = harness({ model: route })
     controller.failModel = new Error('no such model')
     controller.onPrompt = (request) => turn(request.sessionId, events.emit, ['ok'])
@@ -669,6 +658,7 @@ describe('the model selection a bridge reports', () => {
     controller.failModel = undefined
     await bridge.runTurn({ peer: 'peer-b', requestId: 'evt-2', text: 'there' })
 
-    expect(bridge.modelSelection?.state).toBe('applied')
+    expect(bridge.modelSelection?.state).toBe('rejected')
+    expect(controller.models).toHaveLength(1)
   })
 })

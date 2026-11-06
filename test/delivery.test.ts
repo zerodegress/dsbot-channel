@@ -176,9 +176,9 @@ async function mount(delivery: unknown, adapterDelivery?: unknown): Promise<Cont
       scope.provide('sessionController')
       scope.set('sessionController', {
         create: () => Promise.resolve({ sessionId: 'session-1' }),
-        prompt: () => {
+        prompt: (request: { sessionId: string }) => {
           const emit = (event: unknown): void => {
-            ctx.emit('session/event', { id: 'session-1' } as never, event as never)
+            ctx.emit('session/event', { id: request.sessionId } as never, event as never)
           }
           emit({ type: 'turn/start' })
           emit({ type: 'assistant/message', data: { message: { content: [{ type: 'text', text: reply }] } } })

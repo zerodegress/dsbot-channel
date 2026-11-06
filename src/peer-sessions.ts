@@ -1,3 +1,4 @@
+import type { AnchorCode, SessionAnchor } from './bot-sessions.js'
 import type { ModelSelection, ModelSelectionState } from './adapter-status.js'
 
 export interface SessionMessagePart {
@@ -29,7 +30,6 @@ export interface ModelRoute {
 }
 
 export interface SessionControllerLike {
-  create(request: { cwd?: string; agentPreset?: string }): Promise<{ sessionId: string }>
   prompt(request: PromptRequest, signal: AbortSignal): Promise<{ accepted: boolean }>
   /** Selects the model a session runs on; absent when the host cannot choose one. */
   selectModel?(request: ModelRoute & { sessionId: string }): Promise<unknown>
@@ -38,21 +38,32 @@ export interface SessionControllerLike {
 export interface PeerSessionsOptions {
   controller: SessionControllerLike
   observe: (listener: (sessionId: string, event: SessionEventLike) => void) => () => void
-  /** An existing session every peer turn runs in, instead of one created per peer. */
-  session?: string
+  /** Resolves the session a turn runs in; read every turn because a Bot may move to a new segment. */
+  anchor: SessionAnchor
   timeoutMs?: number
-  cwd?: string
-  agentPreset?: string
-  /** The model every session of this bridge runs on. */
+  /** The model the resolved session runs on. */
   model?: ModelRoute | undefined
   /** Receives what the host could not honour, such as a missing model selector. */
   warn?: ((message: string) => void) | undefined
+}
+
+/** A turn that cannot name its session; the code travels to the turn record. */
+export class AnchorTurnError extends Error {
+  readonly code: AnchorCode
+
+  constructor(code: AnchorCode, reason: string) {
+    super(reason)
+    this.name = 'AnchorTurnError'
+    this.code = code
+  }
 }
 
 export interface PeerTurnInput {
   peer: string
   requestId: string
   text: string
+  /** Called once the turn knows its session, inside the adapter's queue and before the prompt. */
+  onSession?: ((sessionId: string) => void) | undefined
 }
 
 export interface PeerTurn {
@@ -93,17 +104,14 @@ function textOf(content: readonly SessionMessagePart[] | undefined): string {
 export class PeerSessions {
   readonly #controller: SessionControllerLike
   readonly #observe: PeerSessionsOptions['observe']
-  readonly #session: string | undefined
+  readonly #anchor: SessionAnchor
   readonly #timeoutMs: number
-  readonly #cwd: string | undefined
-  readonly #agentPreset: string | undefined
   readonly #model: ModelRoute | undefined
   #modelState: ModelSelectionState | undefined
   readonly #warn: ((message: string) => void) | undefined
   readonly #readyModels = new Map<string, Promise<string>>()
   #warnedNoSelector = false
-  readonly #sessions = new Map<string, Promise<string>>()
-  readonly #tail = new Map<string, Promise<void>>()
+  #queue: Promise<void> = Promise.resolve()
   readonly #running = new Set<RunningTurn>()
   readonly #detachers = new Set<() => void>()
   #disposed = false
@@ -111,10 +119,8 @@ export class PeerSessions {
   constructor(options: PeerSessionsOptions) {
     this.#controller = options.controller
     this.#observe = options.observe
-    this.#session = options.session
+    this.#anchor = options.anchor
     this.#timeoutMs = options.timeoutMs ?? DEFAULT_TURN_TIMEOUT_MS
-    this.#cwd = options.cwd
-    this.#agentPreset = options.agentPreset
     this.#model = options.model
     this.#modelState =
       options.model !== undefined && options.controller.selectModel === undefined ? 'unsupported' : undefined
@@ -129,9 +135,7 @@ export class PeerSessions {
     for (const running of [...this.#running]) running.abort(error)
     this.#running.clear()
     for (const detach of [...this.#detachers]) detach()
-    this.#sessions.clear()
     this.#readyModels.clear()
-    this.#tail.clear()
   }
 
   /** The model this adapter asked for and whether the host took it; absent until that is decided. */
@@ -146,48 +150,14 @@ export class PeerSessions {
     return this.#disposed
   }
 
-  /** Creates the peer session once and hands the same identity to every later turn. */
-  sessionFor(peer: string): Promise<string> {
-    if (this.#disposed) return Promise.reject(new Error('the peer sessions were disposed'))
-    if (this.#session !== undefined) return this.#ready(this.#session)
-    const cached = this.#sessions.get(peer)
-    if (cached !== undefined) return cached.then((sessionId) => this.#ready(sessionId))
-    const created = this.#controller
-      .create({
-        ...(this.#cwd === undefined ? {} : { cwd: this.#cwd }),
-        ...(this.#agentPreset === undefined ? {} : { agentPreset: this.#agentPreset }),
-      })
-      .then((result) => {
-        const sessionId = result?.sessionId
-        if (typeof sessionId !== 'string' || sessionId.length === 0) {
-          throw new Error('session create returned no session id')
-        }
-        return sessionId
-      })
-    this.#sessions.set(peer, created)
-    const ready = created.then((sessionId) => this.#ready(sessionId))
-    void created.catch(() => {
-      if (this.#sessions.get(peer) === created) this.#sessions.delete(peer)
-    })
-    return ready
-  }
-
-  /** Queues a turn behind the peer's previous one so replies stay attributable. */
+  /** Queues a turn behind the adapter's previous one: one Bot session, one turn at a time. */
   runTurn(input: PeerTurnInput): Promise<PeerTurn> {
     if (this.#disposed) return Promise.reject(new Error('the peer sessions were disposed'))
-    const previous = this.#tail.get(input.peer) ?? Promise.resolve()
-    const run = previous.then(
+    const run = this.#queue.then(
       () => this.#runTurn(input),
       () => this.#runTurn(input),
     )
-    const tail = run.then(
-      () => undefined,
-      () => undefined,
-    )
-    this.#tail.set(input.peer, tail)
-    void tail.then(() => {
-      if (this.#tail.get(input.peer) === tail) this.#tail.delete(input.peer)
-    })
+    this.#queue = run.then(() => undefined, () => undefined)
     return run
   }
 
@@ -224,8 +194,11 @@ export class PeerSessions {
 
   async #runTurn(input: PeerTurnInput): Promise<PeerTurn> {
     if (this.#disposed) throw new Error('the peer sessions were disposed')
-    const sessionId = await this.sessionFor(input.peer)
+    const resolved = await this.#anchor.resolve()
     if (this.#disposed) throw new Error('the peer sessions were disposed')
+    if (!resolved.ok) throw new AnchorTurnError(resolved.code, resolved.reason)
+    input.onSession?.(resolved.sessionId)
+    const sessionId = await this.#ready(resolved.sessionId)
     const texts: string[] = []
     let started = false
     let settle = (): void => {}
