@@ -126,6 +126,7 @@ export function buildPipeline(
       case 'judge': {
         const judge = require(spec.id, 'judge', 'judge', deps.judge)
         const threshold = spec.allowAtLeast
+        const below = spec.belowThreshold ?? 'deny'
         return {
           id: spec.id,
           type: 'judge',
@@ -142,6 +143,9 @@ export function buildPipeline(
             if (threshold !== undefined) {
               if (verdict.score >= threshold) {
                 return { kind: 'allow', reason: verdict.reason ?? 'judge_above_threshold' }
+              }
+              if (below === 'pass') {
+                return { kind: 'score', value: verdict.score, reason: 'judge_below_threshold_pass' }
               }
               return { kind: 'deny', reason: `judge_below_threshold (score ${verdict.score})` }
             }
