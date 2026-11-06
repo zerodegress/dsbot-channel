@@ -253,7 +253,7 @@ export class P2PAdapter implements ChannelAdapter {
       body: input.body,
       ...(media.length === 0 ? {} : { media }),
       eventId: input.eventId,
-      sender: input.sender,
+      sender: this.#config.botName,
       instance: this.#config.channel,
       ...(input.sentAt === undefined ? {} : { sentAt: input.sentAt }),
       ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
