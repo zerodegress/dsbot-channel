@@ -222,7 +222,7 @@ config:
         context: This bot answers questions about the project only.
 ```
 
-A `judge` node needs the host service `dsbot-channel/judge`, which answers `judge(event, context)` with `{ score, reason? }`. A profile that declares the node without the service fails the mount; a judge that times out or throws refuses the message with `judge_timeout` or `judge_failed`, and a score that is not a finite number from 0 to 1 fails it the same way. `allowAtLeast` may also be set by an adapter's `insert` or `override`, or by a session's `override`; the fields a judge node reads, and where they may be written, are listed under `Pipeline nodes`. `judgeTimeoutMs` must not exceed `maxTurnMs`.
+A `judge` node needs the host service `dsbot-channel/judge`, which answers `judge(event, context)` with `{ score, reason? }`. A profile that declares the node without the service fails the mount; a judge that times out or throws refuses the message with `judge_timeout` or `judge_failed`, and a score that is not a finite number from 0 to 1 fails it the same way. `allowAtLeast` and `belowThreshold` may also be set by an adapter's `insert` or `override`, or by a session's `override`; the fields a judge node reads, and where they may be written, are listed under `Pipeline nodes`. `judgeTimeoutMs` must not exceed `maxTurnMs`.
 
 | Field | Default | Meaning |
 | --- | --- | --- |
@@ -230,6 +230,7 @@ A `judge` node needs the host service `dsbot-channel/judge`, which answers `judg
 | `pipeline.judgeTimeoutMs` | `8000` | one judge call, retries included |
 | `pipeline.judgePoints` | `1` | points a verdict costs |
 | `allowAtLeast` (judge node) | off | score that allows the message |
+| `belowThreshold` (judge node) | `deny` | what a score below `allowAtLeast` does: `deny` refuses, `pass` moves on |
 
 Two entries fill that service; mount one of them **before** the gateway.
 
@@ -293,7 +294,7 @@ An inbound message goes through three steps: the adapter drops a duplicate, the 
 
 An empty word, an invalid pattern or an empty peer name fails the mount. `policy.deny` and `policy.allow` only take effect through a node: a profile that declares no `pipeline` gets the node added for it, and a profile that declares one has to add the node itself, or the rule silently does nothing.
 
-A judge enters as one node of the pipeline, not as a gate: mount a provider first, then declare the node. Without `allowAtLeast` the node only adds its score, and a chain that ends without an allow still refuses; with it, a score at or above the threshold allows the message and one below refuses it.
+A judge enters as one node of the pipeline, not as a gate: mount a provider first, then declare the node. Without `allowAtLeast` the node only adds its score, and a chain that ends without an allow still refuses; with it, a score at or above the threshold allows the message, and one below refuses it, or with `belowThreshold: pass` adds its score and passes the chain on, recorded as `judge_below_threshold_pass`. A judge call costs its `judgePoints` whether it decides or only scores, and `belowThreshold` does not change that.
 
 Three starting points:
 
@@ -330,7 +331,7 @@ A node is `{ id, type }` plus the fields its type reads. The chain runs in order
 | --- | --- |
 | `deny` | Refuses when `policy.deny` matches. A `deny` node with no `policy.deny` rule fails the mount. |
 | `allow` | Allows when `policy.allow` matches, and stops every later `score` and `judge`. An `allow` node with no `policy.allow` peer fails the mount. |
-| `judge` | Scores through the host judge service; `allowAtLeast` sets its threshold, and it reads `question` and `context`. |
+| `judge` | Scores through the host judge service; `allowAtLeast` sets its threshold, `belowThreshold` decides what a lower score does, and it reads `question` and `context`. |
 | `score` | Adds the value the host score service returns. A throw or a non-finite value refuses with `score_failed`. |
 | `budget` | Reads the spend of the busiest window: a hard state refuses, and `mayRestrict` at `restrictAt` restricts. |
 | `prepare` | Runs the host prepare hook, then passes. Every adapter answering for the bot must carry the hook, or the mount fails. |
@@ -342,6 +343,7 @@ A node is `{ id, type }` plus the fields its type reads. The chain runs in order
 | `id` | required | Names the node in `matched` and `reasons`. |
 | `type` | required | One of the eight above. |
 | `allowAtLeast` | off | `judge` only: a score from 0 to 1. |
+| `belowThreshold` | `deny` | `judge` only: `deny` or `pass`, what a score below `allowAtLeast` does. Fails the mount without `allowAtLeast`. |
 | `question` | required | `judge` only: what this node asks. `system-one` needs one; an `llm` node may not carry it. |
 | `question.type` | required | `noul`, `score` or `choice`. |
 | `question.instructions` | required | One question or statement. |
